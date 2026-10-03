@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite errors="1" failures="2" name="com.example.auth.LoginControllerTest" skipped="0" tests="4" time="1.128" timestamp="2026-10-02T01:00:05" hostname="ci">
+  <testcase classname="com.example.auth.LoginControllerTest" name="정상 로그인()" time="0.1"/>
+  <testcase classname="com.example.auth.LoginControllerTest" name="비밀번호가 틀리면 401()" time="0.2">
+    <failure message="expected: &lt;401&gt; but was: &lt;200&gt;" type="org.opentest4j.AssertionFailedError">AssertionFailedError</failure>
+  </testcase>
+  <testcase classname="com.example.auth.LoginControllerTest" name="잠긴 계정은 423()" time="0.2">
+    <failure message="expected: &lt;423&gt; but was: &lt;401&gt;" type="org.opentest4j.AssertionFailedError">AssertionFailedError</failure>
+  </testcase>
+  <testcase classname="com.example.auth.LoginControllerTest" name="토큰을 발급한다()" time="0.3">
+    <error message="NullPointerException" type="java.lang.NullPointerException">NullPointerException</error>
+  </testcase>
+</testsuite>

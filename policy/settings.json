@@ -1,0 +1,42 @@
+{
+  "_note": "대상 .claude/settings.json 에 병합할 정책 단일 원천. tools/policy-apply.mjs 가 기존 키를 보존하며 반영한다.",
+  "_why": {
+    "deny-push": "레포 밖으로 나가는 작업은 사람이 한다",
+    "deny-rm": "되돌릴 수 없는 삭제. mv 는 허용하되 덮어쓰기 위험은 남는다",
+    "ask-force": "--force 는 되돌리기가 사라지는 지점이다",
+    "ponytail-off": "흐름의 베이스는 superpowers 다. ponytail 은 final-gate 에서 /ponytail-review 로만 부른다",
+    "allow-narrow": "allow 는 사람의 확인을 건너뛴다. 인자로 쓰기·실행에 닿는 명령(find -exec, sort -o, git diff/log/show --output)과 와일드카드 경로(node .harness/tools/* 는 ../ 로 아무 스크립트나 연다)는 두지 않는다 — 10-02 보안 리뷰. 그래프는 읽기(graph-find)만 — 쓰기(append·alias)는 사람이 본다"
+  },
+  "permissions": {
+    "allow": [
+      "Read", "Glob", "Grep",
+      "Bash(node .harness/tools/verify.mjs)",
+      "Bash(node .harness/tools/decision-check.mjs)",
+      "Bash(node .harness/tools/lesson-promote.mjs)",
+      "Bash(node .harness/tools/state-check.mjs)",
+      "Bash(node .harness/tools/graph-find.mjs)",
+      "Bash(node .harness/tools/graph-find.mjs *)",
+      "Bash(git status *)", "Bash(ls *)", "Bash(pwd)", "Bash(grep *)",
+      "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(diff *)"
+    ],
+    "deny": [
+      "Bash(rm *)", "Bash(rmdir *)",
+      "Bash(git push *)", "Bash(git reset --hard*)", "Bash(git clean *)",
+      "Bash(git checkout -- *)", "Bash(git rebase *)",
+      "Bash(curl * | bash*)", "Bash(wget * | bash*)",
+      "Bash(npm publish *)",
+      "Bash(find * -delete*)", "Bash(find * -exec rm*)"
+    ],
+    "ask": [
+      "Bash(*--force*)", "Bash(git restore *)", "Bash(git stash drop*)", "Bash(git stash clear*)"
+    ]
+  },
+  "env": { "PONYTAIL_DEFAULT_MODE": "off" },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "ponytail@ponytail": true
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": { "source": { "source": "github", "repo": "DietrichGebert/ponytail" } }
+  }
+}

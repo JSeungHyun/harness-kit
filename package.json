@@ -1,0 +1,12 @@
+{
+  "name": "harness-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "pretest": "node -e \"require('fs').mkdirSync('test-results',{recursive:true})\"",
+    "test": "node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/junit.xml \"test/*.test.mjs\""
+  },
+  "dependencies": {}
+}

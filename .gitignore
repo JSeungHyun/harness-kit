@@ -1,0 +1,6 @@
+node_modules/
+test-results/
+graph/
+# 전역 gitignore 가 이 이름을 무시해도 템플릿은 추적한다
+!templates/map/AGENTS.md
+!templates/map/CLAUDE.md
