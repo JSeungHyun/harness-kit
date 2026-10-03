@@ -1,0 +1,17 @@
+{
+  "_note": "harness-kit 설정. 모든 경로는 대상 저장소 루트 기준. 장부는 공유 모드 docs/harness/, 로컬 전용 모드 .harness/state/ — 대상이 이미 쓰는 장부가 있으면 그 경로. 형식은 SETUP.md ⑤.",
+  "profile": "<new | existing>",
+  "mode": "<share | local>",
+  "state": {
+    "decisions": "docs/harness/decisions.md",
+    "lessons": "docs/harness/lessons.md"
+  },
+  "checks": [
+    {
+      "id": "테스트",
+      "cmd": "<결과 XML 을 매번 새로 쓰는 테스트 명령>",
+      "kind": "junit-xml",
+      "evidence": "<결과 XML 파일 또는 디렉터리>"
+    }
+  ]
+}
