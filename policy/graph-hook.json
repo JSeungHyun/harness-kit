@@ -1,0 +1,17 @@
+{
+  "_note": "그래프 훅 — 살아있는 기록 20건 이상 + graph-find --check exit 0 + 상위3 점유 < 50% (graph-measure . --tickets <이슈 제목 json>, 질의 집합이 없으면 「독점 미측정」) 일 때만 policy-apply --with graph-hook 으로 병합한다. 설계안.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs\"",
+            "timeout": 30,
+            "statusMessage": "그래프 조회 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
