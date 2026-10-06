@@ -69,7 +69,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 
 | | |
 |---|---|
-| 일시 | 2026-10-02 12:43 UTC |
+| 일시 | 2026-10-03 02:27 UTC |
 | 환경 | win32 · Node v24.18.0 |
 | 예상과 다른 행 | 0개 / 29행 |
 
@@ -87,7 +87,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | P6 기준선 | 원래 있던 실패를 고쳤다 | verify exit 0 · 기준선에서 통과 1 — 기준선을 줄인다 (verify --baseline) | ✅ |
 | P7 output-match | 검증 쿼리가 rows=0 을 낸다 (기대 ^rows=0$) | 명령 exit 0 → verify exit 0 · 출력이 기대와 맞는다 | ✅ |
 | P7 output-match | 검증 쿼리가 rows=3 을 낸다 | 명령 exit 0 → verify exit 1 · 출력이 /^rows=0$/ 와 맞지 않는다 | ✅ |
-| P5 가정 | 20일 묵은 열린 질문 1건 | 열린 결정 1건 · 갱신 후 21일(경과일을 반올림한다) · 경고 · exit 0 | ✅ |
+| P5 가정 | 20일 묵은 열린 질문 1건 | 열린 결정 1건 · 갱신 후 20일(경과일을 반올림해 실행 시각에 따라 21일) · 경고 · exit 0 | ✅ |
 | P5 교훈 | 근본 원인 없이 적기 | exit 1 · ⛔ 근본 원인이 비었다 | ✅ |
 | P5 교훈 | 같은 분류 2회 · 막는 것 없음 | 검증 부족 ×2 (L001 L002) | ✅ |
 | P5 대장 | 분석 뒤 원본이 바뀜 + 가리키는 파일 소멸 | 대장 2행 · 재작업 1 · 소멸 1 · exit 1 | ✅ |
@@ -163,13 +163,20 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 - 프로젝트 `.claude/settings.json` 의 allow 는 그 폴더를 **신뢰(trust)한 뒤에만** 적용된다 — 신뢰 전에는 「Ignoring 17 permissions.allow entries」. SETUP ⑨ 의 「새로 생기는 제약」에 넣었다
 - 실측은 `~/.claude/projects/` 에 임시 대상마다 폴더를 남긴다(세션 기록). 플러그인 설치 기록은 스크립트가 되돌리고 전후를 대조한다
 - 이 PC(16코어)에서 `node --test` 기본 병렬(파일 15개 동시)일 때 프로세스 생성이 `spawn EPERM` 으로 거부돼 `npm test` 5회 중 1회가 실패했다(`tools/verify.mjs` 의 `exec`). `--test-concurrency=4` 로 5회 중 0회, 시간은 그대로다(128~160초 → 128~149초). ⚠️ 표본 5회 — 0회가 「없다」는 증명은 아니다. verify 는 생성 실패를 실패로 닫으므로 재시도를 넣지 않았다
+- **첫 실전 적용(신규 · 모노레포 Gradle + Vite)에서** — Windows 의 Claude Code 는 `NoDefaultCurrentDirectoryInExePath=1` 을 걸어 `cmd` 가 현재 폴더의 실행 파일을 찾지 않는다. SETUP ⑤ 의 `gradlew cleanTest test` 가 「내부 또는 외부 명령이 아닙니다」로 실패했다(`gradlew.bat` 도 같다). 저장소 안 래퍼는 `.\gradlew` · `.\mvnw` 로 적는다 — PATH 의 `mvn` · `npx` 는 상관없다. 재현(현재 폴더의 `.bat` 래퍼 · `cmd`):
+
+  | 명령 | 변수 있음 | 변수 없음 |
+  |---|---|---|
+  | `fakew` | 실패 | 실행 |
+  | `.\fakew` | 실행 | 실행 |
+  | `./fakew` | 실패 | 실패 |
 - 테스트와 결정론 실측은 자기가 만든 임시 폴더를 끝에 지운다 — `npm test` 11회 · `proof/run.mjs` 1회 전후로 `%TEMP%` 의 `harness-*` · `graph-*` · `gitcfg-*` · `hooks-*` · `proof-*` 개수가 같았다. `setup-e2e` 의 대상(`e2e-*`)은 들여다보라고 남긴다
 
 **실측 뒤에 바뀐 파일 — `setup-e2e` 는 다시 돌리지 않았다.** run4 이후 아래가 바뀌었다. 결정론 · 새 세션 실측(위 두 표)과 `npm test` 는 바뀐 뒤에 다시 돌린 값이고, SETUP 종단 실측은 바뀌기 전 값이다.
 
 | 파일 | 무엇이 |
 |---|---|
-| `SETUP.md` | ③ 공유 모드 패턴 맞추기(`reviewed`) · `core.hooksPath` 가 git 디렉터리 밖이면 pre-commit 을 쓰지 않음 · ⑥ 플러그인 설치 범위를 모드에 맞춤 · ⑦ 훅 조건 「상위3 점유 < 50%」 · ⑧-b 질문 |
+| `SETUP.md` | ③ 공유 모드 패턴 맞추기(`reviewed`) · `core.hooksPath` 가 git 디렉터리 밖이면 pre-commit 을 쓰지 않음 · ⑤ Windows 의 저장소 안 래퍼는 `.\gradlew` · `.\mvnw`(첫 실전 적용) · ⑥ 플러그인 설치 범위를 모드에 맞춤 · ⑦ 훅 조건 「상위3 점유 < 50%」 · ⑧-b 질문 |
 | `tools/install-mode.mjs` | ⛔ 보안 — 훅 자리가 저장소 git 디렉터리 밖(전역 `core.hooksPath` · 추적되는 `.husky`)이면 쓰지 않고 한 줄을 안내 |
 | `.gitignore` (이 레포) | `!templates/map/AGENTS.md` · `!templates/map/CLAUDE.md` — 전역 gitignore 가 그 이름을 무시하는 PC 에서 템플릿이 커밋에서 빠지던 것 |
 | `templates/rules/graph.md` | §1 새 원천 예외 · §4 제목(빈도순 · 피해는 ④) · ④ 새 원천도 단일 증거 · §8 훅 조건 |

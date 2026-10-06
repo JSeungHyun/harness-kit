@@ -95,8 +95,8 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | 스택 | `cmd` | `kind` · `evidence` |
 |---|---|---|
 | Node (`node:test`) | `package.json` 의 `test` 가 junit 을 디렉터리에 쓰고 그 디렉터리를 먼저 만들면 `npm test`. 아니면 `node -e "require('fs').mkdirSync('test-results',{recursive:true})" && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/junit.xml "test/*.test.mjs"` | `junit-xml` · `test-results` |
-| Gradle | `./gradlew cleanTest test` (Windows `cmd`: `gradlew cleanTest test`) | `junit-xml` · `build/test-results/test` |
-| Maven | `mvn test` | `junit-xml` · `target/surefire-reports` |
+| Gradle | `./gradlew cleanTest test` (Windows `cmd`: `.\gradlew cleanTest test` — JSON 에서는 `".\\gradlew cleanTest test"`) | `junit-xml` · `build/test-results/test` |
+| Maven | `mvn test` · 래퍼면 `./mvnw test` (Windows `cmd`: `.\mvnw test`) | `junit-xml` · `target/surefire-reports` |
 | pytest | `pytest --junitxml=test-results/junit.xml` | `junit-xml` · `test-results` |
 | 결과 XML 을 낼 수 없다 | 테스트 명령 | `exit-code` — ⚠️ 테스트 0개를 못 잡는다고 사용자에게 알린다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
@@ -104,6 +104,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | 그래프 무결성 (graph 모듈을 얹으면) | `node .harness/tools/graph-find.mjs --check` | `exit-code` |
 
 - Node 는 junit 결과 디렉터리를 만들지 않는다 — 없으면 ENOENT 로 죽는다(실측). `node --test` 에는 디렉터리가 아니라 glob 을 준다
+- ⚠️ Windows 의 Claude Code 는 `NoDefaultCurrentDirectoryInExePath=1` 을 걸어 `cmd` 가 현재 폴더의 실행 파일을 찾지 않는다 — `gradlew` · `gradlew.bat` 은 「내부 또는 외부 명령이 아닙니다」, `.\gradlew` 만 돈다(실측, `./gradlew` 는 `cmd` 에서 늘 실패). 저장소 안 래퍼만 `.\` 를 붙인다 — PATH 의 `mvn` · `npx` 는 상관없다. 모노레포 예: `cd backend && .\gradlew cleanTest test`
 - 명령은 플랫폼 기본 셸(`sh` / Windows `cmd`)로 돈다. 팀이 OS 를 섞어 쓰면 양쪽에서 같은 명령(`npm test` 등)을 고른다
 - 지시 파일 · README 에 빌드·테스트 명령이 적혀 있으면 그것을 쓴다
 

@@ -35,6 +35,8 @@ test('⛔ SETUP 이 복사하라는 것이 실재한다', () => {
   const refs = [...repoFile('SETUP.md').matchAll(/<kit>\/((?:templates|lib|tools|policy)[\w./-]*)/g)];
   assert.ok(refs.length > 5);
   for (const [, rel] of refs) assert.ok(existsSync(at(rel)), `SETUP.md → ${rel}`);
+  // Windows 의 Claude Code 는 NoDefaultCurrentDirectoryInExePath=1 이라 저장소 안 래퍼는 .\ 를 붙여야 돈다(첫 실전 적용)
+  assert.match(repoFile('SETUP.md').split(/\r?\n/).find((l) => l.startsWith('| Gradle |')) ?? '', /`\.\\gradlew cleanTest test`/);
 });
 
 test('규칙 파일이 완료 명령과 관문을 지시하고, SETUP 이 채울 자리를 둔다', () => {
