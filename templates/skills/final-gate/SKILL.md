@@ -23,7 +23,7 @@ description: 작업을 끝냈다고 보고하기 직전에 매번 쓴다 — 계
 
 3. **보고 한 세트**
    1. 작업 파일 목록 — 생성/수정/삭제, 전체 경로
-   2. 기록 — 그래프(요구 → 용어·파일·함정·기각한 대안, `.claude/rules/graph.md`) · 묻지 않고 정한 가정(decisions 1절, 그리고 `node .harness/tools/decision-check.mjs`) · 반복 실패(`node .harness/tools/lesson-append.mjs`, 그리고 `node .harness/tools/lesson-promote.mjs`). 설계 용어를 구현 이름과 맞췄나 본다. ⛔ 기록의 두 장치:
+   2. 기록 — 그래프(요구 → 용어·파일·함정·기각한 대안, `.claude/rules/graph.md` — ⛔ 이 저장소의 지식만, 3절 첫째 문) · 묻지 않고 정한 가정(decisions 1절, 그리고 `node .harness/tools/decision-check.mjs`) · 반복 실패(`node .harness/tools/lesson-append.mjs`, 그리고 `node .harness/tools/lesson-promote.mjs`). 설계 용어를 구현 이름과 맞췄나 본다. ⛔ 기록의 두 장치:
       - **남길 게 없으면 그 판단을 한 줄로** 밝힌다 — 침묵을 불가능하게 만든다
       - 기능을 바꿔 기존 기록이 **낡았으면 그 자리에서 고친다**(그래프는 `supersedes`). 새 기록 추가로 갈음하지 않는다 — **다음 세션의 나는 그 불일치를 사실로 믿는다**. 기준: 「이 기록을 그대로 믿고 작업하면 틀리나」
    3. 완료 증거 — 2 의 출력 그대로. 「통과했다」로 줄이지 않는다
