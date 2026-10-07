@@ -95,6 +95,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | 스택 | `cmd` | `kind` · `evidence` |
 |---|---|---|
 | Node (`node:test`) | `package.json` 의 `test` 가 junit 을 디렉터리에 쓰고 그 디렉터리를 먼저 만들면 `npm test`. 아니면 `node -e "require('fs').mkdirSync('test-results',{recursive:true})" && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/junit.xml "test/*.test.mjs"` | `junit-xml` · `test-results` |
+| Node (vitest) | `npx vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml` — 리포터는 `package.json` 이 아니라 명령에 붙인다(추적 파일을 고치지 않는다). 결과 디렉터리는 vitest 가 만들고 매번 새로 쓴다 | `junit-xml` · `test-results` |
 | Gradle | `./gradlew cleanTest test` (Windows `cmd`: `.\gradlew cleanTest test` — JSON 에서는 `".\\gradlew cleanTest test"`) | `junit-xml` · `build/test-results/test` |
 | Maven | `mvn test` · 래퍼면 `./mvnw test` (Windows `cmd`: `.\mvnw test`) | `junit-xml` · `target/surefire-reports` |
 | pytest | `pytest --junitxml=test-results/junit.xml` | `junit-xml` · `test-results` |
@@ -147,6 +148,7 @@ grep -n '<decisions>\|<lessons>' .claude/rules/harness.md     # 바꾼 뒤 ⛔ �
 | 실패 중인 테스트 | 아래 「기준선」 |
 
 **소급 — 빈 장부는 값이 0이다.** 원천의 값 순서: 이슈·티켓 전수 > 인수인계·가이드 문서 > 담당자 확인(설치 뒤에도 대화 중에) > DB 코멘트(⛔ 복사하지 않고 조회 **명령**만 지도에) > 커밋 이력.
+커밋이 몇 개뿐이면(설치 직전의 첫 커밋 등) 아래 커밋 소급은 건너뛰고 앞의 원천으로 채운다 — 건수를 맞추려고 지어내지 않는다.
 
 ```bash
 git log --format='%h %ad %s%n%b' --date=short -60      # 본문까지 본다 — 근본 원인은 대개 본문에 있다

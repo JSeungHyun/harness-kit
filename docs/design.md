@@ -113,6 +113,7 @@ graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특
 ## 5. graph 모듈
 
 - 도구 6개는 `context-graph` 의 **동작을 그대로** 옮긴다 — 토크나이저·채점·정본 1장 규칙·침묵 문턱 `s ≤ 2`·1단 탈출구·`⏸` 노출·`supersedes` 제외. **깨지면 안 되는 8개와 바꾸면 안 되는 훅 출력 문장은 `docs/graph-port.md`**
+- 예외는 훅 **출력 크기** 하나 — 운영 재생(실제 프롬프트 401건)으로 2단은 점수 상위 10건, 1단 카드 용어는 채점 규칙 ③, 2위 카드는 정본·사전만 전문으로 바꿨다. 판정·순위는 그대로이고 주입은 −62% 다(`graph-port.md` §5). 운영 데이터 대조에서 그래프는 도구 호출 −91% · 정답 8/8 vs 4/8 이었다(README §실측)
 - 저장: `.harness/graph/requests.jsonl` — 도구 파일 기준 상대경로(`../graph/`)로 찾는다. 테스트는 `HARNESS_GRAPH_STORE` 로 바꾼다
 - 훅: `policy/graph-hook.json` 을 `policy-apply --with graph-hook` 으로 병합한다. **켜는 조건: 살아있는 기록 20건 이상 + `--check` exit 0 + 상위 3 기록 점유 < 50%** (질의 집합 — 이슈 제목 export — 이 있으면 `graph-measure` 로 잰다. 없으면 앞의 둘만, 보고에 「독점 미측정」)
 - ⛔ **개인 식별자(사번·이름·연락처)를 기록하지 않는다** — 공유 모드에서는 그대로 커밋된다

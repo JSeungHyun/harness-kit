@@ -217,6 +217,132 @@ test('⭐ 훅 2단 문장 — 약하게만 걸리면(3~4점·정확일치 0) 압
   assert.ok(lines.includes('2026-09-01 흐름 정리 — 주문 취소 결제  [용어: 버튼]'));
 });
 
+// 카드 i 의 제목 줄과 그 밑 4칸 들여쓴 몸통 줄들
+function cardAt(out, i) {
+  const lines = out.split(/\r?\n/);
+  const at = lines.flatMap((l, n) => (l.startsWith('· [') ? [n] : []))[i];
+  assert.notEqual(at, undefined, `카드 ${i} 가 없다:\n${out}`);
+  const body = [];
+  for (let n = at + 1; /^ {4}\S/.test(lines[n] ?? ''); n++) body.push(lines[n]);
+  return { title: lines[at], body };
+}
+
+test('⭐ 훅 2단 — 후보는 점수 상위 10건뿐이고, 줄마다 용어 키는 5개까지(더 있으면 …)', () => {
+  const keys = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`항목${i + 1}`, `값${i + 1}`]));
+  // 점수 4 인 10건 — 앞 5건이 키 개수 경계(7 · 6 · 5 · 1 · 0)를 지난다
+  const shapes = [
+    [keys(7), '  [용어: 항목1, 항목2, 항목3, 항목4, 항목5 …]'],
+    [keys(6), '  [용어: 항목1, 항목2, 항목3, 항목4, 항목5 …]'],
+    [keys(5), '  [용어: 항목1, 항목2, 항목3, 항목4, 항목5]'],
+    [keys(1), '  [용어: 항목1]'],
+    [{}, ''],
+    ...Array.from({ length: 5 }, () => [keys(2), '  [용어: 항목1, 항목2]']),
+  ];
+  const strong = shapes.map(([terms], i) => ({ req: `흐름 정리 A${i} — 주문취소 결제`, terms }));
+  const weak = [1, 2].map((i) => ({ req: `흐름 정리 B${i} — 주문 취소 결제`, terms: keys(1) }));
+  const none = ['쿠폰 발급 규칙', '재고 이동 화면', '정산 마감 배치'].map((req) => ({ req, terms: { 항목: 'x' } }));
+  // 약한 2건은 앞에, 안 걸리는 3건은 뒤에 둔다 — 앞 10건 · 뒤 10건 · 최근 150건 같은 자르기가 통과하지 못한다
+  const lines = hook(scene([...weak, ...strong, ...none]), '주문 취소 결제').split(/\r?\n/);
+  assert.match(lines[0], /\(최고 점수 4\)/);
+  assert.deepEqual(lines.filter((l) => /^\d{4}-\d\d-\d\d /.test(l)),
+    shapes.map(([, tail], i) => `${DAY} 흐름 정리 A${i} — 주문취소 결제${tail}`));
+});
+
+test('⭐ 훅 1단 카드 — 한글 토큰은 용어 키에만, 식별자 토큰은 값까지 맞춘다(채점 규칙 ③)', () => {
+  const s = scene([{ req: '배송 상태 화면', terms: { 배송: 'shipping_status', 반품: '배송 후 7일 안에 return_flag' } }]);
+  const ko = hook(s, '배송 지연').split(/\r?\n/);
+  assert.ok(ko.includes('    배송 → shipping_status'));
+  assert.ok(!ko.some((l) => l.startsWith('    반품 →')), '값 본문의 「배송」에 한글 토큰이 걸렸다');
+  assert.ok(ko.includes('    … 이 질의와 안 걸린 항목 1개(키만): 반품'));
+  const id = hook(s, 'return_flag 가 안 바뀐다').split(/\r?\n/);
+  assert.ok(id.includes('    반품 → 배송 후 7일 안에 return_flag'));
+  assert.ok(id.includes('    … 이 질의와 안 걸린 항목 1개(키만): 배송'));
+});
+
+test('⭐ 훅 1단 카드 — 펼치는 용어는 8줄까지이고 나머지는 접은 키로 간다', () => {
+  const terms = Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`배송${i + 1}`, `ship_${i + 1}`]));
+  const lines = hook(scene([{ req: '배송 정책', terms }]), '배송 정책').split(/\r?\n/);
+  assert.equal(lines.filter((l) => /^ {4}배송\d+ → /.test(l)).length, 8);
+  assert.ok(lines.includes('    … 이 질의와 안 걸린 항목 2개(키만): 배송9 · 배송10'));
+});
+
+test('⭐ 훅 1단 카드 — 값이 160자를 넘으면 앞 160자 + …(전문: graph-find), 160자까지는 그대로', () => {
+  const long = '가나다라마바사아자차'.repeat(20);   // 200자
+  const edge = '카타파하'.repeat(40);                // 160자
+  const lines = hook(scene([{ req: '배송 정책', terms: { 배송: long, 정책: edge } }]), '배송 정책').split(/\r?\n/);
+  assert.ok(lines.includes(`    배송 → ${long.slice(0, 160)} …(전문: graph-find)`));
+  assert.ok(lines.includes(`    정책 → ${edge}`));
+});
+
+// 부분 일치 용어 10개 뒤(기록 순서로 마지막)에 키가 토큰과 정확히 같은 용어 — 8줄 상한이 그것을 접으면 안 된다
+function crowded(partial, exacts, query) {
+  const terms = Object.fromEntries([...Array.from({ length: 10 }, (_, i) => partial(i + 1)), ...exacts]);
+  const lines = hook(scene([{ req: '배송 정책', terms }]), query).split(/\r?\n/);
+  return { arrows: lines.filter((l) => /^ {4}\S.* → /.test(l)), fold: lines.find((l) => l.startsWith('    … 이 질의와 안 걸린 항목')) };
+}
+
+test('⭐ 훅 1단 카드 — 키가 한글 토큰과 같은 용어는 8줄 상한에 접히지 않고 부분 일치보다 먼저 나온다', () => {
+  const { arrows, fold } = crowded((n) => [`배송${n}`, `v_${n}`], [['배송', 'v_exact']], '배송 정책');
+  assert.deepEqual(arrows, ['    배송 → v_exact', ...[1, 2, 3, 4, 5, 6, 7].map((n) => `    배송${n} → v_${n}`)]);
+  assert.equal(fold, '    … 이 질의와 안 걸린 항목 3개(키만): 배송8 · 배송9 · 배송10');
+});
+
+test('⭐ 훅 1단 카드 — 정확히 같은 키끼리는 기록 순서를 지키고, 공백이 든 키도 정규화해 같으면 정확히 같다', () => {
+  const { arrows, fold } = crowded((n) => [`배송${n}`, `v_${n}`], [['정책', 'v_e1'], ['배송 정책', 'v_e2']], '배송 정책');
+  assert.deepEqual(arrows, ['    정책 → v_e1', '    배송 정책 → v_e2', ...[1, 2, 3, 4, 5, 6].map((n) => `    배송${n} → v_${n}`)]);
+  assert.equal(fold, '    … 이 질의와 안 걸린 항목 4개(키만): 배송7 · 배송8 · 배송9 · 배송10');
+});
+
+test('⭐ 훅 1단 카드 — 키가 식별자와 같은 용어(대소문자 무시)도 값에 식별자가 든 용어보다 먼저 나온다', () => {
+  const { arrows, fold } = crowded((n) => [`항목${n}`, `값 return_flag ${n}`], [['Return_Flag', 'v_exact']], 'RETURN_FLAG 확인');
+  assert.deepEqual(arrows, ['    Return_Flag → v_exact', ...[1, 2, 3, 4, 5, 6, 7].map((n) => `    항목${n} → 값 return_flag ${n}`)]);
+  assert.equal(fold, '    … 이 질의와 안 걸린 항목 3개(키만): 항목8 · 항목9 · 항목10');
+});
+
+test('⭐ 훅 1단 카드 — 걸린 용어가 하나도 없으면 앞 8개만 펼치고 나머지는 접은 키로 간다', () => {
+  const terms = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`항목${i + 1}`, `v_${i + 1}`]));
+  const lines = hook(scene([{ req: '배송 정책', terms }]), '배송 정책').split(/\r?\n/);
+  assert.deepEqual(lines.filter((l) => /^ {4}항목\d+ → /.test(l)), [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `    항목${n} → v_${n}`));
+  assert.ok(lines.includes('    … 이 질의와 안 걸린 항목 4개(키만): 항목9 · 항목10 · 항목11 · 항목12'));
+});
+
+test('⭐ 훅 1단 — 2위 카드는 정본 · 사전만 전문이고 그 밖은 제목 + 함정만(1위는 늘 전문)', () => {
+  const NOTE = '재시도는 3회까지다';
+  const first = { req: '배송 지연 화면 수정', terms: { 배송: 'shipping_status' }, files: ['src/ship.mjs'] };
+  const second = (req, note) => ({ req, terms: { 알림: 'notify_rule' }, files: ['src/notify.mjs'], ...(note && { note }) });
+  const cardsOf = (req, note) => {
+    const out = hook(scene([first, second(req, note)]), '배송 지연');
+    return [cardAt(out, 0), cardAt(out, 1)];
+  };
+  // 1위가 이력 종류여도 전문 — 첫째 카드는 늘 전문이다
+  const [top, history] = cardsOf('배송 지연 알림 수정', NOTE);
+  assert.match(top.title, /^· \[이력 · \d+점\] /);
+  assert.deepEqual(top.body, ['    배송 → shipping_status', '    src/ship.mjs']);
+  assert.match(history.title, /^· \[이력 · \d+점\] /);
+  assert.deepEqual(history.body, [`    ⚠️ 함정: ${NOTE}`]);
+  // 함정이 없으면 제목 줄만
+  const [, research] = cardsOf('배송 알림 조사');
+  assert.match(research.title, /^· \[조사 · \d+점\] /);
+  assert.deepEqual(research.body, []);
+  // 정본 · 사전은 2위여도 전문
+  for (const [req, kind] of [['정본: 배송 알림 규칙', '절차'], ['용어 사전: 배송 알림', '사전']]) {
+    const [, full] = cardsOf(req, NOTE);
+    assert.match(full.title, new RegExp(`^· \\[${kind} · \\d+점\\] `));
+    assert.deepEqual(full.body, [`    ⚠️ 함정: ${NOTE}`, '    알림 → notify_rule', '    src/notify.mjs']);
+  }
+});
+
+test('⭐ 훅 1단 — 축약된 2위 카드는 용어가 12개이고 일부가 걸려도 제목 + 함정만이다(접은 키 줄도 없다)', () => {
+  const NOTE = '재시도는 3회까지다';
+  const first = { req: '배송 지연 화면 수정', terms: { 배송: 'shipping_status' }, files: ['src/ship.mjs'] };
+  // 12개 중 2개(배송상태 · 지연사유)가 질의에 걸린다
+  const terms = Object.fromEntries([['배송상태', 's'], ['지연사유', 'd'], ...Array.from({ length: 10 }, (_, i) => [`항목${i + 1}`, `v_${i + 1}`])]);
+  const out = hook(scene([first, { req: '배송 지연 알림 수정', terms, files: ['src/notify.mjs'], note: NOTE }]), '배송 지연');
+  const second = cardAt(out, 1);
+  assert.match(second.title, /^· \[이력 · \d+점\] /);
+  assert.deepEqual(second.body, [`    ⚠️ 함정: ${NOTE}`]);
+});
+
 test('graph-measure — 티켓 형식 [{title}] · [{subj}] · {tasks:[{subj}]} 를 받는다', () => {
   const s = scene([{ req: '적립금 잔액', terms: { 적립금: 'point_balance' } }]);
   for (const body of [[{ title: '적립금이 안 보여요' }], [{ subj: '적립금이 안 보여요' }], { tasks: [{ subj: '적립금이 안 보여요' }] }]) {

@@ -9,14 +9,15 @@ let raw = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (c) => { raw += c; });
 process.stdin.on('end', () => {
-  try { emit(JSON.parse(raw || '{}').prompt || ''); } catch { /* 실패는 조용히 통과 — 프롬프트를 막지 않는다 */ }
+  try { const out = render(JSON.parse(raw || '{}').prompt || ''); if (out) console.log(out); } catch { /* 실패는 조용히 통과 — 프롬프트를 막지 않는다 */ }
   process.exit(0);
 });
 
-function emit(prompt) {
+// 찍을 문장을 돌려준다 — 침묵이면 ''
+function render(prompt) {
   const ko = tokenizeKo(prompt);
   const ids = tokenizeIds(prompt);
-  if (!ko.size && !ids.length) return;
+  if (!ko.size && !ids.length) return '';
 
   // 대체된 기록 제외(두 단 모두) — 빼기 전 1단 확신 453건 중 대체 기록이 1위 97건 · 상위2 186건(41%), 뺀 뒤 0 · 자기검색 103/106 불변. 바꾸려면 다시 잰다
   const all = load();
@@ -30,7 +31,7 @@ function emit(prompt) {
   const top = hits[0];
   const idHit = top && ids.length > 0 && scoreDetail(top.r, ids).s > 0;
   const confident = top && (top.exact >= 1 || idHit || top.s >= 5);
-  if (!confident) { fallbackIndex(recs, hits, [...ko, ...ids]); return; }
+  if (!confident) return fallbackIndex(recs, hits, [...ko, ...ids]);
 
   // ⛔ 1단에도 탈출구를 둔다 — 「걸렸다」가 「답이다」는 아니다
   // 정본이 1위면 1장 — 절차 질의에서 정본 + 무관한 광역 카드로 7,128자가 나갔다. 바꾸려면 다시 잰다
@@ -39,31 +40,44 @@ function emit(prompt) {
     `⚠️ 아래는 과거 작업에서 실측한 것이다. 함정과 「용어 → 실체」 매핑 둘 다 근거로 쓴다 — 추측으로 대체하지 않는다.`,
     `⛔ 값이 「제거됨」·「바뀜」으로 시작하면 그게 답이다. 코드에 안 보인다고 「모름」이라 하지 않는다.`,
     `⭐ 다만 위 기록이 이 질문에 답하지 않으면 그렇다고 말하고 평소대로 코드를 탐색한다 — 걸린 것이 답이라는 뜻은 아니다.`];
-  for (const { r, s } of hits.slice(0, take)) {
-    out.push(`· [${kindOf(r)} · ${s}점] ${r.date} ${r.req}`);
+  // 2위 카드는 정본 · 사전만 전문 — 1위가 광역 사전이고 2위 정본이 실제 답인 경우가 1단의 12.9%(이슈 제목 실측)라 그 둘은 지키고, 작업 이력 · 조사는 제목 + 함정만
+  for (const [i, { r, s }] of hits.slice(0, take).entries()) {
+    const kind = kindOf(r);
+    out.push(`· [${kind} · ${s}점] ${r.date} ${r.req}`);
     // 함정을 맨 앞에 — 카드 끝에 두면 묻혀서 모델이 추측으로 답한다
     if (r.note) out.push(`    ⚠️ 함정: ${r.note}`);
-    const { hit, rest } = splitTerms(r, [...ko, ...ids]);
-    for (const [k, v] of hit) out.push(`    ${k} → ${v}`);
+    if (i > 0 && !['절차', '사전'].includes(kind)) continue;
+    const { hit, rest } = splitTerms(r, ko, ids);
+    for (const [k, v] of hit) out.push(`    ${k} → ${clip(v)}`);
     if (rest.length) out.push(`    … 이 질의와 안 걸린 항목 ${rest.length}개(키만): ${rest.map(([k]) => k).join(' · ')}`);
     for (const f of (r.files || []).slice(0, 6)) out.push(`    ${f}`);
   }
   out.push(...openWork(recs, [...ko, ...ids], hits.slice(0, take).map((h) => h.r)));
   out.push(`더 볼 것: node .harness/tools/graph-find.mjs <어근>  (어근은 짧게, 여러 개)`);
-  console.log(out.join('\n'));
+  return out.join('\n');
 }
 
-// 카드 안에서도 고른다 — 안 걸린 항목은 잘라내지 않고 키만 남긴다(거기 정답이 있을 수 있다). ⛔ 기록 선택에 되먹이지 않는다
-function splitTerms(rec, toks) {
+// 카드 용어는 채점 규칙 ③과 같다 — 한글 토큰은 키에만, 식별자는 값까지. 값까지 보면 2글자 어근이 광역 사전을 거의 다 펼쳤다(1단 바이트의 61%). 8줄 · 160자 — 바꾸려면 다시 잰다. ⛔ 기록 선택에 되먹이지 않는다
+const TERM_MAX = 8;
+const VALUE_MAX = 160;
+function splitTerms(rec, ko, ids) {
   const pairs = Object.entries(Array.isArray(rec.terms) ? {} : rec.terms || {});
-  const hit = [], rest = [];
-  for (const [k, v] of pairs) {
-    const nk = k.toLowerCase().replace(/\s+/g, '');
-    const text = (k + ' ' + v).toLowerCase();
-    const on = toks.some((t) => t.toLowerCase().replace(/\s+/g, '') === nk || text.includes(t.toLowerCase()));
-    (on ? hit : rest).push([k, v]);
+  const norm = (s) => s.toLowerCase().replace(/\s+/g, '');
+  const koToks = [...ko].map(norm), idToks = ids.map((t) => t.toLowerCase());
+  const exact = [], partial = [];
+  for (const p of pairs) {
+    const [k, v] = p, key = norm(k), text = `${k} ${v}`.toLowerCase();
+    if (koToks.includes(key) || idToks.includes(k.toLowerCase())) exact.push(p);
+    else if (koToks.some((t) => key.includes(t)) || idToks.some((t) => text.includes(t))) partial.push(p);
   }
-  return hit.length ? { hit, rest } : { hit: pairs, rest: [] };
+  // 키가 토큰과 정확히 같은 용어를 먼저 — 기록 순서로 뒤에 있어도 8줄 상한에 접히지 않는다. 하나도 안 걸리면 앞에서부터
+  const hits = [...exact, ...partial];
+  const hit = (hits.length ? hits : pairs).slice(0, TERM_MAX);
+  return { hit, rest: pairs.filter((p) => !hit.includes(p)) };
+}
+function clip(v) {
+  const s = String(v);
+  return s.length > VALUE_MAX ? `${s.slice(0, VALUE_MAX)} …(전문: graph-find)` : s;
 }
 
 // 종류는 제목에서 파생한다 — 표시 전용, 점수에 쓰지 않는다
@@ -96,28 +110,26 @@ function openWork(recs, toks, shown = []) {
   return out;
 }
 
-const INDEX_CAP = 150;   // 색인은 선형으로 자란다. 이 선을 넘으면 최근 것만 준다
 const BOOKKEEPING = /^TODO 갱신|^TODO:/;
 // 침묵 문턱 s ≤ 2 — 실제 입력 192건 중 침묵된 23건은 전부 진행 발화이거나 답이 없는 질의, 주입 5,823→4,526자(−22%) · 적중 137건 불변. 3 이면 답이 있는 질의가 침묵된다. 바꾸려면 다시 잰다
 const FALLBACK_MIN = 2;
+const CANDIDATES = 10;
+const INDEX_KEYS = 5;
 
-// 2단 — 제목 + 용어만의 압축 색인. 모델이 의미로 고른다(임베딩 대신). ⛔ 점수로 자르지 않는다 — 점수가 못 잡은 것이 존재 이유다
+// 2단 — 점수 상위 10건. 전체 색인(≤150건 · 약 24,000자 — 기록 수에 따라 커진다)은 질의마다 달라지는 정보가 없었고, 대조 실험에서 색인이 이긴 2건은 둘 다 점수가 있었다(2위 · 10위). 5건이면 10위가 빠진다. 바꾸려면 다시 잰다
 function fallbackIndex(recs, hits, toks) {
-  if (!hits.length || hits[0].s <= FALLBACK_MIN) return;
-  const use = recs.slice(-INDEX_CAP);
-  const lines = use.map((r) => {
+  if (!hits.length || hits[0].s <= FALLBACK_MIN) return '';
+  const lines = hits.slice(0, CANDIDATES).map(({ r }) => {
     const keys = Array.isArray(r.terms) ? r.terms : Object.keys(r.terms || {});
-    return `${r.date} ${r.req}${keys.length ? `  [용어: ${keys.join(', ')}]` : ''}`;
+    const shown = keys.slice(0, INDEX_KEYS).join(', ') + (keys.length > INDEX_KEYS ? ' …' : '');
+    return `${r.date} ${r.req}${keys.length ? `  [용어: ${shown}]` : ''}`;
   });
-  const head = hits.length
-    ? `[그래프 자동조회] 키워드로는 약하게만 걸렸다(최고 점수 ${hits[0].s}). 아래 색인에서 의미가 맞는 것을 직접 고른다.`
-    : `[그래프 자동조회] 키워드로는 못 찾았다. 아래 색인에서 의미가 맞는 것이 있는지 본다.`;
-  console.log([
-    head,
+  return [
+    `[그래프 자동조회] 키워드로는 약하게만 걸렸다(최고 점수 ${hits[0].s}). 아래 색인에서 의미가 맞는 것을 직접 고른다.`,
     `⛔ 억지로 고르지 않는다 — 관련 없으면 색인을 무시하고 평소대로 코드를 탐색한다.`,
     `⭐ 맞는 항목이 보이면 그 용어로 상세를 판다: node .harness/tools/graph-find.mjs <용어>`,
     `⭐ 사용자가 쓴 표현이 아래 용어에 없으면, 알아낸 뒤 그 표현을 용어 키로 기록한다: node .harness/tools/graph-alias.mjs <표현> "<실체>"`,
     ...openWork(recs, toks),
     ...lines,
-  ].join('\n'));
+  ].join('\n');
 }
