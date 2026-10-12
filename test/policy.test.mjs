@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -129,4 +129,77 @@ test('⛔ CLI: 대상 설정이 깨진 JSON 이면 덮어쓰지 않고 실패한
   assert.equal(r.status, 1);
   assert.match(r.stderr, /읽지 못했다/);
   assert.equal(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'), '{ 깨짐');
+});
+
+const OFF = 'superpowers@claude-plugins-official';
+const apply = (...args) => spawnSync(process.execPath, [APPLY, ...args], { encoding: 'utf8' });
+
+test('⭐ CLI --local --off: settings.local.json 에 그 플러그인을 false 로 두고, 다시 돌려도 파일이 같다', () => {
+  const dir = target(null);
+  const path = join(dir, '.claude', 'settings.local.json');
+  const r = apply(dir, '--local', '--off', OFF);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /끈 플러그인 \(.*settings\.local\.json\): superpowers@claude-plugins-official/);
+  const once = readFileSync(path, 'utf8');
+  const s = JSON.parse(once);
+  assert.equal(s.enabledPlugins[OFF], false);
+  assert.equal(s.enabledPlugins['ponytail@ponytail'], true);
+  assert.equal(apply(dir, '--local', '--off', OFF).status, 0);
+  assert.equal(readFileSync(path, 'utf8'), once);
+});
+
+test('⭐ CLI 공유 + --off: settings.json 은 정책대로 켜고, 끈 것은 settings.local.json 에만 — 그 파일의 기존 키를 보존한다', () => {
+  const dir = target(null, {
+    '.claude/settings.json': '{"team":1}',
+    '.claude/settings.local.json': '{"env":{"MINE":"1"},"enabledPlugins":{"mine@m":true}}',
+  });
+  const [shared, local] = ['settings.json', 'settings.local.json'].map((f) => join(dir, '.claude', f));
+  assert.equal(apply(dir, '--off', OFF).status, 0);
+  const once = [shared, local].map((p) => readFileSync(p, 'utf8'));
+  const s = JSON.parse(once[0]);
+  assert.equal(s.team, 1);
+  assert.equal(s.enabledPlugins[OFF], true);
+  assert.equal(s.enabledPlugins['ponytail@ponytail'], true);
+  assert.deepEqual(JSON.parse(once[1]), { env: { MINE: '1' }, enabledPlugins: { 'mine@m': true, [OFF]: false } });
+  assert.equal(apply(dir, '--off', OFF).status, 0);
+  assert.deepEqual([shared, local].map((p) => readFileSync(p, 'utf8')), once);
+});
+
+test('⛔ CLI --off 가 정책이 켜는 플러그인이 아니면 아무 파일도 쓰지 않고 실패한다 — 쓸 수 있는 id 를 알려 준다', () => {
+  const fresh = target(null);
+  const kept = target(null, { '.claude/settings.local.json': '{"a":1}' });
+  const ids = Object.keys(readJson(POLICY).enabledPlugins);
+  for (const [dir, args] of [
+    [fresh, ['--off', 'other@x']],
+    [fresh, ['--local', '--off', 'other@x']],
+    [fresh, ['--off']],
+    [kept, ['--off', OFF, '--off', 'other@x']], // 앞의 올바른 값도 쓰이지 않는다
+  ]) {
+    const r = apply(dir, ...args);
+    assert.equal(r.status, 1, args.join(' '));
+    assert.match(r.stderr, /--off/);
+    for (const id of ids) assert.ok(r.stderr.includes(id), `${args.join(' ')} → ${id}`);
+  }
+  assert.equal(existsSync(join(fresh, '.claude')), false);
+  assert.equal(readFileSync(join(kept, '.claude', 'settings.local.json'), 'utf8'), '{"a":1}');
+  assert.equal(existsSync(join(kept, '.claude', 'settings.json')), false);
+});
+
+test('⛔ CLI 공유 + --off 에서 settings.local.json 이 깨졌으면 settings.json 도 쓰지 않는다 — 읽기를 모두 끝낸 뒤 쓴다', () => {
+  const dir = target(null, { '.claude/settings.local.json': '{ 깨짐' });
+  const r = apply(dir, '--off', OFF);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /읽지 못했다/);
+  assert.equal(existsSync(join(dir, '.claude', 'settings.json')), false);
+  assert.equal(readFileSync(join(dir, '.claude', 'settings.local.json'), 'utf8'), '{ 깨짐');
+});
+
+test('⛔ CLI 는 모르는 -- 인자를 대상 폴더로 읽지 않는다 — --off=<id> 같은 등호 꼴은 아무것도 쓰지 않고 실패한다', () => {
+  const cwd = target(null);
+  for (const arg of [`--off=${OFF}`, '--with=graph-hook', '--nope']) {
+    const r = spawnSync(process.execPath, [APPLY, arg], { cwd, encoding: 'utf8' });
+    assert.equal(r.status, 1, arg);
+    assert.match(r.stderr, /옵션 값은 띄어 쓴다 \(예: --off <id>\)/, arg);
+  }
+  assert.deepEqual(readdirSync(cwd), []);
 });

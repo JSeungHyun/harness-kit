@@ -68,7 +68,7 @@
 - [x] SETUP ⑤ 표에 vitest 행 — 리포터는 명령에 붙인다
 - [x] SETUP ⑦ 커밋이 몇 개뿐인 기존 대상 — 커밋 소급을 건너뛰고 문서 원천으로
 - [ ] `check-install` 을 실제 대상에 쓰면 ⛔ 5행이 오탐이다 — 합성 대상 전용 기대(커밋된 AGENTS.md · 「옛 반올림 규칙」 기준선 · 인수인계 용어 5개 · 「기준선 실패 1」)가 무조건 걸린다. 자리표시 정규식이 지도에 쓴 경로 패턴(`features/<기능>` 꼴)도 잡는다. 공통 · 모드 행과 합성 전용 행을 가른다
-- [ ] 다른 마켓으로 켜진 플러그인의 정책 id 를 `false` 로 넣는 일이 `settings.local.json` 직접 편집이라 `policy-apply` 와 같이 Self-Modification 으로 막힌다 — 이번엔 사용자 `!` 줄에 node 한 줄을 붙였다. `policy-apply --off <id>` 같은 옵션이면 한 명령이 된다
+- [x] 다른 마켓으로 켜진 플러그인의 정책 id 를 `false` 로 넣는 일이 `settings.local.json` 직접 편집이라 `policy-apply` 와 같이 Self-Modification 으로 막힌다 — 이번엔 사용자 `!` 줄에 node 한 줄을 붙였다. `policy-apply --off <id>` 같은 옵션이면 한 명령이 된다 → 6차 ①
 - [ ] graph — 경로 · 식별자 안의 부분일치가 무관한 기록을 동점 1위로 올린다(파일명에 질의 어근이 들어간 경우). 채점 변경이라 그래프 운영 세션에 먼저 묻는다
 - [ ] ⚠️ 로컬 전용 설치는 `git worktree` 에 따라가지 않는다 — 설치 경로가 미추적(`.git/info/exclude`)이라 새 worktree 에는 규칙 · 도구 · 그래프 · `settings.local.json` 이 없고, 새 경로는 신뢰 전이라 훅도 무시된다(그래프 운영 세션 실측: `--settings '<JSON 문자열>'` 로만 떴다). superpowers 의 worktree 흐름에서 하네스 없이 일하게 된다 — SETUP ⑨ 「새로 생기는 제약」에 적을지, worktree 용 복사 안내를 둘지 정한다
 - [ ] graph — `--check` 「열린 작업 표식」이 끝난 기록의 조건문(「넓히면 … 고친다」 꼴)을 하다 만 일로 본다(경고 · exit 0). 같은 곳에 묻는다
@@ -79,6 +79,11 @@
 - [x] C 문서(f0bb0ce) — 이번 변경으로 낡는 것만: `graph-port.md`(2단 근거 · 카드 규칙 · 기각한 변형 · 측정 꼬리말 교훈) · `design.md` §5 · README §실측(「실제 프로젝트 값 없음」 정정)
 - 보류: `graph-measure --hook`(훅 재생으로 주입 크기를 재는 모드) — 지금 쓸 대상이 없다. 훅을 켠 프로젝트가 비용을 재야 할 때 만든다
 - 기각(같은 데이터): 확신 판정의 흔한 토큰 할인(실제 프롬프트에서 관련 기록 ~10건 손실) · 출현 빈도 자동 불용어(티켓 1단 510 → 375) · 불용어 누수 수정(자기검색 141 → 140 · 상위3 점유 32% → 35%)
+
+**6차 — 실전 적용 보고 (2026-10-10 · 기존 · 로컬 · JDK 8 · 테스트 없음 · 설치는 통과):**
+- [x] ① `policy-apply --off <정책 id>` — 다른 마켓 id 로 켜진 플러그인의 정책 id 를 `false` 로 넣는 직접 편집이 `policy-apply` 와 같이 Self-Modification 으로 막혀 사용자 `!` 줄에 node 한 줄을 더 붙여야 했다. 옵션이 그 쓰기를 한 명령에 담는다 — 모드와 무관하게 늘 `settings.local.json` · 정책 id 가 아니면 아무것도 쓰지 않고 exit 1. 기각: `claude plugin list --json` 자동 감지(실측 4.9초 · CLI 와 JSON 형식에 의존 · 테스트 우회 장치 필요) — 실패는 판단이 아니라 막힌 쓰기였다
+- [x] ② `detect` — 미커밋 변경은 로컬 전용에서 ⛔ 멈춤이 아니라 `⚠️ 확인`(`suggest.warn`). 합성 저장소 5경우 실측: 로컬 전용은 미커밋 3줄(추적 수정 1 · 새 파일 2) 위에 설치해도 `git status` 3줄 → 3줄 · 내용 그대로, 단 작업 중 변경에 `CLAUDE.local.md` · `.claude/settings.local.json` 이 있으면 설치가 그 둘을 고치고 숨긴다(겹침 줄. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 변경이 `git status` 에 안 나와 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 한다) · 공유는 설치 파일 29~30개가 작업 중 변경과 같이 보여 한 커밋에 섞인다 → 멈춤이 맞다
+- 보류: MyBatis 「조건 약화 훅」(매퍼 문에서 동등 조건이 빠지면 같은 자바 메서드의 형제 문 중 그 컬럼을 계산에 쓰는 줄을 알린다)을 선택 모듈로 — 1년 재생(2026-10-12): 처음 만든 운영 대상은 매퍼 커밋 105건 → 발동 1회 4줄(전부 진짜) · 두 번째 MyBatis 대상은 14건 → 동등 조건 변경 12건 · 자바 형제 28개를 찾고도 발동 0회. 일반화는 작다(매퍼 = 위치 상수가 아니라 `<mapper namespace` 를 가진 추적 XML · 그 대상 전용 SQL 사본 안내는 없으면 뺀다 · 원 대상 재생 결과 같음). 다른 대상에서 진짜 발동이 나오면 넣는다
 
 처리하면 `SendMessage(to: "main")` 으로 짧게 보고한다.
 
@@ -102,7 +107,7 @@
 | 경로 | 출처 · 책임 |
 |---|---|
 | `lib/config.mjs` · `lib/evidence.mjs` · `lib/mdtable.mjs` | agent-harness 그대로 + 기준선·`output-match` |
-| `tools/verify.mjs` · `state-check` · `decision-check` · `lesson-append` · `lesson-promote` · `policy-apply` | agent-harness 그대로 + 기준선 · `--local` · `--with` |
+| `tools/verify.mjs` · `state-check` · `decision-check` · `lesson-append` · `lesson-promote` · `policy-apply` | agent-harness 그대로 + 기준선 · `--local` · `--with` · `--off` |
 | `tools/graph-{find,append,alias,hook,view,measure}.mjs` | context-graph 그대로 + 저장 경로만 |
 | `tools/detect.mjs` · `tools/install-mode.mjs` · `tools/scan-shared.mjs` · `templates/scan.json` | ⭐ 신규 |
 | `policy/settings.json` · `policy/graph-hook.json` | agent-harness 정책 + graph 도구 승인 · 훅 |
@@ -168,7 +173,7 @@
 `node tools/detect.mjs <대상> [--json]` — 설계서 §6 의 사실과 제안값. ⛔ 대상을 바꾸지 않는다 (읽기만).
 
 - 사실: git 저장소인가 · 미커밋 변경 · 커밋 수 · 추적 파일 수 · 추적 소스 파일 수(확장자 목록으로) · 지시 파일 각각의 존재·추적 여부·`@AGENTS.md` import 여부 · 다른 도구 규칙 · 테스트 단서 · 설치 경로(`.claude/rules/harness.md` · `.harness/harness.json` · `AGENTS.md` · `CLAUDE.md`)가 `git check-ignore` 에 걸리는가 · 기존 `.harness/` · 기존 context-graph(`tools/graph/requests.jsonl`) · Node 버전
-- 제안: `profile` = 커밋 < 20 이고 소스 < 50 이면 `new`, 아니면 `existing` (이유를 함께). `mode` = 둘 다 `local` (공유는 사용자가 명시적으로 고른다 — 지시함). `stop` 사유(저장소 아님 · 미커밋 변경 · 이미 설치됨)
+- 제안: `profile` = 커밋 < 20 이고 소스 < 50 이면 `new`, 아니면 `existing` (이유를 함께). `mode` = 둘 다 `local` (공유는 사용자가 명시적으로 고른다 — 지시함). `stop` 사유(저장소 아님 · 이미 설치됨) · 미커밋 변경은 `warn` — 멈춤이 아니다(6차 ②)
 - 테스트는 합성 저장소로. ⛔ 이 PC 의 전역 gitignore 에 흔들리지 않게 — 자식 git 에 `GIT_CONFIG_GLOBAL` 을 임시 파일로 주어 「전역 무시 있음/없음」을 둘 다 만든다
 
 **완료 기준:** 신규·기존·이미 설치됨·저장소 아님·전역 무시 있음/없음 테스트 통과.

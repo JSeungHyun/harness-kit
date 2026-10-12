@@ -132,6 +132,8 @@ graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특
 
 함께 내는 사실: 지시 파일(`CLAUDE.md`·`.claude/CLAUDE.md`·`CLAUDE.local.md`·`AGENTS.md` — 추적 여부, `@AGENTS.md` import 여부), 다른 도구 규칙(`.cursor/rules`·`.github/copilot-instructions.md`), 테스트 단서(`package.json` test · `gradlew` · `pom.xml` · `pytest`), 설치 경로가 git 에 무시되는가, 기존 하네스(`.harness/`) · 기존 context-graph 설치(`tools/graph/requests.jsonl`).
 
+**미커밋 변경은 멈춤이 아니라 `warn` 이다** — 로컬 전용은 설치 경로가 git 에 안 보여 작업 중 변경과 섞이지 않는다(합성 저장소 실측: 추적 수정 1 · 새 파일 2 위에 설치해도 `git status` 3줄 → 3줄). 공유는 설치 파일 29~30개가 작업 중 변경과 한 커밋에 섞이므로 공유를 고르면 멈춘다. 예외: 작업 중 변경에 `CLAUDE.local.md` · `.claude/` 가 있으면 설치가 그 파일을 고치므로(맨 위 import 한 줄 · 설정 병합) 겹침 경고가 따로 붙고 내용을 먼저 확인한다. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 파일(`settings.local.json` 등)이 `git status` 에 안 나와 겹침 줄이 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 해서 위험은 낮다(추적 중인 `.claude/` 파일의 수정은 그래도 나온다).
+
 **모드** — `node .harness/tools/install-mode.mjs share|local`
 
 | | 공유 | 로컬 전용 |
@@ -143,6 +145,8 @@ graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특
 | 민감 정보 | ⛔ **커밋 전마다** `node .harness/tools/scan-shared.mjs` — 패턴은 `.harness/scan.json`(기본: 사번 형식 · 내부 도메인 · DB 접속(URI · CLI 인자) · 이슈 번호(`KEY-123` · `<도구> #123`) · 실명이 든 파일명(뒤에 버전 토큰 포함) · 하이픈 복합 번호(전화 · 계정 복합키, ISO 날짜 제외) · 자격증명 낱말 — 패턴마다 「놓치는 것」을 적는다). ⛔ **기본 패턴은 프로젝트 형식을 모른다** — 운영 세션 실측에서 기본 6종 중 4종이 실제 값을 못 잡았다(공개 TLD 사내 도메인 · CLI 형태 접속 · `<도구> #번호` · 이름 뒤 버전 토큰). 그래서 `"reviewed": false` 인 동안 scan-shared 가 「기본 패턴 그대로다」를 경고하고(exit 는 그대로), 설치 때 사용자와 사번 · 내부 호스트 · 이슈 형식을 맞춘다. `install-mode share` 가 pre-commit 훅으로 건다(이미 훅이 있거나, `core.hooksPath` 가 저장소 git 디렉터리 밖 — 전역 훅 폴더 · 추적되는 `.husky` — 이면 쓰지 않고 안내만. 전역 폴더에 쓰면 다른 모든 레포의 커밋이 실패한다 — 보안 검토) | — |
 
 공유를 고르는 것은 사용자다. SETUP 은 위험(기록에 쌓이는 사번·실명·이슈 번호·데이터 분포 수치)을 보여 주고 묻는다. 비대화형 실행이면 로컬 전용이다.
+
+**다른 마켓 id 로 켜진 같은 플러그인**은 설치하지 않고 `policy-apply --off <정책 id>` 로 끈다 — 모드와 무관하게 늘 `settings.local.json` 에 `false`(개인 선택이라 공유 설정에 넣지 않고, local 이 project 보다 우선). 값은 정책이 켜는 id 만 받고, 아니면 아무것도 쓰지 않는다. 직접 편집은 auto 모드 분류기가 Self-Modification 으로 막는다(실측) — 그래서 한 명령에 담았다.
 
 **지시 파일** — ⛔ 기존 내용을 고치거나 옮기지 않는다. 더하는 것은 import 한 줄뿐이고 사용자 승인을 받는다.
 

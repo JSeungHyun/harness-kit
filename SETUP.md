@@ -20,7 +20,8 @@ claude --version                       # 2.1.277 이상
 
 | `detect` 가 낸 것 | 행동 |
 |---|---|
-| `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 미커밋 변경 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 재설치인지 묻는다 — 덮어쓰지 않는다 |
+| `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 재설치인지 묻는다 — 덮어쓰지 않는다 |
+| `⚠️ 확인` 줄의 미커밋 변경 | 로컬 전용이면 진행하고 보고에 적는다 — 설치 전 `git status --porcelain` 출력을 적어 둔다(⑧-a 가 그것과 비교한다) · 공유를 고르면 ⛔ 멈춘다(설치 파일이 작업 중 변경과 한 커밋에 섞인다) · 겹침 줄(`설치가 고치고 git 에서 숨기는 경로에 …`)이 있으면 그 파일을 사용자에게 보여 주고 진행 여부를 묻는다. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 파일(`settings.local.json` 등)이 `git status` 에 안 나와 겹침 줄이 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 해서 위험은 낮다 |
 | `context-graph 있음` | 그 프로젝트의 그래프가 이미 있다 — ⛔ 데이터를 옮기지 않고 **graph 모듈을 설치하지 않는다**(②의 graph.md · ⑦의 그래프 단계 생략). 보고에 적는다 |
 
 **프로필과 모드를 사용자에게 한 번에 확인받는다** — `detect` 의 제안값과 그 이유(커밋 수 · 소스 수)를 보여준다.
@@ -112,21 +113,21 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 ### ⑥ 설정 · 플러그인 · 규칙 자리
 
 ```bash
-node .harness/tools/policy-apply.mjs              # 공유 → .claude/settings.json
-node .harness/tools/policy-apply.mjs --local      # 로컬 전용 → .claude/settings.local.json
-claude plugin list --json                         # 이 PC 의 플러그인 설치 기록 — {id, scope, enabled} 배열
+claude plugin list --json                                    # 먼저 — 이 PC 의 플러그인 설치 기록 {id, scope, enabled} 배열. 아래 표로 --off 를 붙일지 정한다
+node .harness/tools/policy-apply.mjs [--off <정책 id>]…          # 공유 → .claude/settings.json
+node .harness/tools/policy-apply.mjs --local [--off <정책 id>]…  # 로컬 전용 → .claude/settings.local.json
 ```
 
-권한 · `env.PONYTAIL_DEFAULT_MODE=off` · 플러그인 선언이 기존 설정 위에 병합된다(다시 돌려도 같다).
+권한 · `env.PONYTAIL_DEFAULT_MODE=off` · 플러그인 선언이 기존 설정 위에 병합된다(다시 돌려도 같다). `--off <정책 id>` 는 그 플러그인을 `.claude/settings.local.json` 의 `enabledPlugins` 에 `false` 로 둔다 — 모드와 무관하게 늘 그 파일(개인 선택이라 공유 설정에 넣지 않는다). 여러 번 줄 수 있고, 정책이 켜는 id 가 아니면 아무것도 쓰지 않고 멈춘다.
 
-⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local`(공유면 `--local` 없이)로 직접 돌리게 하고, 그 뒤 아래 플러그인 중복 처리와 ⑧-c · ⑧-d 를 잇는다. 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다 — 정책 없이는 ponytail 이 켜진 채다.
+⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local --off <정책 id>` 한 줄로 직접 돌리게 한다(공유면 `--local` 없이. `--off` 는 아래 표의 둘째 행이 있을 때만 붙인다 — 플러그인을 끄는 일까지 이 한 줄이 한다). 그 뒤 표의 나머지 행과 ⑧-c · ⑧-d 를 잇는다. 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다 — 정책 없이는 ponytail 이 켜진 채다.
 
 superpowers 와 ponytail 각각에 대해:
 
 | `list` 결과 | 행동 |
 |---|---|
 | 정책의 id (`superpowers@claude-plugins-official` · `ponytail@ponytail`) 가 `enabled` | 아무것도 하지 않는다 |
-| 같은 이름이 **다른 마켓 id** 로 `enabled` (예: `superpowers@superpowers-marketplace`) | 설치하지 않는다. `.claude/settings.local.json` 의 `enabledPlugins` 에 정책 id 를 `false` 로 넣는다 — local 이 project 보다 우선하고, `policy-apply` 를 다시 돌려도 `false` 는 남는다 |
+| 같은 이름이 **다른 마켓 id** 로 `enabled` (예: `superpowers@superpowers-marketplace`) | 설치하지 않는다. `policy-apply` 에 `--off <정책 id>` 를 붙인다 — 공유 모드에서도 `settings.local.json` 에 `false` 로 남고, 다시 돌려도 남는다 |
 | 없다 | 로컬 전용: `claude plugin install <정책 id> --scope local` — ponytail 은 먼저 `claude plugin marketplace add DietrichGebert/ponytail --scope local`. 공유: 같은 두 명령을 `--scope project` 로 — 로컬 전용에서 `project` 를 쓰면 커밋될 `.claude/settings.json` 이 생긴다 |
 
 규칙 파일의 자리를 실제 장부 경로로 바꾼다:
@@ -203,7 +204,7 @@ node .harness/tools/state-check.mjs
 node .harness/tools/graph-find.mjs --check; echo "exit=$?"     # ⛔ exit 0 (graph 모듈을 얹었으면)
 node .harness/tools/install-mode.mjs <local|share>             # 다시 돌려도 같다 — 모드대로인지 다시 확인
 node .harness/tools/scan-shared.mjs; echo "exit=$?"            # 공유 모드만 — ⛔ exit 0 (소급 기록에 민감 정보가 없는가)
-git status --porcelain                                          # 의도한 파일만 보이는가 (로컬 전용이면 거의 비어야 한다)
+git status --porcelain                                          # 의도한 파일만 보이는가 (로컬 전용이면 설치 전 출력과 같아야 한다 — 미커밋 변경 위에 설치했으면 ① 에서 적어 둔 그 줄들만)
 ```
 
 **⑧-b. 규칙이 새 세션에 로드되는가** — 도구를 끈 새 세션으로 양성 2 · 음성 1
@@ -225,7 +226,7 @@ claude -p --model haiku --tools "" --no-session-persistence --output-format stre
 **⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers · ponytail 인 `enabled` 항목의 **id** 가 각각 하나다.
 같은 id 가 여러 줄인 것은 정상이다 — 목록은 이 PC 의 모든 프로젝트 설치 기록을 보여준다.
 
-**⑧-e.** `git diff` 와 새로 생긴 파일 목록을 사용자에게 보여준다. 기존 설정·지시 파일 보존은 사용자만 판정한다.
+**⑧-e.** `git diff` 와 새로 생긴 파일 목록을 사용자에게 보여준다. 로컬 전용이면 `git diff` 에는 (미커밋 변경 위에 설치했다면) 작업 중 변경만 나오고 설치 파일은 안 나온다 — 설치 파일은 새로 생긴 파일 목록으로 보여준다. 기존 설정·지시 파일 보존은 사용자만 판정한다.
 
 ### ⑨ 보고 — 3단
 

@@ -70,9 +70,9 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 
 | | |
 |---|---|
-| 일시 | 2026-10-03 02:27 UTC |
+| 일시 | 2026-10-03 02:27 UTC (P9 「미커밋 변경 2건 위에 설치」 행은 2026-10-12 에 더했다) |
 | 환경 | win32 · Node v24.18.0 |
-| 예상과 다른 행 | 0개 / 29행 |
+| 예상과 다른 행 | 0개 / 30행 |
 
 | 실험 | 조건 | 관측 | 예상대로 |
 |---|---|---|---|
@@ -98,6 +98,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | P8 그래프 | 훅 — 하다 만 기록(⏸)이 순위 밖 | ⏸ 열린 작업 줄이 붙음 | ✅ |
 | P8 그래프 | --check (기록 4 · 경로 실재) | exit 0 | ✅ |
 | P9 설치 모드 | 로컬 · 같은 PC | install-mode local exit 0 · git 에 보이는 설치 파일 0개 | ✅ |
+| P9 설치 모드 | 로컬 · 미커밋 변경 2건 위에 설치 | git status 설치 전 2줄 → 뒤 2줄 (같음) · 작업 중 파일 2개 내용 그대로 | ✅ |
 | P9 설치 모드 | 공유(명시적 선택) · 모의 전역 무시가 .claude/ · AGENTS.md · CLAUDE.md 를 숨긴다 | 하네스 없이 git 에 보이는 지시·규칙 파일 0개 → install-mode share exit 0 · 5개 | ✅ |
 | P9 설치 모드 | 공유 · 사번 형식이 든 기록을 커밋 → 걷어내고 다시 커밋 | pre-commit 막음 ([사번 형식] AB******) → 통과 | ✅ |
 | P10 판별 | 커밋 1 · 소스 2 | new/local | ✅ |
@@ -112,7 +113,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 |---|---|
 | 일시 | 2026-10-02 12:14 UTC |
 | 환경 | win32 · Node v24.18.0 · Claude Code 2.1.287 |
-| 예상과 다른 행 | 0개 / 41행 (위 29행 + 아래 12행) |
+| 예상과 다른 행 | 0개 / 41행 (당시 결정론 29행 + 아래 12행 — 결정론은 이후 30행) |
 | 플러그인 기록 | 실측 전 · 후 같다 — 사용자 범위 4줄 |
 
 | 실험 | 조건 | 관측 | 예상대로 |
@@ -173,25 +174,27 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
   | `./fakew` | 실패 | 실패 |
 - 테스트와 결정론 실측은 자기가 만든 임시 폴더를 끝에 지운다 — `npm test` 11회 · `proof/run.mjs` 1회 전후로 `%TEMP%` 의 `harness-*` · `graph-*` · `gitcfg-*` · `hooks-*` · `proof-*` 개수가 같았다. `setup-e2e` 의 대상(`e2e-*`)은 들여다보라고 남긴다
 
-**실측 뒤에 바뀐 파일 — `setup-e2e` 는 다시 돌리지 않았다.** run4 이후 아래가 바뀌었다. 결정론 · 새 세션 실측(위 두 표)과 `npm test` 는 바뀐 뒤에 다시 돌린 값이고, SETUP 종단 실측은 바뀌기 전 값이다.
+**실측 뒤에 바뀐 파일 — `setup-e2e` 는 다시 돌리지 않았다.** run4 이후 아래가 바뀌었다. 결정론 실측(`node proof/run.mjs`)과 `npm test` 는 6차 변경 뒤에 다시 돌린 값이고, 새 세션 실측(`--claude`)은 6차 변경 전 값(6차는 `harness.md` 66행을 바꿨다), SETUP 종단 실측은 바뀌기 전 값이다.
 
 | 파일 | 무엇이 |
 |---|---|
-| `SETUP.md` | ③ 공유 모드 패턴 맞추기(`reviewed`) · `core.hooksPath` 가 git 디렉터리 밖이면 pre-commit 을 쓰지 않음 · ⑤ Windows 의 저장소 안 래퍼는 `.\gradlew` · `.\mvnw`(첫 실전 적용) · ⑥ 플러그인 설치 범위를 모드에 맞춤 · ⑦ 훅 조건 「상위3 점유 < 50%」 · ⑧-b 질문 |
+| `SETUP.md` | ③ 공유 모드 패턴 맞추기(`reviewed`) · `core.hooksPath` 가 git 디렉터리 밖이면 pre-commit 을 쓰지 않음 · ⑤ Windows 의 저장소 안 래퍼는 `.\gradlew` · `.\mvnw`(첫 실전 적용) · ⑥ 플러그인 설치 범위를 모드에 맞춤 · ⑦ 훅 조건 「상위3 점유 < 50%」 · ⑧-b 질문 · ① 미커밋 변경은 로컬 전용에서 멈춤이 아니라 `⚠️ 확인`(6차) · ⑥ 목록을 먼저 보고 다른 마켓 플러그인은 `policy-apply --off`(6차) · ⑧-a · ⑧-e 로컬 전용의 기대를 「설치 전 `git status` 와 같다 · `git diff` 에는 작업 중 변경만」으로(6차) |
+| `tools/policy-apply.mjs` | `--off <정책 id>` — 그 플러그인을 모드와 무관하게 `settings.local.json` 에 `false` 로(정책 id 가 아니면 쓰지 않고 exit 1) · 모르는 `--` 인자(`--off=<id>` 등호 꼴)는 대상 폴더로 읽지 않고 쓰지 않은 채 exit 1 |
+| `tools/detect.mjs` | 미커밋 변경은 `stop` 이 아니라 `warn`(`⚠️ 확인`) — `CLAUDE.local.md` · `.claude/` 와 겹치면 한 줄 더(한글 경로는 이스케이프 없이 — `core.quotepath=false`) |
 | `tools/install-mode.mjs` | ⛔ 보안 — 훅 자리가 저장소 git 디렉터리 밖(전역 `core.hooksPath` · 추적되는 `.husky`)이면 쓰지 않고 한 줄을 안내 |
 | `.gitignore` (이 레포) | `!templates/map/AGENTS.md` · `!templates/map/CLAUDE.md` — 전역 gitignore 가 그 이름을 무시하는 PC 에서 템플릿이 커밋에서 빠지던 것 |
 | `templates/rules/graph.md` | §1 새 원천 예외 · §4 제목(빈도순 · 피해는 ④) · ④ 새 원천도 단일 증거 · §8 훅 조건 |
-| `templates/rules/harness.md` | 플러그인 설치 범위 `--scope local`(공유는 `project`) |
+| `templates/rules/harness.md` | 플러그인 설치 범위 `--scope local`(공유는 `project`) · 다른 마켓 플러그인은 `policy-apply --local --off <id>` |
 | `templates/skills/final-gate/SKILL.md` | 기록 단계에 「기록의 두 장치」 — 남길 게 없으면 한 줄로 · 낡은 기록은 그 자리에서 고친다 |
 | `templates/scan.json` | 기본 7종(하이픈 복합 번호 추가 · DB 접속 CLI 인자 · `<낱말> #번호` · 이름 뒤 버전 토큰) · 패턴마다 `놓치는 것` · `reviewed: false` |
 | `policy/graph-hook.json` | `_note` 의 훅 조건 |
 | `tools/scan-shared.mjs` | `reviewed: false` 인 동안 「기본 패턴 그대로다」 경고 (exit 는 그대로) |
 | `tools/graph-measure.mjs` | 패턴마다 `상위3 점유 n%` |
 | `tools/graph-find.mjs` · `tools/graph-hook.mjs` | 실측 근거 주석 다섯 줄 (동작 변화 없음 — 주석을 걷은 코드가 같다) |
-| `proof/run.mjs` · `proof/setup-e2e.mjs` | 규칙 로드 질문 · 정리 범위(project + local) · 주석의 경로 예시 · 결정론 실측이 자기 임시 대상을 지움 |
+| `proof/run.mjs` · `proof/setup-e2e.mjs` | 규칙 로드 질문 · 정리 범위(project + local) · 주석의 경로 예시 · 결정론 실측이 자기 임시 대상을 지움 · (`run.mjs`) P9 로컬 · 미커밋 변경 위에 설치 행(git status 같음 + 작업 중 파일 내용 그대로) — `install` 이 장부 위치를 인자로 받는다 |
 | `test/scene.mjs` · `test/*.test.mjs` | 공용 `tmp()` — 그 테스트 파일이 끝나면 임시 폴더를 지운다 · 위 변경의 테스트 |
 | `package.json` | `--test-concurrency=4` — 기본 병렬에서 `spawn EPERM` 불안정 |
-| `docs/plan.md` · `README.md` | 기록 |
+| `docs/design.md` · `docs/plan.md` · `README.md` | 기록 |
 
 ### 운영 데이터 — graph 모듈 (2026-10-07)
 

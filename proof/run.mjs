@@ -19,6 +19,7 @@ const LONG_TMP = realpathSync.native(tmpdir());
 const SHORT_TMP = tmpdir() !== LONG_TMP ? tmpdir() : null;
 const WITH_CLAUDE = process.argv.includes('--claude');
 const STATE = { decisions: 'docs/harness/decisions.md', lessons: 'docs/harness/lessons.md' };
+const LOCAL_STATE = { decisions: '.harness/state/decisions.md', lessons: '.harness/state/lessons.md' };
 const BUILD = [{ id: '빌드', cmd: 'node -e "0"', kind: 'exit-code' }];
 const rows = [];
 const row = (exp, condition, observed, expected) => rows.push({ exp, condition, observed, expected });
@@ -50,23 +51,23 @@ function plugins(dir) {
   return JSON.parse(out.slice(out.indexOf('['), out.lastIndexOf(']') + 1));
 }
 
-// SETUP ②~⑥ 과 같은 배치. rulesAt 으로 규칙 위치를 바꿔 지시 파일 방식과 견준다
-function install(dir, checks, rulesAt = '.claude/rules') {
+// SETUP ②~⑥ 과 같은 배치. rulesAt 으로 규칙 위치를 바꿔 지시 파일 방식과 견주고, state 로 장부 위치(공유 docs/harness · 로컬 .harness/state)를 고른다
+function install(dir, checks, rulesAt = '.claude/rules', state = STATE) {
   if (!existsSync(join(dir, '.git'))) sh('git init -q', dir);
   mkdirSync(join(dir, '.harness', 'graph'), { recursive: true });
   for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
   cpSync(join(KIT, 'templates', 'skills', 'final-gate'), join(dir, '.claude', 'skills', 'final-gate'), { recursive: true });
-  for (const f of ['decisions.md', 'lessons.md']) put(dir, `docs/harness/${f}`, readFileSync(join(KIT, 'templates', 'state', f), 'utf8'));
+  for (const f of ['decisions', 'lessons']) put(dir, state[f], readFileSync(join(KIT, 'templates', 'state', `${f}.md`), 'utf8'));
   const harness = readFileSync(join(KIT, 'templates', 'rules', 'harness.md'), 'utf8')
-    .replaceAll('<decisions>', STATE.decisions)
-    .replaceAll('<lessons>', STATE.lessons);
+    .replaceAll('<decisions>', state.decisions)
+    .replaceAll('<lessons>', state.lessons);
   const graph = readFileSync(join(KIT, 'templates', 'rules', 'graph.md'), 'utf8');
   if (rulesAt === 'AGENTS.md') put(dir, 'AGENTS.md', `# 에이전트 지시\n\n${harness}\n${graph}`);
   else {
     put(dir, '.claude/rules/harness.md', harness);
     put(dir, '.claude/rules/graph.md', graph);
   }
-  put(dir, '.harness/harness.json', { state: STATE, checks });
+  put(dir, '.harness/harness.json', { state, checks });
   return dir;
 }
 
@@ -287,6 +288,27 @@ function p9() {
     } else {
       const left = seen(/\.harness\/|\.claude\//);
       row('P9 설치 모드', '로컬 · 같은 PC', `install-mode local exit ${r.code} · git 에 보이는 설치 파일 ${left}개`, r.code === 0 && left === 0);
+
+      // 작업 중 변경(추적 파일 수정 1 · 새 파일 1) 위에 설치 — 설치 경로가 git 에 안 보여 섞이지 않는다. 전역 무시 없이(exclude 만으로)
+      const wenv = hermeticGit();
+      const wip = scratch('mode-wip');
+      put(wip, 'src/a.mjs', 'export const a = 1;\n');
+      sh('git init -q && git add -A && git commit -q -m init', wip, '', wenv);
+      put(wip, 'src/a.mjs', 'export const a = 2; // 작업 중\n');
+      put(wip, 'src/b.mjs', 'export const b = 1;\n');
+      const porcelain = () => sh('git status --porcelain --untracked-files=all', wip, '', wenv).out.split(/\r?\n/).filter(Boolean);
+      // 추적 파일에 설치가 내용을 덧붙여도 status 줄은 같다 — 줄만이 아니라 내용도 본다
+      const work = () => ['src/a.mjs', 'src/b.mjs'].map((f) => readFileSync(join(wip, f), 'utf8')).join('\0');
+      const before = porcelain();
+      const mine = work();
+      install(wip, BUILD, '.claude/rules', LOCAL_STATE);
+      sh(`${tool('install-mode')} local`, wip, '', wenv);
+      sh(`${tool('policy-apply')} --local`, wip, '', wenv);
+      const after = porcelain();
+      const same = before.join('\n') === after.join('\n');
+      const intact = work() === mine;
+      row('P9 설치 모드', '로컬 · 미커밋 변경 2건 위에 설치',
+        `git status 설치 전 ${before.length}줄 → 뒤 ${after.length}줄 (${same ? '같음' : '다름'}) · 작업 중 파일 2개 ${intact ? '내용 그대로' : '내용 바뀜'}`, same && intact && before.length === 2);
     }
   }
 }
