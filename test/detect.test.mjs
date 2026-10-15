@@ -46,6 +46,17 @@ test('⭐ 기존 — 소스 60 · AGENTS.md 추적 · CLAUDE.md 가 import 함 �
   assert.deepEqual(f.tests, ['pom.xml']);
 });
 
+test('⭐ 테스트 단서는 하위 폴더 한 단계까지 본다 — backend/ · frontend/ 로 나눈 저장소 (실전 적용: 루트만 봐서 frontend 를 놓쳤다)', () => {
+  const f = detect(gitRepo({
+    'README.md': '# 모노레포\n',
+    'backend/gradlew': '#!/bin/sh\n',
+    'frontend/package.json': '{"scripts":{"typecheck":"tsc -b","storybook":"storybook dev"}}',
+    'node_modules/package.json': '{"scripts":{"test":"x"}}',
+    '.storybook/package.json': '{"scripts":{"test":"x"}}',
+  }));
+  assert.deepEqual(f.tests, ['backend/gradlew', 'frontend/package.json typecheck: tsc -b']);
+});
+
 test('⛔ 멈춤 — 미커밋 변경 · 이미 설치됨 · 기존 context-graph 감지', () => {
   const repo = gitRepo({ 'a.txt': 'x', '.harness/harness.json': '{}', 'tools/graph/requests.jsonl': '{}\n' });
   const clean = detect(repo);

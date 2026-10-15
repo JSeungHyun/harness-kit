@@ -6,6 +6,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { cli } from '../lib/config.mjs';
 
@@ -15,6 +16,21 @@ const MAPS = ['env', 'enabledPlugins', 'extraKnownMarketplaces'];
 const PERMS = ['allow', 'deny', 'ask'];
 
 const commands = (groups = []) => groups.flatMap((g) => (g.hooks ?? []).map((h) => h.command));
+
+// 같은 일을 하는 사용자 스킬이 이 PC 에 있으면 플러그인을 선언하지 않는다 — 로컬 전용만. 공유 설정은 스킬이 없을 수 있는 팀원 PC 를 위한 것이다
+const SKILL_INSTEAD = { 'ponytail@ponytail': { skill: 'ponytail-review', marketplace: 'ponytail' } };
+const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+
+export function skipSkillPlugins(policy, configDir, notes = []) {
+  const out = structuredClone(policy);
+  for (const [id, { skill, marketplace }] of Object.entries(SKILL_INSTEAD)) {
+    if (!(id in (out.enabledPlugins ?? {})) || !existsSync(join(configDir, 'skills', skill, 'SKILL.md'))) continue;
+    delete out.enabledPlugins[id];
+    if (out.extraKnownMarketplaces) delete out.extraKnownMarketplaces[marketplace];
+    notes.push(`${id.split('@')[0]}: 사용자 스킬 ${skill} 가 있어 플러그인을 선언하지 않는다 — /${skill} 로 부른다`);
+  }
+  return out;
+}
 
 export function mergeSettings(settings, policy) {
   const out = { ...settings };
@@ -65,11 +81,12 @@ cli(import.meta.url, () => {
   const local = rest.includes('--local');
   const path = settingsPath(rest.find((a) => a !== '--local') ?? process.cwd(), local);
   let merged = readJson(path);
+  const notes = [];
   for (const p of [POLICY, ...extra.map(policyFile)]) {
     if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
-    merged = mergeSettings(merged, readJson(p));
+    merged = mergeSettings(merged, local ? skipSkillPlugins(readJson(p), claudeDir(), notes) : readJson(p));
   }
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(merged, null, 2)}\n`);
-  console.log(`반영: ${path}\n⛔ git diff 로 의도한 것만 바뀌었는지 직접 확인한다`);
+  console.log([`반영: ${path}`, ...notes, '⛔ git diff 로 의도한 것만 바뀌었는지 직접 확인한다'].join('\n'));
 });

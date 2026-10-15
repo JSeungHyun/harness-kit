@@ -2,7 +2,7 @@
 // 설치 전 판별 — 대상의 사실을 모으고 프로필(신규/기존)·모드(공유/로컬)를 제안한다. ⛔ 대상을 바꾸지 않는다(읽기만). 설계안.
 //   node <kit>/tools/detect.mjs <대상> [--json]
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { cli } from '../lib/config.mjs';
 
@@ -21,16 +21,26 @@ function git(dir, ...args) {
 }
 const lines = (s) => s.split(/\r?\n/).filter(Boolean);
 
+// 루트와 하위 폴더 한 단계 — backend/ · frontend/ 로 나눈 저장소는 루트에 단서가 없다. typecheck 는 테스트 러너가 생기기 전의 exit-code 검사 후보다
 function testHints(dir) {
-  const has = (f) => existsSync(join(dir, f));
-  const read = (f) => (has(f) ? readFileSync(join(dir, f), 'utf8') : '');
+  const subs = readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+    .map((e) => e.name)
+    .sort();
+  return ['', ...subs].flatMap((sub) => hintsIn(dir, sub));
+}
+
+function hintsIn(dir, sub) {
+  const rel = (f) => (sub ? `${sub}/${f}` : f);
+  const has = (f) => existsSync(join(dir, sub, f));
+  const read = (f) => (has(f) ? readFileSync(join(dir, sub, f), 'utf8') : '');
   const hints = [];
   try {
-    const t = JSON.parse(read('package.json') || '{}').scripts?.test;
-    if (t) hints.push(`package.json test: ${t}`);
-  } catch { hints.push('package.json (읽지 못함)'); }
-  for (const f of ['gradlew', 'pom.xml']) if (has(f)) hints.push(f);
-  if (has('pytest.ini') || has('conftest.py') || /\[tool\.pytest/.test(read('pyproject.toml'))) hints.push('pytest');
+    const scripts = JSON.parse(read('package.json') || '{}').scripts ?? {};
+    for (const s of ['test', 'typecheck']) if (scripts[s]) hints.push(`${rel('package.json')} ${s}: ${scripts[s]}`);
+  } catch { hints.push(`${rel('package.json')} (읽지 못함)`); }
+  for (const f of ['gradlew', 'pom.xml']) if (has(f)) hints.push(rel(f));
+  if (has('pytest.ini') || has('conftest.py') || /\[tool\.pytest/.test(read('pyproject.toml'))) hints.push(rel('pytest'));
   return hints;
 }
 

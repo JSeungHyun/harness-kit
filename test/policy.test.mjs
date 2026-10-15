@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { mergeSettings, POLICY, readJson } from '../tools/policy-apply.mjs';
-import { target } from './scene.mjs';
+import { target, tmp, put } from './scene.mjs';
 
 const APPLY = fileURLToPath(new URL('../tools/policy-apply.mjs', import.meta.url));
 const P = {
@@ -121,6 +121,40 @@ test('⭐ CLI: 기존 설정을 보존하며 반영하고, 다시 돌려도 같�
   assert.equal(s.env.PONYTAIL_DEFAULT_MODE, 'off');
   assert.equal(spawnSync(process.execPath, [APPLY, dir]).status, 0);
   assert.equal(readFileSync(path, 'utf8'), once);
+});
+
+// 사용자 스킬 ponytail-review 만 둔 PC (훅 없이 리뷰만) — 플러그인 선언을 넣으면 SETUP 마다 「설치할까요」가 나온다 (실전 적용)
+const configDir = (withSkill) => {
+  const dir = tmp('claudecfg-');
+  if (withSkill) put(dir, 'skills/ponytail-review/SKILL.md', '---\nname: ponytail-review\n---\n');
+  return dir;
+};
+const applyWith = (dir, cfg, ...args) => spawnSync(process.execPath, [APPLY, dir, ...args], { env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }, encoding: 'utf8' });
+
+test('⭐ CLI --local: 사용자 스킬 ponytail-review 가 있으면 ponytail 플러그인·마켓을 선언하지 않는다 — 모드는 그대로 끈다', () => {
+  const dir = target(null);
+  const r = applyWith(dir, configDir(true), '--local');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /ponytail: 사용자 스킬 ponytail-review/);
+  const s = readJson(join(dir, '.claude', 'settings.local.json'));
+  assert.equal('ponytail@ponytail' in s.enabledPlugins, false);
+  assert.equal('ponytail' in (s.extraKnownMarketplaces ?? {}), false);
+  assert.equal(s.enabledPlugins['superpowers@claude-plugins-official'], true);
+  assert.equal(s.env.PONYTAIL_DEFAULT_MODE, 'off');
+});
+
+test('CLI --local: 사용자 스킬이 없으면 ponytail 플러그인을 선언한다', () => {
+  const dir = target(null);
+  assert.equal(applyWith(dir, configDir(false), '--local').status, 0);
+  assert.equal(readJson(join(dir, '.claude', 'settings.local.json')).enabledPlugins['ponytail@ponytail'], true);
+});
+
+test('⛔ CLI 공유: 이 PC 에 사용자 스킬이 있어도 팀 설정의 선언은 둔다 — 팀원 PC 에는 스킬이 없을 수 있다', () => {
+  const dir = target(null);
+  assert.equal(applyWith(dir, configDir(true)).status, 0);
+  const s = readJson(join(dir, '.claude', 'settings.json'));
+  assert.equal(s.enabledPlugins['ponytail@ponytail'], true);
+  assert.equal(s.extraKnownMarketplaces.ponytail.source.repo, 'DietrichGebert/ponytail');
 });
 
 test('⛔ CLI: 대상 설정이 깨진 JSON 이면 덮어쓰지 않고 실패한다', () => {

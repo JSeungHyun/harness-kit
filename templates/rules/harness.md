@@ -2,6 +2,8 @@
 
 > 상태: **설계안** · harness-kit 이 설치했다. 도구는 `.harness/tools/`, 설정은 `.harness/harness.json`
 
+⭐ **코드를 바꾼 작업은 완료를 주장하기 전에 `node .harness/tools/verify.mjs`** — 보고 직전에는 `final-gate`. 작업 종류별 증거는 아래 「완료는 증거로 주장한다」
+
 ## 흐름 — superpowers 가 베이스, 계획 문서는 인계·다세션일 때만
 
 | 작업 | 계획 문서 |
@@ -63,5 +65,6 @@ claude plugin marketplace add DietrichGebert/ponytail --scope local
 claude plugin install ponytail@ponytail --scope local
 ```
 
+ponytail 은 사용자 스킬 `ponytail-review` 가 있으면 설치하지 않는다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다.
 다른 마켓의 같은 플러그인을 이미 쓰고 있으면 설치하지 말고 `.claude/settings.local.json` 의 `enabledPlugins` 에서 위 id 를 `false` 로 끈다.
 ponytail 모드는 꺼져 있다(`PONYTAIL_DEFAULT_MODE=off`) — 코드를 바꾼 보고 직전 `final-gate` 에서 `/ponytail-review` 로만 부른다.

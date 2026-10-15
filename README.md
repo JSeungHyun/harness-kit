@@ -31,7 +31,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 |---|---|---|
 | 지시 파일 | 없으면 지도 골격을 만든다 — 공유면 `AGENTS.md` + `CLAUDE.md`(`@AGENTS.md`), 로컬이면 `CLAUDE.local.md` | ⛔ 내용을 고치지 않는다 — 필요하면 import 한 줄 |
 | 소급 | 없음 — 스펙 용어를 「설계 용어」로 시드 | 이슈 > 인수인계 문서 > 담당자 > 커밋 이력 순으로 lessons 2~3 · 그래프 3~5 |
-| 테스트 | 첫 테스트 전 verify 실패(테스트 0개)가 정상 | 원래 있던 실패는 사용자 확인 뒤 기준선 (`verify --baseline`) |
+| 테스트 | junit 검사가 있으면 첫 테스트 전 verify 실패(테스트 0개)가 정상 · 러너 전이면 타입 검사 같은 exit-code 검사로 시작 | 원래 있던 실패는 사용자 확인 뒤 기준선 (`verify --baseline`) |
 
 설치 모드는 **둘 다 로컬 전용이 기본**이다(`.git/info/exclude` · `settings.local.json`). **팀 공유는 사용자가 명시적으로 고른다** — 기록에는 사번 · 실명 · 이슈 번호 · 내부 URL 이 쌓이기 때문이다. 공유를 고르면 `.gitignore` 부정 규칙으로 이 PC 의 전역 무시(`.claude/` · `AGENTS.md` · `CLAUDE.md`)를 이기고, `pre-commit` 이 커밋 전마다 `scan-shared` 로 민감 정보 패턴(`.harness/scan.json`)을 검사한다.
 
@@ -171,6 +171,14 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
   | `fakew` | 실패 | 실행 |
   | `.\fakew` | 실행 | 실행 |
   | `./fakew` | 실패 | 실패 |
+- **둘째 실전 적용(신규 · macOS · `frontend/` 만 있는 React + Storybook · 다른 세션에 맡긴 SETUP, 2026-10-15)에서** 키트를 8곳 고쳤다
+  - 신규 시드가 「용어마다 `graph-alias`」라, 설계 문서에서 용어 30개를 뽑자 `graph.md` 의 기록 단위와 엇갈렸다 → 여럿이면 `graph-append` 주제 기록 (SETUP ⑦)
+  - 테스트 러너 전(타입 검사뿐)의 verify 기대값이 없었다 → ⑤ 「테스트 러너가 아직 없다」 행 · ⑦ · ⑧-a
+  - `detect` 가 루트만 봐서 `frontend/package.json` 을 놓쳤다 → 하위 폴더 한 단계 · `typecheck` 스크립트도 단서로
+  - ponytail 을 사용자 스킬(리뷰만, 훅 없이)로 둔 PC 에서 SETUP 마다 「설치할까요」가 나왔다 → `policy-apply --local` 이 선언하지 않는다 · ⑥ 표 · 규칙 템플릿
+  - 맡긴 SETUP 은 `policy-apply` 를 돌릴 수 없다(받는 세션은 다른 세션의 요청으로 자기 권한 설정을 바꾸지 않는다). 지시서에 전제 상태가 없어 이미 진행된 대상과도 어긋났다 → 「다른 세션에 맡길 때」 절
+  - ⑧-b 양성이 3회 중 1회 「모름」 → 규칙 템플릿 맨 위에 완료 명령 한 줄 · 3회 중 2회 판정
+  - 장부 템플릿의 갱신일 자리표시가 `decision-check` 의 「갱신 후 ?일」로 나왔다 → ② 에서 설치일로 채운다
 - 테스트와 결정론 실측은 자기가 만든 임시 폴더를 끝에 지운다 — `npm test` 11회 · `proof/run.mjs` 1회 전후로 `%TEMP%` 의 `harness-*` · `graph-*` · `gitcfg-*` · `hooks-*` · `proof-*` 개수가 같았다. `setup-e2e` 의 대상(`e2e-*`)은 들여다보라고 남긴다
 
 **실측 뒤에 바뀐 파일 — `setup-e2e` 는 다시 돌리지 않았다.** run4 이후 아래가 바뀌었다. 결정론 · 새 세션 실측(위 두 표)과 `npm test` 는 바뀐 뒤에 다시 돌린 값이고, SETUP 종단 실측은 바뀌기 전 값이다.
