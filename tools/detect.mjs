@@ -12,14 +12,19 @@ const OTHER_RULES = ['.cursor/rules', '.cursorrules', '.github/copilot-instructi
 export const INSTALL_PROBES = ['.claude/rules/harness.md', '.harness/harness.json', 'AGENTS.md', 'CLAUDE.md'];
 const INSTALLED = ['.harness', '.claude/rules/harness.md', '.claude/skills/final-gate'];
 
+// quotepath=false — 한글 경로가 "\355…" 8진수 따옴표로 나오면 SOURCE 의 $ 앵커와 겹침 판정이 빗나간다. 모든 호출 공통
 function git(dir, ...args) {
   try {
-    return { ok: true, out: execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
+    return { ok: true, out: execFileSync('git', ['-C', dir, '-c', 'core.quotepath=false', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
   } catch (e) {
     return { ok: false, out: String(e.stdout ?? '') };
   }
 }
 const lines = (s) => s.split(/\r?\n/).filter(Boolean);
+// 포슬린 줄(`XY 경로` · 이름 바꾸기는 `옛 -> 새` · 공백이 든 경로는 따옴표)에서 경로만. 한글 경로의 8진수 이스케이프는 git() 의 core.quotepath=false 가 막는다
+const dirtyPaths = (dirty) => dirty.flatMap((l) => l.slice(3).split(' -> ')).map((p) => p.replace(/^"|"$/g, ''));
+// 로컬 전용 설치가 작업 중 변경과 겹치는 유일한 자리 — 설치가 고치고 git 에서 숨기는 경로
+const rewritten = (p) => p === 'CLAUDE.local.md' || p.startsWith('.claude/');
 
 // 루트와 하위 폴더 한 단계 — backend/ · frontend/ 로 나눈 저장소는 루트에 단서가 없다. typecheck 는 테스트 러너가 생기기 전의 exit-code 검사 후보다
 function testHints(dir) {
@@ -47,9 +52,14 @@ function hintsIn(dir, sub) {
 export function suggest(f) {
   const isNew = f.commits < 20 && f.sources < 50;
   const stop = [];
+  const warn = [];
   if (!f.git) stop.push('git 저장소가 아니다 — 설치 전후를 비교할 수 없다');
   else if (f.notRoot) stop.push('저장소 루트가 아니다 — 루트에서 설치한다');
-  if (f.dirty?.length) stop.push(`미커밋 변경 ${f.dirty.length}건 — 커밋하거나 치운 뒤 설치한다`);
+  if (f.dirty?.length) {
+    warn.push(`미커밋 변경 ${f.dirty.length}건 — 로컬 전용은 설치 경로가 git 에 안 보여 섞이지 않는다 · 공유를 고르면 ⛔ 커밋하거나 치운 뒤 설치한다`);
+    const hit = dirtyPaths(f.dirty).filter(rewritten);
+    if (hit.length) warn.push(`설치가 고치고 git 에서 숨기는 경로에 미커밋 변경: ${hit.join(', ')} — 내용을 먼저 확인한다`);
+  }
   if (f.installed) stop.push('이미 설치됨 (.harness/ · rules/harness.md · skills/final-gate 중 하나가 있다) — 재설치인지 사용자에게 묻는다');
   if (f.nodeMajor < 22) stop.push(`Node ${f.nodeMajor} — 22 이상이 필요하다`);
   return {
@@ -57,6 +67,7 @@ export function suggest(f) {
     why: isNew ? `커밋 ${f.commits} < 20 · 소스 ${f.sources} < 50` : `커밋 ${f.commits}${f.commits >= 20 ? ' ≥ 20' : ''} · 소스 ${f.sources}${f.sources >= 50 ? ' ≥ 50' : ''}`,
     mode: 'local', // 공유는 사용자가 명시적으로 고른다 — 기록에 사번·실명·이슈 번호가 쌓여 그대로 커밋된다
     stop,
+    warn,
   };
 }
 
@@ -105,6 +116,7 @@ function print(f) {
     `기존 설치       하네스 ${yes(f.installed, '있음', '없음')} · context-graph ${yes(f.contextGraph, '있음 (tools/graph/requests.jsonl) — 그래프 모듈은 설치하지 않는다', '없음')}`,
     `Node            ${f.node}`,
     `제안            프로필 ${f.suggest.profile} (${f.suggest.why}) · 모드 ${f.suggest.mode} (공유는 사용자가 고른다)`,
+    ...f.suggest.warn.map((s) => `⚠️ 확인         ${s}`),
     ...f.suggest.stop.map((s) => `⛔ 멈춤         ${s}`),
   ];
   console.log(out.join('\n'));

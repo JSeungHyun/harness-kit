@@ -114,6 +114,14 @@ test('⛔ 플러그인 설치 범위는 모드를 따른다 — 로컬 전용에
   }
 });
 
+test('⛔ 다른 마켓 id 의 플러그인은 policy-apply --off 로 끈다 — SETUP 은 목록을 먼저 본다(그래야 --off 를 붙인다)', () => {
+  const setup = repoFile('SETUP.md');
+  assert.ok(setup.indexOf('claude plugin list --json') < setup.indexOf('node .harness/tools/policy-apply.mjs'));
+  for (const [rel, s] of [['SETUP.md', setup], ['harness.md', repoFile('templates/rules/harness.md')]]) {
+    assert.match(s, /policy-apply\.mjs --local --off <(정책 )?id>/, rel);
+  }
+});
+
 test('⛔ 이 레포의 템플릿이 커밋에서 빠지지 않는다 — 전역 gitignore 가 AGENTS.md · CLAUDE.md 를 무시하는 PC 가 있다', () => {
   const kit = fileURLToPath(new URL('..', import.meta.url));
   const r = spawnSync('git', ['ls-files', '--others', '--ignored', '--exclude-standard', 'templates'], { cwd: kit, encoding: 'utf8' });

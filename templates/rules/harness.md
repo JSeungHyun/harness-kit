@@ -66,5 +66,5 @@ claude plugin install ponytail@ponytail --scope local
 ```
 
 ponytail 은 사용자 스킬 `ponytail-review` 가 있으면 설치하지 않는다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다.
-다른 마켓의 같은 플러그인을 이미 쓰고 있으면 설치하지 말고 `.claude/settings.local.json` 의 `enabledPlugins` 에서 위 id 를 `false` 로 끈다.
+다른 마켓의 같은 플러그인을 이미 쓰고 있으면 설치하지 말고 `node .harness/tools/policy-apply.mjs --local --off <id>` 로 끈다(`<id>` 는 위의 정책 id, 공유면 `--local` 없이 — `.claude/settings.local.json` 에 `false` 로 남는다).
 ponytail 모드는 꺼져 있다(`PONYTAIL_DEFAULT_MODE=off`) — 코드를 바꾼 보고 직전 `final-gate` 에서 `/ponytail-review` 로만 부른다.
