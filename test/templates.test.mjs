@@ -116,7 +116,7 @@ test('⛔ 이전은 정책 반영보다 먼저 — 거꾸로면 옛 id 는 꺼�
   const setup = repoFile('SETUP.md');
   assert.ok(setup.indexOf('tools/plugin-plan.mjs') < setup.indexOf('node .harness/tools/policy-apply.mjs'));
   for (const [rel, s] of [['SETUP.md', setup], ['harness.md', repoFile('templates/rules/harness.md')]]) {
-    assert.match(s, /policy-apply\.mjs --local --off <(정책 )?id>/, rel);
+    assert.match(s, /policy-apply\.mjs --local (--with gate-hook )?--off <(정책 )?id>/, rel);
   }
 });
 

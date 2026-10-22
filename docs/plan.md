@@ -92,7 +92,8 @@
 - [x] ② 관문 훅(`tools/gate-hook.mjs` · `policy/gate-hook.json`, SETUP ⑥ 기본) — 사용자 「final-gate 가 제일 우선」. verify 를 신호로 쓰고 이번 턴에 final-gate 가 없으면 한 번 되돌린다. 훅에서 verify 를 돌리는 원래 제안은 기각. 근거와 기각한 변형은 `design.md` §3 · `docs/proof.md` 관문 훅
 - [x] 갱신 — 사용자: 「다른 PC 에서도 이 키트를 쓴다」. `tools/upgrade.mjs` 를 만들고 SETUP 「갱신」 · README 「키트를 쓰는 PC 마다」를 더했다. 설치 3곳의 사본으로 사전 시험했다. 규칙은 3/3 이 키트 첫 커밋과 같아 갱신됐고, 출력된 정책 줄을 그대로 돌리자 옛 id 꺼짐 · `@harness-kit` 켜짐 · 관문 훅 추가 · 그래프 훅 보존이 나왔다. `policy-apply --off` 는 같은 플러그인의 다른 마켓 id 도 받는다(로컬 설치 기록이 없으면 uninstall 이 실패한다). 새 세션이 SETUP 「갱신」을 따르는 종단 실측은 하지 않았다
 - [x] PC 이전도 SETUP 안에서 — 사용자 「1 도 setup 에서 수행할 수 있도록」. `tools/plugin-plan.mjs` 가 그 PC 의 `claude plugin list --json` 을 읽어 이전 명령(마켓 추가 → 새 것 설치 → 옛 사용자 범위 제거)을 낸다. SETUP ⑥ · 갱신이 그것을 사용자에게 묻고 정책 반영 전에 실행한다. 사전 시험: 격리 설정에 옛 마켓 사용자 범위 설치를 만들고 출력 명령을 Git Bash 로 그대로 돌렸다 — `@harness-kit` 두 개만 실측 커밋으로 남았고, 다시 돌리면 「옮길 것 없다」. 경로는 슬래시로 낸다(Git Bash 가 백슬래시를 지운다)
-- ⏸ 키트 커밋 · push(사용자 확인 대기) → 이 PC 설치 3곳과 다른 PC 프로젝트에서 SETUP 「갱신」
+- [x] 다른 PC 의 둘째 실전 적용(원격 `ae12256` · `6451143`)과 합쳤다. 그쪽은 ponytail 을 사용자 스킬 `ponytail-review` 로 둔 PC 에서 플러그인을 선언하지 않게 했다. 이것을 키트 마켓 id(`ponytail@harness-kit`)로 옮기고, `plugin-plan` 도 그런 PC 에서는 ponytail 을 옮기지 않게 했다(`skillInstead` 공유). README 실측에 더한 줄은 `docs/proof.md` 로 옮겼다. 「다른 세션에 맡길 때」에 plugin-plan 이전 명령도 맡길 수 없다고 더했다. 사용자가 `!` 로 돌리는 대체 명령에 `--with gate-hook` 을 넣었다
+- ⏸ 커밋 · push(사용자) → 이 PC 설치 3곳과 다른 PC 프로젝트에서 SETUP 「갱신」
 - ⏸ 관문 훅 효과 — 실제 설치에서 다시 잰다(재생으로는 verify 턴 14개 중 11개에 울린다)
 - ⏸ `graph-append` 에 여러 줄 JSON 을 heredoc 으로 주면 「건너뜀」 경고가 4줄 나온다 — 합성 세션 3/3 에서 봤다. 기록은 들어갔다. 원인은 보지 않았다
 - 기각 ① graph 를 선택 모듈로 내리기 · 규칙 경량화 — 같은 세션 기록에서 가장 많이 쓰인 도구가 graph-find(122)다. 근거로 든 「매 턴 다시 읽는 지침」(대조 3)은 원천 프로젝트의 지침 전체라 키트 규칙 13KB 만의 값이 아니다. 실제로 뺄 대상이 나오면 SETUP ① context-graph 행의 생략 경로에 한 줄 더한다

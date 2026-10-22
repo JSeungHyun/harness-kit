@@ -118,6 +118,14 @@
   | `fakew` | 실패 | 실행 |
   | `.\fakew` | 실행 | 실행 |
   | `./fakew` | 실패 | 실패 |
+- **둘째 실전 적용(신규 · macOS · `frontend/` 만 있는 React + Storybook · 다른 세션에 맡긴 SETUP, 2026-10-15)에서** 키트를 8곳 고쳤다
+  - 신규 시드가 「용어마다 `graph-alias`」라, 설계 문서에서 용어 30개를 뽑자 `graph.md` 의 기록 단위와 엇갈렸다 → 여럿이면 `graph-append` 주제 기록 (SETUP ⑦)
+  - 테스트 러너 전(타입 검사뿐)의 verify 기대값이 없었다 → ⑤ 「테스트 러너가 아직 없다」 행 · ⑦ · ⑧-a
+  - `detect` 가 루트만 봐서 `frontend/package.json` 을 놓쳤다 → 하위 폴더 한 단계 · `typecheck` 스크립트도 단서로
+  - ponytail 을 사용자 스킬(리뷰만, 훅 없이)로 둔 PC 에서 SETUP 마다 「설치할까요」가 나왔다 → `policy-apply --local` 이 선언하지 않는다 · ⑥ 표 · 규칙 템플릿
+  - 맡긴 SETUP 은 `policy-apply` 를 돌릴 수 없다(받는 세션은 다른 세션의 요청으로 자기 권한 설정을 바꾸지 않는다). 지시서에 전제 상태가 없어 이미 진행된 대상과도 어긋났다 → 「다른 세션에 맡길 때」 절
+  - ⑧-b 양성이 3회 중 1회 「모름」 → 규칙 템플릿 맨 위에 완료 명령 한 줄 · 3회 중 2회 판정
+  - 장부 템플릿의 갱신일 자리표시가 `decision-check` 의 「갱신 후 ?일」로 나왔다 → ② 에서 설치일로 채운다
 - 테스트와 결정론 실측은 자기가 만든 임시 폴더를 끝에 지운다 — `npm test` 11회 · `proof/run.mjs` 1회 전후로 `%TEMP%` 의 `harness-*` · `graph-*` · `gitcfg-*` · `hooks-*` · `proof-*` 개수가 같았다. `setup-e2e` 의 대상(`e2e-*`)은 들여다보라고 남긴다
 
 **실측 뒤에 바뀐 파일 — `setup-e2e` 는 다시 돌리지 않았다.** run4 이후 아래가 바뀌었다. 결정론 실측(`node proof/run.mjs`)과 `npm test` 는 6차 변경 뒤에 다시 돌린 값이고, 새 세션 실측(`--claude`)은 6차 변경 전 값(6차는 `harness.md` 66행을 바꿨다), SETUP 종단 실측은 바뀌기 전 값이다.

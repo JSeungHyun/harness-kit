@@ -7,6 +7,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { cli } from '../lib/config.mjs';
 
@@ -16,6 +17,24 @@ const MAPS = ['env', 'enabledPlugins', 'extraKnownMarketplaces'];
 const PERMS = ['allow', 'deny', 'ask'];
 
 const commands = (groups = []) => groups.flatMap((g) => (g.hooks ?? []).map((h) => h.command));
+
+// 같은 일을 하는 사용자 스킬이 이 PC 에 있으면 플러그인을 선언하지 않는다 — 로컬 전용만. 공유 설정은 스킬이 없을 수 있는 팀원 PC 를 위한 것이다
+const SKILL_INSTEAD = { 'ponytail@harness-kit': 'ponytail-review' };
+export const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+// plugin-plan 도 이것으로 그 플러그인을 옮길 대상에서 뺀다
+export const skillInstead = (id, configDir = claudeDir()) =>
+  SKILL_INSTEAD[id] && existsSync(join(configDir, 'skills', SKILL_INSTEAD[id], 'SKILL.md')) ? SKILL_INSTEAD[id] : '';
+
+export function skipSkillPlugins(policy, configDir, notes = []) {
+  const out = structuredClone(policy);
+  for (const id of Object.keys(out.enabledPlugins ?? {})) {
+    const skill = skillInstead(id, configDir);
+    if (!skill) continue;
+    delete out.enabledPlugins[id];
+    notes.push(`${id.split('@')[0]}: 사용자 스킬 ${skill} 가 있어 플러그인을 선언하지 않는다 — /${skill} 로 부른다`);
+  }
+  return out;
+}
 
 export function mergeSettings(settings, policy) {
   const out = { ...settings };
@@ -82,9 +101,10 @@ cli(import.meta.url, () => {
   const path = settingsPath(root, local);
   const personal = settingsPath(root, true);
   let merged = readJson(path);
+  const notes = [];
   for (const p of [POLICY, ...extra.map(policyFile)]) {
     if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
-    merged = mergeSettings(merged, readJson(p));
+    merged = mergeSettings(merged, local ? skipSkillPlugins(readJson(p), claudeDir(), notes) : readJson(p));
   }
   // --local 이면 두 경로가 같아 한 번만 쓴다. 읽기는 모두 쓰기 앞에 — 어느 파일이 깨졌어도 반쯤 쓰지 않는다
   const out = new Map([[path, merged]]);
@@ -96,6 +116,6 @@ cli(import.meta.url, () => {
     mkdirSync(dirname(p), { recursive: true });
     writeFileSync(p, `${JSON.stringify(s, null, 2)}\n`);
   }
-  const offLine = off.size ? `\n끈 플러그인 (${personal}): ${[...off].join(', ')}` : '';
-  console.log(`반영: ${path}${offLine}\n⛔ git diff 로 의도한 것만 바뀌었는지 직접 확인한다`);
+  const offLine = off.size ? [`끈 플러그인 (${personal}): ${[...off].join(', ')}`] : [];
+  console.log([`반영: ${path}`, ...offLine, ...notes, '⛔ git diff 로 의도한 것만 바뀌었는지 직접 확인한다'].join('\n'));
 });

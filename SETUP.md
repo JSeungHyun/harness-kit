@@ -9,6 +9,14 @@
 얹는 것은 두 모듈이다 — **evidence**(완료를 증거로 · 묻지 않은 가정 · 반복 실패)와 **graph**(요구 → 용어·파일·함정).
 ⛔ **대상의 기존 파일을 옮기거나 덮어쓰지 않는다.** 규칙은 새 파일, 설정은 병합, 지시 파일에는 import 한 줄만.
 
+## 다른 세션에 맡길 때
+
+대상 폴더에서 연 다른 Claude 세션에 SETUP 을 메시지로 맡길 수 있다(실측 2026-10-15). 그때 더 지킬 것:
+
+- **맡기는 쪽은 전제 상태를 적는다** — 커밋 수 · 이미 있는 폴더 · 끝난 단계 · 사용자가 이미 정한 값(프로필 · 모드). 받는 쪽은 ①의 `detect` 결과가 전제와 다르면 멈추고 알린다 — 그 세션에서 받은 사용자 결정이 맡긴 지시보다 우선이다
+- ⛔ **⑥의 `plugin-plan` 이전 명령과 `policy-apply` 는 맡길 수 없다** — 받는 세션은 다른 세션의 요청으로 자기 권한 · 플러그인 설정을 바꾸지 않는다. 처음부터 사용자에게 이전 명령(나왔으면)과 ⑥ 의 `policy-apply` 한 줄(⑥ 표가 말하면 `--off <정책 id>` 도)을 이 순서로 `!` 로 돌려 달라고 부탁하고, ⑧-c · ⑧-d 는 그 뒤에 잰다
+- 받는 쪽은 ⑨ 보고를 사용자에게 보이고 맡긴 쪽에도 보낸다 — 「SETUP 을 따르다 막힌 곳」 절을 더한다
+
 ## ⛔ 절차 — 순서를 지킨다
 
 ### ① 안전 확인과 판별
@@ -50,6 +58,7 @@ cp <kit>/templates/state/lessons.md <대상>/<장부>/lessons.md
 cp <kit>/templates/scan.json <대상>/.harness/scan.json                   # 공유 모드만 — 민감 정보 패턴 (③에서 프로젝트에 맞춘다)
 ```
 
+복사한 `decisions.md` 의 갱신일 칸(`YYYY-MM-DD`)을 설치일로 바꾼다 — 자리표시 그대로면 `decision-check` 가 「갱신 후 ?일」을 낸다.
 대상에 이미 가정 장부 · 교훈 파일이 있으면 템플릿을 복사하지 않고 ⑤에서 그 경로를 적는다(⛔ 옮기지 않는다).
 파일 단위 분석 진행을 추적하는 일(레거시 이해 · 레퍼런스 대조)이면 `<kit>/templates/state/current.md` 도 복사하고 `state.current` 에 적는다.
 
@@ -101,6 +110,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | Maven | `mvn test` · 래퍼면 `./mvnw test` (Windows `cmd`: `.\mvnw test`) | `junit-xml` · `target/surefire-reports` |
 | pytest | `pytest --junitxml=test-results/junit.xml` | `junit-xml` · `test-results` |
 | 결과 XML 을 낼 수 없다 | 테스트 명령 | `exit-code` — ⚠️ 테스트 0개를 못 잡는다고 사용자에게 알린다 |
+| 테스트 러너가 아직 없다 (신규 · 골격 전) | 실제로 도는 검사만 — 타입 검사(`npm run typecheck` 등) · 아래 그래프 무결성 | `exit-code` — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
 | 그래프 무결성 (graph 모듈을 얹으면) | `node .harness/tools/graph-find.mjs --check` | `exit-code` |
@@ -109,6 +119,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 - ⚠️ Windows 의 Claude Code 는 `NoDefaultCurrentDirectoryInExePath=1` 을 걸어 `cmd` 가 현재 폴더의 실행 파일을 찾지 않는다 — `gradlew` · `gradlew.bat` 은 「내부 또는 외부 명령이 아닙니다」, `.\gradlew` 만 돈다(실측, `./gradlew` 는 `cmd` 에서 늘 실패). 저장소 안 래퍼만 `.\` 를 붙인다 — PATH 의 `mvn` · `npx` 는 상관없다. 모노레포 예: `cd backend && .\gradlew cleanTest test`
 - 명령은 플랫폼 기본 셸(`sh` / Windows `cmd`)로 돈다. 팀이 OS 를 섞어 쓰면 양쪽에서 같은 명령(`npm test` 등)을 고른다
 - 지시 파일 · README 에 빌드·테스트 명령이 적혀 있으면 그것을 쓴다
+- 후보는 `detect` 의 「테스트 단서」 줄이다 — 루트와 하위 폴더 한 단계(`backend/` · `frontend/` 등)의 `package.json` `test` · `typecheck`, `gradlew` · `pom.xml` · pytest
 
 ### ⑥ 설정 · 플러그인 · 규칙 자리
 
@@ -120,7 +131,7 @@ node .harness/tools/policy-apply.mjs --local --with gate-hook [--off <정책 id>
 
 권한 · `env.PONYTAIL_DEFAULT_MODE=off` · 플러그인 선언 · 관문 훅이 기존 설정 위에 병합된다(다시 돌려도 같다). 관문 훅(`gate-hook`, Stop)은 이번 턴에 verify 를 돌리고 final-gate 를 거치지 않은 채 멈추면 한 번 되돌려 보낸다 — 실제 세션에서 모델은 verify 를 바로 돌리고 스킬을 건너뛰었다(코드 변경 뒤 0/7). `--off <정책 id>` 는 그 플러그인을 `.claude/settings.local.json` 의 `enabledPlugins` 에 `false` 로 둔다 — 모드와 무관하게 늘 그 파일(개인 선택이라 공유 설정에 넣지 않는다). 여러 번 줄 수 있고, 정책이 켜는 id 가 아니면 아무것도 쓰지 않고 멈춘다.
 
-⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local --off <정책 id>` 한 줄로 직접 돌리게 한다(공유면 `--local` 없이. `--off` 는 아래 표에서 이전을 거절했을 때만 붙인다 — 플러그인을 끄는 일까지 이 한 줄이 한다). 그 뒤 ⑧-c · ⑧-d 를 잇는다. 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다 — 정책 없이는 ponytail 이 켜진 채다.
+⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local --with gate-hook --off <정책 id>` 한 줄로 직접 돌리게 한다(공유면 `--local` 없이. `--off` 는 아래 표가 붙이라고 할 때만 — 플러그인을 끄는 일까지 이 한 줄이 한다). 그 뒤 ⑧-c · ⑧-d 를 잇는다(그 전에 잰 ⑧-c · ⑧-d 는 정책 없는 값이라 다시 잰다). 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다 — 정책 없이는 ponytail 이 켜진 채다.
 
 플러그인은 키트 마켓(`<kit>/.claude-plugin/marketplace.json`)이 실측한 커밋(sha)으로 **사용자 범위**에 둔다. 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 마켓 경로는 PC 마다 달라 프로젝트 설정에 넣지 않는다 — 공유 모드의 팀원도 자기 PC 에서 이 단계를 한다.
 
@@ -129,6 +140,7 @@ node .harness/tools/policy-apply.mjs --local --with gate-hook [--off <정책 id>
 | `✅ … 옮길 것 없다` | 아무것도 하지 않는다 |
 | `⚠️ … 옮긴다` + 명령 | 명령을 사용자에게 보여 주고 묻는다 — 이 PC 의 모든 프로젝트에 걸린다. 승인하면 **정책 반영 전에** 그 순서대로 실행한다(새 것을 먼저 깔고 옛 것을 지운다). 막히면 사용자가 `!` 로 한 줄씩 돌린다 |
 | 위에서 거절 · 비대화형 | 실행하지 않는다. 이 PC 에 같은 플러그인이 다른 마켓 id 로 있으면 `policy-apply` 에 `--off <정책 id>` 를 붙여 그것을 쓴다 — `settings.local.json` 에 `false` 로 남는다. ⚠️ 실측한 커밋에 고정되지 않는다 — 보고의 「사용자가 결정해야 하는 것」에 남긴다 |
+| 사용자 스킬 `ponytail-review` 가 있다 (`~/.claude/skills/ponytail-review/SKILL.md` — `CLAUDE_CONFIG_DIR` 이 있으면 그 아래) | ponytail 플러그인은 설치하지 않는다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다. `plugin-plan` 이 ponytail 을 옮길 대상에서 빼고, 로컬 전용 `policy-apply --local` 이 선언하지 않는다(출력의 `ponytail:` 줄). 이전 정책으로 `ponytail@ponytail: true` 가 이미 있으면 `--off ponytail@ponytail` 을 붙인다. 공유: 팀 선언은 두고 `--off ponytail@harness-kit` 을 붙인다 — 이 PC 의 `settings.local.json` 에만 `false` |
 
 규칙 파일의 자리를 실제 장부 경로로 바꾼다:
 
@@ -188,8 +200,10 @@ node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 
 - 소급할 과거가 없다 — lessons 는 비워 둔다
 - ④에서 만든 지도 골격을 채운다
-- 브레인스토밍 스펙 · 설계 문서가 있으면 현업 용어 → **계획한 식별자**를 그래프에 시드한다 — 용어마다 `node .harness/tools/graph-alias.mjs <용어> "<계획한 식별자>" --note "설계 용어 — 구현 후 재확인"`. 구현에서 이름이 바뀌면 `supersedes` 로 맞춘다
-- ⭐ **첫 테스트 전에는 verify 가 「실행된 테스트가 0개」로 실패하는 것이 정상이다** — 보고에 그렇게 적는다. ⛔ 통과시키려고 검사를 빼거나 `exit-code` 로 바꾸지 않는다
+- 브레인스토밍 스펙 · 설계 문서가 있으면 현업 용어 → **계획한 식별자**를 그래프에 시드한다. `note` 에 `설계 용어 — 구현 후 재확인` 과 출처 경로. 구현에서 이름이 바뀌면 `supersedes` 로 맞춘다
+  - 용어가 몇 개뿐이면 용어마다 `node .harness/tools/graph-alias.mjs <용어> "<계획한 식별자>" --note "설계 용어 — 구현 후 재확인"`
+  - 문서에서 여럿을 한꺼번에 뽑으면 기존 이식의 용어 사전처럼 `graph.md` 의 기록 단위(「이 용어들이 같은 질문에서 함께 필요한가」)로 묶어 `graph-append` 주제 기록으로 — 용어 1개짜리 기록 수십 건은 `req` 가 빈약해 정확일치를 못 받는다
+- ⭐ **`checks` 에 junit 검사가 있으면, 첫 테스트 전에는 verify 가 「실행된 테스트가 0개」로 실패하는 것이 정상이다** — 보고에 그렇게 적는다. ⛔ 통과시키려고 검사를 빼거나 `exit-code` 로 바꾸지 않는다. 테스트 러너가 아직 없어 exit-code 검사(⑤ 「테스트 러너가 아직 없다」)만 두었으면 exit 0 이 나온다 — 보고에 「테스트 검사 없음 — 첫 테스트 때 junit 검사를 더한다」를 적는다
 - 훅은 켜지 않는다 — 조건이 차면 위 「그래프 훅」대로
 
 ### ⑧ 검증 — ⛔ 자기 보고도 도구 출력도 믿지 않는다
@@ -197,7 +211,7 @@ node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 **⑧-a. 도구가 도는가**
 
 ```bash
-node .harness/tools/verify.mjs; echo "exit=$?"    # 기존: exit 0 · 신규: 첫 테스트 전이면 「실행된 테스트가 0개」
+node .harness/tools/verify.mjs; echo "exit=$?"    # 기존: exit 0 · 신규: junit 검사가 있으면 첫 테스트 전 「실행된 테스트가 0개」, exit-code 검사만이면 exit 0
 node .harness/tools/decision-check.mjs
 node .harness/tools/lesson-promote.mjs
 node .harness/tools/state-check.mjs
@@ -215,15 +229,15 @@ claude -p --model haiku --tools "" --no-session-persistence "도구를 쓰지 �
 claude -p --model haiku --tools "" --no-session-persistence "도구를 쓰지 마라. 이 저장소의 배포 승인권자는 누구인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
 ```
 
-양성은 `verify.mjs` 와 `graph-find.mjs` 를, 음성은 「모름」을 답해야 한다. 양성이 「모름」이면 `.claude/rules/` 의 위치를 본다.
+양성은 `verify.mjs` 와 `graph-find.mjs` 를, 음성은 「모름」을 답해야 한다. 응답은 모델 표본이라 흔들린다 — 양성이 「모름」이면 같은 질문을 두 번 더 해 **3회 중 2회 이상**이면 통과로 보고 「n/3」을 적는다(실측: 같은 설치에서 3회 중 1회 「모름」). 2회 이상 「모름」이면 `.claude/rules/` 의 위치를 본다.
 
-**⑧-c. ponytail 이 꺼졌는가** — 훅 출력은 stream-json 에 그대로 나온다
+**⑧-c. ponytail 이 꺼졌는가** — 훅 출력은 stream-json 에 그대로 나온다. ponytail 플러그인이 없으면(⑥ 사용자 스킬 행) 0 은 정책이 아니라 플러그인이 없어서다 — 보고에 그렇게 적는다
 
 ```bash
 claude -p --model haiku --tools "" --no-session-persistence --output-format stream-json --verbose "ok" < /dev/null | grep -c "PONYTAIL MODE ACTIVE"    # ⛔ 0
 ```
 
-**⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers · ponytail 인 `enabled` 항목의 **id** 가 각각 하나다.
+**⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers · ponytail 인 `enabled` 항목의 **id** 가 각각 하나다. ponytail 은 플러그인 0개 + 사용자 스킬 `ponytail-review`(⑥) 도 정상이다.
 같은 id 가 여러 줄인 것은 정상이다 — 목록은 이 PC 의 모든 프로젝트 설치 기록을 보여준다.
 
 **⑧-e.** `git diff` 와 새로 생긴 파일 목록을 사용자에게 보여준다. 로컬 전용이면 `git diff` 에는 (미커밋 변경 위에 설치했다면) 작업 중 변경만 나오고 설치 파일은 안 나온다 — 설치 파일은 새로 생긴 파일 목록으로 보여준다. 기존 설정·지시 파일 보존은 사용자만 판정한다.

@@ -28,6 +28,7 @@
 | 도구 호출마다 | 권한 정책 (훅이 아니다) | 키트 `policy/settings.json` | allow — 읽기 · 키트 점검 도구(`verify` · `decision-check` · `lesson-promote` · `state-check` · `graph-find`) · 읽기 전용 셸 / deny — `rm` · `rmdir` · `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` / ask — `--force` · `git restore` · `stash drop·clear` |
 | git `pre-commit` | `scan-shared.mjs` | 키트 · 공유 모드만 | 커밋되는 기록 · 장부 · 규칙에 민감 정보 패턴이 있으면 막는다 |
 
+- ponytail 을 플러그인 없이 사용자 스킬 `ponytail-review` 로만 둔 PC 에는 위 ponytail 훅 세 줄이 없다 — 로컬 전용 `policy-apply` 가 그 플러그인을 선언하지 않는다(SETUP ⑥)
 - 설정은 `policy-apply` 가 `.claude/settings.json`(공유) 또는 `settings.local.json`(로컬)에 병합한다 — ⛔ 덮어쓰지 않는다. 권한은 합집합이고 프로젝트가 더한 훅은 그대로 둔다(예: §6)
 - ⛔ 그래프 쓰기(`graph-append` · `graph-alias`)는 allow 에 없다 — 사람이 보고 승인한다
 
