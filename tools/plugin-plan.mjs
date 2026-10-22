@@ -3,7 +3,7 @@
 //   node <kit>/tools/plugin-plan.mjs
 // ⛔ 실행하지 않는다 — 사용자 범위는 이 PC 의 모든 프로젝트에 걸리므로 사용자가 보고 승인한다.
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { cli } from '../lib/config.mjs';
 import { skillInstead } from './policy-apply.mjs';
@@ -29,6 +29,8 @@ export function plan(list, ids, kit) {
 }
 
 cli(import.meta.url, () => {
+  // 대상의 .harness/tools 사본은 마켓 경로를 자기 위치로 낸다
+  if (!existsSync(new URL('../.claude-plugin/marketplace.json', import.meta.url))) throw new Error('키트 저장소의 plugin-plan 을 돌린다 — node <kit>/tools/plugin-plan.mjs');
   const raw = execSync('claude plugin list --json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   const list = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
   // 사용자 스킬로 대신하는 플러그인(ponytail-review)은 옮기지 않는다 — policy-apply --local 도 선언하지 않는다

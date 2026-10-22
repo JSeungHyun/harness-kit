@@ -29,6 +29,8 @@ function history(src) {
 }
 
 export function upgrade(dir) {
+  // 대상의 .harness/tools 사본에는 templates 가 없다 — 그 사본은 자기 위치를 키트로 안다
+  if (!existsSync(join(KIT, 'templates'))) throw new Error('키트 저장소의 upgrade 를 돌린다 — node <kit>/tools/upgrade.mjs <대상>');
   loadConfig(dir);
   const raw = JSON.parse(readFileSync(join(dir, CONFIG), 'utf8'));
   const fill = (s) => nl(s).replaceAll('<decisions>', raw.state?.decisions ?? '<decisions>').replaceAll('<lessons>', raw.state?.lessons ?? '<lessons>');

@@ -139,7 +139,7 @@ node .harness/tools/policy-apply.mjs --local --with gate-hook [--off <정책 id>
 |---|---|
 | `✅ … 옮길 것 없다` | 아무것도 하지 않는다 |
 | `⚠️ … 옮긴다` + 명령 | 명령을 사용자에게 보여 주고 묻는다 — 이 PC 의 모든 프로젝트에 걸린다. 승인하면 **정책 반영 전에** 그 순서대로 실행한다(새 것을 먼저 깔고 옛 것을 지운다). 막히면 사용자가 `!` 로 한 줄씩 돌린다 |
-| 위에서 거절 · 비대화형 | 실행하지 않는다. 이 PC 에 같은 플러그인이 다른 마켓 id 로 있으면 `policy-apply` 에 `--off <정책 id>` 를 붙여 그것을 쓴다 — `settings.local.json` 에 `false` 로 남는다. ⚠️ 실측한 커밋에 고정되지 않는다 — 보고의 「사용자가 결정해야 하는 것」에 남긴다 |
+| 위에서 거절 · 비대화형 | 실행하지 않는다. 이 PC 에 같은 플러그인이 다른 마켓 id 로 있으면 `policy-apply` 에 `--off <정책 id>`(정책 id 는 `superpowers@harness-kit` · `ponytail@harness-kit`)를 붙여 그것을 쓴다 — `settings.local.json` 에 `false` 로 남는다. ⚠️ 실측한 커밋에 고정되지 않는다 — 보고의 「사용자가 결정해야 하는 것」에 남긴다 |
 | 사용자 스킬 `ponytail-review` 가 있다 (`~/.claude/skills/ponytail-review/SKILL.md` — `CLAUDE_CONFIG_DIR` 이 있으면 그 아래) | ponytail 플러그인은 설치하지 않는다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다. `plugin-plan` 이 ponytail 을 옮길 대상에서 빼고, 로컬 전용 `policy-apply --local` 이 선언하지 않는다(출력의 `ponytail:` 줄). 이전 정책으로 `ponytail@ponytail: true` 가 이미 있으면 `--off ponytail@ponytail` 을 붙인다. 공유: 팀 선언은 두고 `--off ponytail@harness-kit` 을 붙인다 — 이 PC 의 `settings.local.json` 에만 `false` |
 
 규칙 파일의 자리를 실제 장부 경로로 바꾼다:

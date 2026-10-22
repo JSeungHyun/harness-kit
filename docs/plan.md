@@ -93,13 +93,17 @@
 - [x] 갱신 — 사용자: 「다른 PC 에서도 이 키트를 쓴다」. `tools/upgrade.mjs` 를 만들고 SETUP 「갱신」 · README 「키트를 쓰는 PC 마다」를 더했다. 설치 3곳의 사본으로 사전 시험했다. 규칙은 3/3 이 키트 첫 커밋과 같아 갱신됐고, 출력된 정책 줄을 그대로 돌리자 옛 id 꺼짐 · `@harness-kit` 켜짐 · 관문 훅 추가 · 그래프 훅 보존이 나왔다. `policy-apply --off` 는 같은 플러그인의 다른 마켓 id 도 받는다(로컬 설치 기록이 없으면 uninstall 이 실패한다). 새 세션이 SETUP 「갱신」을 따르는 종단 실측은 하지 않았다
 - [x] PC 이전도 SETUP 안에서 — 사용자 「1 도 setup 에서 수행할 수 있도록」. `tools/plugin-plan.mjs` 가 그 PC 의 `claude plugin list --json` 을 읽어 이전 명령(마켓 추가 → 새 것 설치 → 옛 사용자 범위 제거)을 낸다. SETUP ⑥ · 갱신이 그것을 사용자에게 묻고 정책 반영 전에 실행한다. 사전 시험: 격리 설정에 옛 마켓 사용자 범위 설치를 만들고 출력 명령을 Git Bash 로 그대로 돌렸다 — `@harness-kit` 두 개만 실측 커밋으로 남았고, 다시 돌리면 「옮길 것 없다」. 경로는 슬래시로 낸다(Git Bash 가 백슬래시를 지운다)
 - [x] 다른 PC 의 둘째 실전 적용(원격 `ae12256` · `6451143`)과 합쳤다. 그쪽은 ponytail 을 사용자 스킬 `ponytail-review` 로 둔 PC 에서 플러그인을 선언하지 않게 했다. 이것을 키트 마켓 id(`ponytail@harness-kit`)로 옮기고, `plugin-plan` 도 그런 PC 에서는 ponytail 을 옮기지 않게 했다(`skillInstead` 공유). README 실측에 더한 줄은 `docs/proof.md` 로 옮겼다. 「다른 세션에 맡길 때」에 plugin-plan 이전 명령도 맡길 수 없다고 더했다. 사용자가 `!` 로 돌리는 대체 명령에 `--with gate-hook` 을 넣었다
-- ⏸ 커밋 · push(사용자) → 이 PC 설치 3곳과 다른 PC 프로젝트에서 SETUP 「갱신」
+- [x] 커밋 · push — `c9e3da1` · merge `9b7d55a`(사용자)
+- [x] 갱신 종단 사전 시험 — 실제 설치 1곳의 사본에서 새 sonnet 세션이 SETUP 「갱신」을 비대화형으로 따랐다(8턴 · $0.20). pull → upgrade → 규칙 갱신 → verify 를 했다. 플러그인 이전과 정책 줄은 순서 경고와 함께 「사용자가 결정해야 하는 것」에 남기고 실행하지 않았다. 모호했던 1곳은 거절 경로의 정책 id 를 몰랐던 것이다 → ⑥ 표에 적었다. `claude plugin` 은 막고 돌렸다
+- [x] 사본 거부 — 갱신이 `upgrade.mjs` · `plugin-plan.mjs` 를 대상 `.harness/tools/` 에도 복사한다. 그 사본은 자기 위치를 키트로 알아 엉뚱한 마켓 경로를 낸다 → 키트 저장소가 아니면(templates · `.claude-plugin` 없음) 거부한다
+- ⏸ 이 PC 설치 3곳과 다른 PC 프로젝트에서 SETUP 「갱신」 — 같은 PC 의 첫 프로젝트가 사용자 범위 이전을 하면, 아직 갱신하지 않은 다른 프로젝트는 로컬 `ponytail@ponytail` 과 사용자 범위 `ponytail@harness-kit` 이 같이 켜진다. 같은 날 이어서 갱신한다
+- ⏸ 기존 context-graph 프로젝트(원천 프로젝트)에 증거 모듈만 얹는 길 — 지금 SETUP 은 graph.md 만 생략하고 그래프 도구는 `.harness/tools/` 로 복사한다. 규칙 · final-gate 가 가리키는 `.harness/tools/graph-find.mjs` 는 빈 `.harness/graph/` 를 보므로 거짓 「이상 없음」이 나오고, 기록이 두 저장소로 갈릴 수 있다. 얹기 전에 고친다(사용자 결정 대기)
 - ⏸ 관문 훅 효과 — 실제 설치에서 다시 잰다(재생으로는 verify 턴 14개 중 11개에 울린다)
 - ⏸ `graph-append` 에 여러 줄 JSON 을 heredoc 으로 주면 「건너뜀」 경고가 4줄 나온다 — 합성 세션 3/3 에서 봤다. 기록은 들어갔다. 원인은 보지 않았다
 - 기각 ① graph 를 선택 모듈로 내리기 · 규칙 경량화 — 같은 세션 기록에서 가장 많이 쓰인 도구가 graph-find(122)다. 근거로 든 「매 턴 다시 읽는 지침」(대조 3)은 원천 프로젝트의 지침 전체라 키트 규칙 13KB 만의 값이 아니다. 실제로 뺄 대상이 나오면 SETUP ① context-graph 행의 생략 경로에 한 줄 더한다
 - 보류 ③ graph 근거 보강 — 표본 8건 · 라벨이 기록에서 나왔다는 한계에 동의한다. 새 대조는 실제 설치에서 기록이 쌓인 뒤
 - [x] final-gate 스킬이 코드 변경 뒤 0/7 — 내용은 스킬 없이 대부분 했다(`docs/proof.md` 실제 설치)
-- ⚠️ `node proof/run.mjs` 실행 불안정 — 2026-10-22 하루 6회 중 4회가 매번 다른 한 행에서 ⛔ 였다(P1 대조 `npm test` exit null · P10 판별 커밋 0 · P8 열린 작업 줄 없음 · P6 verify exit null). 모두 프로세스가 뜨지 못한 쪽이고, 판정 로직 쪽은 정상이었다. PC 부하가 클 때(node 기동 0.8~1초) 잦다. 원인은 확인하지 않았다. 고칠 자리는 둘로 보인다. 하나는 `sh()` 가 실행 실패(status null)를 재시도하지 않는 것이고, 다른 하나는 `detect` 가 git 실행 실패를 커밋 0 으로 읽는 것이다(실제 대상에서도 기존 저장소를 신규로 제안할 수 있다)
+- ⚠️ `node proof/run.mjs` 실행 불안정 — 2026-10-22 하루 6회 중 4회가 매번 다른 한 행에서 ⛔ 였다(P1 대조 `npm test` exit null · P10 판별 커밋 0 · P8 열린 작업 줄 없음 · P6 verify exit null). 모두 프로세스가 뜨지 못한 쪽이고, 판정 로직 쪽은 정상이었다. PC 부하가 클 때(node 기동 0.8~1초) 잦다. 원인은 확인하지 않았다. 고칠 자리는 둘로 보인다. 하나는 `sh()` 가 실행 실패(status null)를 재시도하지 않는 것이고, 다른 하나는 `detect` 가 git 실행 실패를 커밋 0 으로 읽는 것이다(실제 대상에서도 기존 저장소를 신규로 제안할 수 있다) · 같은 날 저녁에는 `npm test` 도 4회 중 2회 `verify.test` 의 CLI 테스트가 매번 다른 줄에서 status 1 이었다(단독 2회 · 전체 2회는 통과)
 
 처리하면 `SendMessage(to: "main")` 으로 짧게 보고한다.
 

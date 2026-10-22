@@ -57,6 +57,16 @@ test('⭐ 설정은 쓰지 않는다 — 옛 플러그인 정리 · 정책 반�
   assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --with gate-hook --off ponytail@ponytail$/m);
 });
 
+test('⛔ 대상에 복사된 사본으로 돌리면 거부한다 — 사본은 자기 위치를 키트로 알아 엉뚱한 경로를 쓴다', () => {
+  const dir = installed();
+  run(dir);
+  for (const tool of ['upgrade.mjs', 'plugin-plan.mjs']) {
+    const r = spawnSync(process.execPath, [join(dir, '.harness', 'tools', tool), dir], { encoding: 'utf8' });
+    assert.equal(r.status, 1, tool);
+    assert.match(r.stderr, /키트 저장소의/, tool);
+  }
+});
+
 test('⛔ 설치되지 않은 대상은 거부한다', () => {
   const r = run(target(null));
   assert.equal(r.status, 1);
