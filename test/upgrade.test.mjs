@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, repoFile } from './scene.mjs';
@@ -10,7 +10,8 @@ const KIT = fileURLToPath(new URL('..', import.meta.url));
 const TOOL = join(KIT, 'tools', 'upgrade.mjs');
 const RULE = 'templates/rules/harness.md';
 const STATE = { decisions: '.harness/state/decisions.md', lessons: '.harness/state/lessons.md' };
-const fill = (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons);
+const fill = (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons)
+  .replaceAll('<graph-tools>', '.harness/tools').replaceAll('<graph-rules>', '`.claude/rules/graph.md`');
 // 키트 이력의 첫 버전 — 실제 설치 3곳의 규칙이 이것에 장부 경로를 채운 것과 같았다
 const first = execFileSync('git', ['-C', KIT, 'rev-list', '--reverse', 'HEAD', '--', RULE], { encoding: 'utf8' }).split('\n')[0];
 const oldRule = fill(execFileSync('git', ['-C', KIT, 'show', `${first}:${RULE}`], { encoding: 'utf8' }));
@@ -55,6 +56,23 @@ test('⭐ 설정은 쓰지 않는다 — 옛 플러그인 정리 · 정책 반�
   assert.doesNotMatch(r.stdout, /--off superpowers@claude-plugins-official/); // 이미 꺼져 있다
   // 로컬 설치 기록이 없으면 uninstall 은 실패한다 — 옛 id 는 --off 로 끈다
   assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --with gate-hook --off ponytail@ponytail$/m);
+});
+
+test('⭐ 그래프가 이미 있는 대상 — 키트 그래프 도구를 넣지 않고 규칙이 그 프로젝트의 그래프를 가리킨다', () => {
+  const graph = { tools: 'tools', rules: '`AGENTS.md` 의 그래프 기록 절' };
+  const dir = target({ profile: 'existing', mode: 'local', graph, state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, {
+    '.claude/rules/harness.md': oldRule,
+    '.claude/skills/final-gate/SKILL.md': 'x',
+  });
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(dir, '.harness/tools/verify.mjs')));
+  assert.deepEqual(readdirSync(join(dir, '.harness/tools')).filter((f) => f.startsWith('graph-')), []);
+  assert.ok(!existsSync(join(dir, '.harness/policy/graph-hook.json')));
+  const rule = read(dir, '.claude/rules/harness.md');
+  assert.match(rule, /node tools\/graph-find\.mjs --check/);
+  assert.match(rule, /`AGENTS\.md` 의 그래프 기록 절/);
+  assert.doesNotMatch(rule, /<graph-|\.harness\/tools\/graph-/);
 });
 
 test('⛔ 대상에 복사된 사본으로 돌리면 거부한다 — 사본은 자기 위치를 키트로 알아 엉뚱한 경로를 쓴다', () => {

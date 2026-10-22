@@ -30,7 +30,7 @@ claude --version                       # 2.1.277 이상
 |---|---|
 | `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 키트를 올리는 것인지 묻는다 — 그렇다면 아래 「갱신」, 아니면 덮어쓰지 않는다 |
 | `⚠️ 확인` 줄의 미커밋 변경 | 로컬 전용이면 진행하고 보고에 적는다 — 설치 전 `git status --porcelain` 출력을 적어 둔다(⑧-a 가 그것과 비교한다) · 공유를 고르면 ⛔ 멈춘다(설치 파일이 작업 중 변경과 한 커밋에 섞인다) · 겹침 줄(`설치가 고치고 git 에서 숨기는 경로에 …`)이 있으면 그 파일을 사용자에게 보여 주고 진행 여부를 묻는다. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 파일(`settings.local.json` 등)이 `git status` 에 안 나와 겹침 줄이 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 해서 위험은 낮다 |
-| `context-graph 있음` | 그 프로젝트의 그래프가 이미 있다 — ⛔ 데이터를 옮기지 않고 **graph 모듈을 설치하지 않는다**(②의 graph.md · ⑦의 그래프 단계 생략). 보고에 적는다 |
+| `context-graph 있음` | 그 프로젝트의 그래프가 이미 있다 — ⛔ 데이터를 옮기지 않고 **graph 모듈을 설치하지 않는다**(②의 graph.md · 그래프 도구 · ⑦의 그래프 단계 생략). ⑤ 에 `graph` 를 적어 규칙 · final-gate 가 그 프로젝트의 그래프를 가리키게 한다 — 그래프 도구가 두 벌이면 기록이 두 저장소로 갈린다. 보고에 적는다 |
 
 **프로필과 모드를 사용자에게 한 번에 확인받는다** — `detect` 의 제안값과 그 이유(커밋 수 · 소스 수)를 보여준다.
 
@@ -56,6 +56,12 @@ cp -r <kit>/templates/skills/final-gate <대상>/.claude/skills/
 cp <kit>/templates/state/decisions.md <대상>/<장부>/decisions.md
 cp <kit>/templates/state/lessons.md <대상>/<장부>/lessons.md
 cp <kit>/templates/scan.json <대상>/.harness/scan.json                   # 공유 모드만 — 민감 정보 패턴 (③에서 프로젝트에 맞춘다)
+```
+
+`context-graph 있음` 이면 둘째 줄(`cp -r <kit>/lib <kit>/tools <kit>/policy …`) 대신 그래프 도구 · 그래프 훅 정책을 빼고 복사한다:
+
+```bash
+node -e "for (const d of ['lib','tools','policy']) require('fs').cpSync(process.argv[1]+'/'+d, process.argv[2]+'/.harness/'+d, {recursive:true, filter:(f)=>!/graph-[\w-]+\.(mjs|json)$/.test(f)})" <kit> <대상>
 ```
 
 복사한 `decisions.md` 의 갱신일 칸(`YYYY-MM-DD`)을 설치일로 바꾼다 — 자리표시 그대로면 `decision-check` 가 「갱신 후 ?일」을 낸다.
@@ -100,6 +106,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 ### ⑤ `.harness/harness.json`
 
 `profile` · `mode` 를 ①에서 정한 값으로, `state.decisions` · `state.lessons` 를 `<장부>/…` (또는 대상이 이미 쓰는 장부 경로)로 적는다.
+`context-graph 있음` 이면 `"graph": { "tools": "<그 프로젝트의 그래프 도구 폴더, 예: tools>", "rules": "<기록 규칙이 있는 곳 — 지시 파일의 절 · 스킬 이름>" }` 도 적는다 — ⑥ 의 규칙 자리와 「갱신」이 이 값을 쓴다.
 `checks` 에는 **실제로 도는 명령**만, 그리고 결과 XML 을 **매번 새로 쓰는** 명령만 적는다 — verify 는 이번 실행이 쓰지 않은 XML 을 증거로 쓰지 않는다.
 
 | 스택 | `cmd` | `kind` · `evidence` |
@@ -109,11 +116,12 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | Gradle | `./gradlew cleanTest test` (Windows `cmd`: `.\gradlew cleanTest test` — JSON 에서는 `".\\gradlew cleanTest test"`) | `junit-xml` · `build/test-results/test` |
 | Maven | `mvn test` · 래퍼면 `./mvnw test` (Windows `cmd`: `.\mvnw test`) | `junit-xml` · `target/surefire-reports` |
 | pytest | `pytest --junitxml=test-results/junit.xml` | `junit-xml` · `test-results` |
+| Node (Jest) · junit 리포터가 없다 | `npm test` — ⛔ 리포터를 넣으려고 의존성을 더하지 않는다 | `exit-code` — Jest 는 테스트가 0개면 스스로 실패한다(`--passWithNoTests` 가 없을 때) |
 | 결과 XML 을 낼 수 없다 | 테스트 명령 | `exit-code` — ⚠️ 테스트 0개를 못 잡는다고 사용자에게 알린다 |
 | 테스트 러너가 아직 없다 (신규 · 골격 전) | 실제로 도는 검사만 — 타입 검사(`npm run typecheck` 등) · 아래 그래프 무결성 | `exit-code` — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
-| 그래프 무결성 (graph 모듈을 얹으면) | `node .harness/tools/graph-find.mjs --check` | `exit-code` |
+| 그래프 무결성 (graph 모듈을 얹으면) | `node .harness/tools/graph-find.mjs --check` — 기존 context-graph 면 그 도구(예: `node tools/graph-find.mjs --check`) | `exit-code` |
 
 - Node 는 junit 결과 디렉터리를 만들지 않는다 — 없으면 ENOENT 로 죽는다(실측). `node --test` 에는 디렉터리가 아니라 glob 을 준다
 - ⚠️ Windows 의 Claude Code 는 `NoDefaultCurrentDirectoryInExePath=1` 을 걸어 `cmd` 가 현재 폴더의 실행 파일을 찾지 않는다 — `gradlew` · `gradlew.bat` 은 「내부 또는 외부 명령이 아닙니다」, `.\gradlew` 만 돈다(실측, `./gradlew` 는 `cmd` 에서 늘 실패). 저장소 안 래퍼만 `.\` 를 붙인다 — PATH 의 `mvn` · `npx` 는 상관없다. 모노레포 예: `cd backend && .\gradlew cleanTest test`
@@ -142,11 +150,13 @@ node .harness/tools/policy-apply.mjs --local --with gate-hook [--off <정책 id>
 | 위에서 거절 · 비대화형 | 실행하지 않는다. 이 PC 에 같은 플러그인이 다른 마켓 id 로 있으면 `policy-apply` 에 `--off <정책 id>`(정책 id 는 `superpowers@harness-kit` · `ponytail@harness-kit`)를 붙여 그것을 쓴다 — `settings.local.json` 에 `false` 로 남는다. ⚠️ 실측한 커밋에 고정되지 않는다 — 보고의 「사용자가 결정해야 하는 것」에 남긴다 |
 | 사용자 스킬 `ponytail-review` 가 있다 (`~/.claude/skills/ponytail-review/SKILL.md` — `CLAUDE_CONFIG_DIR` 이 있으면 그 아래) | ponytail 플러그인은 설치하지 않는다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다. `plugin-plan` 이 ponytail 을 옮길 대상에서 빼고, 로컬 전용 `policy-apply --local` 이 선언하지 않는다(출력의 `ponytail:` 줄). 이전 정책으로 `ponytail@ponytail: true` 가 이미 있으면 `--off ponytail@ponytail` 을 붙인다. 공유: 팀 선언은 두고 `--off ponytail@harness-kit` 을 붙인다 — 이 PC 의 `settings.local.json` 에만 `false` |
 
-규칙 파일의 자리를 실제 장부 경로로 바꾼다:
+규칙 · final-gate 의 자리를 채운다 — `<decisions>` · `<lessons>` 는 장부 경로, `<graph-tools>` · `<graph-rules>` 는 graph 모듈을 얹었으면 `.harness/tools` · `` `.claude/rules/graph.md` ``, 기존 context-graph 면 ⑤ 의 `graph` 값:
 
 ```bash
-grep -n '<decisions>\|<lessons>' .claude/rules/harness.md     # 바꾼 뒤 ⛔ 아무것도 나오지 않아야 한다
+grep -n '<decisions>\|<lessons>\|<graph-tools>\|<graph-rules>' .claude/rules/harness.md .claude/skills/final-gate/SKILL.md   # 바꾼 뒤 ⛔ 아무것도 나오지 않아야 한다
 ```
+
+**기존 체계를 그대로 지켜야 하는 대상** — 지시 파일이 흐름 · ponytail 모드 · 권한을 이미 정했고 사용자가 「바꾸지 말라」고 하면 정책 줄 대신 `node .harness/tools/policy-apply.mjs --local --only gate-hook` 으로 관문 훅만 건다. 권한 · `PONYTAIL_DEFAULT_MODE` · 플러그인 선언은 그대로이고, ⑧-c(ponytail 꺼짐)는 해당 없다. 규칙의 맨 위 줄이 「지시 파일이 정한 것이 이긴다」를 말한다.
 
 ### ⑦ 프로필별 — 이미 있는 것을 쓰거나, 처음부터 쌓거나
 

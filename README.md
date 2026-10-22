@@ -18,7 +18,14 @@ Claude Code 가 「테스트 통과, 끝났습니다」라고 보고해도 실�
 ```
 
 Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
-플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 6.1.1 · ponytail 4.9.0. 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 규칙이 기대는 동작은 두 가지다. 하나는 brainstorming 의 종료 조건이고, 다른 하나는 `PONYTAIL_DEFAULT_MODE=off` 다. 올릴 때는 sha 를 바꾸고 `node proof/run.mjs --claude` 를 다시 돌린다(P3 가 ponytail 끄기를 잰다).
+플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.1 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 규칙이 기대는 동작은 두 가지다. 하나는 brainstorming 의 종료 조건이고, 다른 하나는 `PONYTAIL_DEFAULT_MODE=off` 다.
+
+### 플러그인을 올릴 때 — 이 레포에서
+
+1. `node tools/plugin-plan.mjs --upstream` — 고정 커밋과 각 플러그인 저장소의 최신 커밋을 비교하고, 새 버전과 바뀐 것 링크를 낸다
+2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `PONYTAIL_DEFAULT_MODE` · `ponytail-review` · final-gate 가 부르는 스킬 이름)이 그대로인가, 이득이 있나
+3. 올리면 `marketplace.json` 의 `sha` · `version` 을 바꾸고 `node proof/run.mjs --claude`(P3 가 ponytail 끄기를 잰다) → 커밋 · push
+4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update` 명령을 낸다 — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
 
 ### 이미 얹은 프로젝트를 새 버전으로 — 다른 PC 포함
 

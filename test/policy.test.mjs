@@ -164,6 +164,19 @@ test('⛔ CLI 공유: 이 PC 에 사용자 스킬이 있어도 팀 설정의 선
   assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
 });
 
+test('⭐ CLI --only gate-hook: 관문 훅만 건다 — 기존 체계(권한 · ponytail 모드 · 플러그인)를 지켜야 하는 대상', () => {
+  const before = { permissions: { allow: ['Read'] }, env: { MINE: '1' }, hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node guard.mjs' }] }] } };
+  const dir = target(null, { '.claude/settings.local.json': JSON.stringify(before) });
+  const r = apply(dir, '--local', '--only', 'gate-hook');
+  assert.equal(r.status, 0, r.stderr);
+  const s = readJson(join(dir, '.claude', 'settings.local.json'));
+  assert.deepEqual(s.permissions, before.permissions);
+  assert.deepEqual(s.env, before.env);
+  assert.equal(s.enabledPlugins, undefined);
+  assert.deepEqual(s.hooks.PreToolUse, before.hooks.PreToolUse);
+  assert.match(JSON.stringify(s.hooks.Stop), /gate-hook\.mjs/);
+});
+
 test('⛔ CLI: 대상 설정이 깨진 JSON 이면 덮어쓰지 않고 실패한다', () => {
   const dir = target(null, { '.claude/settings.json': '{ 깨짐' });
   const r = spawnSync(process.execPath, [APPLY, dir], { encoding: 'utf8' });

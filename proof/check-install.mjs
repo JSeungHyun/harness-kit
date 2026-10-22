@@ -37,7 +37,7 @@ export function checkInstall(dir, profile, mode) {
     !missing.length && has(dir, '.harness/lib/config.mjs') && has(dir, '.harness/policy/settings.json'));
   row('공통', '규칙 2개 · final-gate 스킬', ['.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/final-gate/SKILL.md'].map((p) => `${p.split('/').pop()} ${has(dir, p) ? '있음' : '없음'}`).join(' · '),
     has(dir, '.claude/rules/harness.md') && has(dir, '.claude/rules/graph.md') && has(dir, '.claude/skills/final-gate/SKILL.md'));
-  const left = (text(dir, '.claude/rules/harness.md').match(/<decisions>|<lessons>/g) ?? []).length;
+  const left = (text(dir, '.claude/rules/harness.md').match(/<decisions>|<lessons>|<graph-tools>|<graph-rules>/g) ?? []).length;
   row('공통', '규칙 자리표시가 남지 않음', `남은 자리 ${left}`, has(dir, '.claude/rules/harness.md') && left === 0);
   row('공통', 'harness.json 검사 1개 이상 · 프로필 · 모드', `검사 ${cfg.checks?.length ?? 0} · profile ${cfg.profile} · mode ${cfg.mode}`,
     cfg.checks?.length >= 1 && cfg.profile === profile && cfg.mode === mode);

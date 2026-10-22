@@ -2,7 +2,7 @@
 // 설치 — 정책(.harness/policy/*.json)을 대상 Claude 설정에 병합한다. 설계안.
 // ⛔ 덮어쓰지 않는다: 권한은 합집합, env·플러그인·마켓은 정책의 키만 정하고 나머지는 보존한다.
 //   node .harness/tools/policy-apply.mjs [대상] [--local] [--with <이름>]… [--off <정책 id>]…
-//   --local: .claude/settings.local.json 에 (로컬 전용 모드) · --with: policy/<이름>.json 도 병합 (예: graph-hook)
+//   --local: .claude/settings.local.json 에 (로컬 전용 모드) · --with: policy/<이름>.json 도 병합 (예: graph-hook) · --only: 기본 정책 없이 그것만
 //   --off: 그 플러그인 id 를 settings.local.json 에 false 로 — 모드와 무관하게 local 파일. 정책 id(다른 마켓으로 이미 켠 같은 플러그인이 있을 때) 또는 같은 플러그인의 옛 마켓 id(갱신)
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -74,17 +74,19 @@ cli(import.meta.url, () => {
   const extra = [];
   const off = new Set();
   const rest = [];
+  let only = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--off') {
       off.add(args[++i]);
       continue;
     }
-    if (args[i] !== '--with') {
+    if (args[i] !== '--with' && args[i] !== '--only') {
       // --off=<id> 같은 꼴이 대상 폴더로 읽혀 엉뚱한 곳에 설정이 생기지 않게
       if (args[i].startsWith('--') && args[i] !== '--local') throw new Error(`알 수 없는 옵션: ${args[i]} — 옵션 값은 띄어 쓴다 (예: --off <id>)`);
       rest.push(args[i]);
       continue;
     }
+    only ||= args[i] === '--only';
     const name = args[++i];
     if (!/^[\w-]+$/.test(name ?? '')) throw new Error(`--with 에는 policy/ 안의 정책 이름만 준다 (예: graph-hook): ${name}`);
     extra.push(name);
@@ -102,7 +104,8 @@ cli(import.meta.url, () => {
   const personal = settingsPath(root, true);
   let merged = readJson(path);
   const notes = [];
-  for (const p of [POLICY, ...extra.map(policyFile)]) {
+  // --only: 기본 정책(권한 · ponytail 모드 · 플러그인)을 빼고 그 정책만 — 기존 체계를 지켜야 하는 대상
+  for (const p of [...(only ? [] : [POLICY]), ...extra.map(policyFile)]) {
     if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
     merged = mergeSettings(merged, local ? skipSkillPlugins(readJson(p), claudeDir(), notes) : readJson(p));
   }

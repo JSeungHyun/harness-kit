@@ -33,10 +33,16 @@ export function upgrade(dir) {
   if (!existsSync(join(KIT, 'templates'))) throw new Error('키트 저장소의 upgrade 를 돌린다 — node <kit>/tools/upgrade.mjs <대상>');
   loadConfig(dir);
   const raw = JSON.parse(readFileSync(join(dir, CONFIG), 'utf8'));
-  const fill = (s) => nl(s).replaceAll('<decisions>', raw.state?.decisions ?? '<decisions>').replaceAll('<lessons>', raw.state?.lessons ?? '<lessons>');
+  // 그래프가 이미 있는 대상(기존 context-graph)은 graph 에 그 도구 폴더와 기록 규칙 위치를 적는다 — 없으면 키트 그래프
+  const graph = { tools: '.harness/tools', rules: '`.claude/rules/graph.md`', ...raw.graph };
+  const fill = (s) => nl(s).replaceAll('<decisions>', raw.state?.decisions ?? '<decisions>').replaceAll('<lessons>', raw.state?.lessons ?? '<lessons>')
+    .replaceAll('<graph-tools>', graph.tools).replaceAll('<graph-rules>', graph.rules);
   const out = [];
 
-  for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
+  // 그래프 도구 두 벌은 기록을 두 저장소로 가른다 — 대상의 그래프가 따로 있으면 키트 것을 넣지 않는다
+  const own = graph.tools !== '.harness/tools';
+  const filter = (f) => !(own && /graph-[\w-]+\.(mjs|json)$/.test(f));
+  for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true, filter });
   out.push('✅ .harness/{lib,tools,policy} — 키트의 지금 것으로');
 
   for (const [src, dst] of DOCS) {

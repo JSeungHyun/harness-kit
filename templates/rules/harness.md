@@ -4,6 +4,8 @@
 
 ⭐ **코드를 바꾼 작업은 완료를 주장하기 전에 `node .harness/tools/verify.mjs`** — 보고 직전에는 `final-gate`. 작업 종류별 증거는 아래 「완료는 증거로 주장한다」
 
+⚠️ 이 프로젝트의 지시 파일(`AGENTS.md` · `CLAUDE.md` 등)이 흐름 · 계획 문서 · ponytail 모드 · 플러그인을 따로 정했으면 그쪽을 따른다 — 이 파일이 더하는 것은 관문 · 완료 증거 · 장부다.
+
 ## 흐름 — superpowers 가 베이스, 계획 문서는 인계·다세션일 때만
 
 | 작업 | 계획 문서 |
@@ -29,7 +31,7 @@
 |---|---|
 | 코드 변경 | `node .harness/tools/verify.mjs` — exit 0 (이번 실행이 쓴 결과 파일로 판정, 알려진 실패 기준선은 개수만) |
 | 운영 데이터 · 설정 | 실행·확인 쿼리와 전/후 결과를 본문에 |
-| 기록 변경 | `node .harness/tools/graph-find.mjs --check` — exit 0 |
+| 기록 변경 | `node <graph-tools>/graph-find.mjs --check` — exit 0 |
 | 조사 · 측정 | 정답 라벨 n건 대조 + 검증한 범위 |
 
 ⛔ `node .harness/tools/verify.mjs --baseline` 은 사용자가 「원래 있던 실패」라고 확인한 뒤에만 — 실패를 기준선에 넣으면 그 실패는 더 울리지 않는다.
@@ -38,7 +40,7 @@
 
 | 무엇 | 어디 |
 |---|---|
-| 사실 · 함정 · 인과 · 기각한 대안 한 줄 · 하다 만 것(`⏸`) | 그래프 — `.claude/rules/graph.md` |
+| 사실 · 함정 · 인과 · 기각한 대안 한 줄 · 하다 만 것(`⏸`) | 그래프 — <graph-rules> |
 | 묻지 않고 정한 가정 | `<decisions>` — `node .harness/tools/decision-check.mjs` (14일 묵으면 경고) |
 | 반복 실패 (규칙이 되기 전) | `<lessons>` — `node .harness/tools/lesson-promote.mjs` 가 승격 후보를 낸다 |
 | 행동을 바꿔야 하는 것 | 규칙(`.claude/rules/`) · 프로젝트 지도 |
