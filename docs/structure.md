@@ -13,7 +13,7 @@
 | 도구 | `.harness/tools/*.mjs` | 모델이 Bash 로 부른다 |
 | 데이터 | 그래프 `.harness/graph/requests.jsonl` · 장부 · 기준선 | 도구로만 읽고 쓴다 (§3 · §4) |
 
-⭐ **키트가 직접 거는 Claude Code 훅은 그래프 훅 하나뿐이고, 그것도 기록이 쌓인 뒤에 켠다.** 나머지는 규칙이 「언제 무엇을 부르라」고 시킨다. 관문(`final-gate`)도 훅이 아니라 규칙과 스킬 설명이 부른다 — 모델이 건너뛸 수 있다(design §3 ⚠️).
+⭐ **키트가 직접 거는 Claude Code 훅은 둘이다.** 하나는 관문 훅(설치 때)이고, 다른 하나는 그래프 훅(기록이 쌓인 뒤)이다. 나머지는 규칙이 「언제 무엇을 부르라」고 시킨다. 관문(`final-gate`)은 규칙과 스킬 설명이 부르고, verify 를 돌린 턴에 건너뛰면 관문 훅이 한 번 되돌려 보낸다(design §3).
 
 ## 1. 이벤트마다 자동으로 도는 것
 
@@ -24,6 +24,7 @@
 | `UserPromptSubmit` | `graph-hook.mjs` | 키트 · ⛔ 조건부 | 프롬프트로 그래프를 조회해 카드 1~2장 · 후보 색인 · 침묵 중 하나를 넣는다 (§3.4) |
 | `UserPromptSubmit` | `ponytail-mode-tracker.js` | ponytail | `/ponytail <모드>` 전환을 기억한다 |
 | `SubagentStart` | `ponytail-subagent.js` | ponytail | 모드가 켜져 있을 때만 서브에이전트에 규칙을 넣는다 — off 면 없음 |
+| `Stop` | `gate-hook.mjs` | 키트 | 이번 턴에 verify 를 돌리고 final-gate 를 안 거쳤으면 한 번 되돌려 보낸다. 백그라운드 작업을 기다리는 멈춤 · 되돌린 뒤의 멈춤은 통과 |
 | 도구 호출마다 | 권한 정책 (훅이 아니다) | 키트 `policy/settings.json` | allow — 읽기 · 키트 점검 도구(`verify` · `decision-check` · `lesson-promote` · `state-check` · `graph-find`) · 읽기 전용 셸 / deny — `rm` · `rmdir` · `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` / ask — `--force` · `git restore` · `stash drop·clear` |
 | git `pre-commit` | `scan-shared.mjs` | 키트 · 공유 모드만 | 커밋되는 기록 · 장부 · 규칙에 민감 정보 패턴이 있으면 막는다 |
 

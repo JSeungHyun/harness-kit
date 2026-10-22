@@ -48,10 +48,19 @@ test('⛔ 원본을 변형하지 않고, _ 로 시작하는 주석 키를 옮기
 test('⭐ 배포 정책이 superpowers·ponytail 을 켜고 ponytail 모드를 끈다', () => {
   const p = readJson(POLICY);
   assert.equal(p.env.PONYTAIL_DEFAULT_MODE, 'off');
-  assert.equal(p.enabledPlugins['superpowers@claude-plugins-official'], true);
-  assert.equal(p.enabledPlugins['ponytail@ponytail'], true);
-  assert.equal(p.extraKnownMarketplaces.ponytail.source.repo, 'DietrichGebert/ponytail');
+  assert.equal(p.enabledPlugins['superpowers@harness-kit'], true);
+  assert.equal(p.enabledPlugins['ponytail@harness-kit'], true);
   assert.ok(p.permissions.allow.includes('Bash(node .harness/tools/verify.mjs)'));
+});
+
+test('⭐ 정책이 켜는 플러그인은 키트 마켓에서 커밋으로 고정된다 — 새로 설치해도 실측한 버전이다', () => {
+  const m = readJson(fileURLToPath(new URL('../.claude-plugin/marketplace.json', import.meta.url)));
+  for (const id of Object.keys(readJson(POLICY).enabledPlugins)) {
+    const [name, market] = id.split('@');
+    assert.equal(market, m.name, id);
+    // 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어온다
+    assert.match(m.plugins.find((x) => x.name === name)?.source?.sha ?? '', /^[0-9a-f]{40}$/, id);
+  }
 });
 
 test('⛔ 배포 정책의 allow 에는 인자로 쓰기·실행에 닿는 명령이 없다 — 자동 승인이 거부 목록을 우회한다', () => {
@@ -131,7 +140,7 @@ test('⛔ CLI: 대상 설정이 깨진 JSON 이면 덮어쓰지 않고 실패한
   assert.equal(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'), '{ 깨짐');
 });
 
-const OFF = 'superpowers@claude-plugins-official';
+const OFF = 'superpowers@harness-kit';
 const apply = (...args) => spawnSync(process.execPath, [APPLY, ...args], { encoding: 'utf8' });
 
 test('⭐ CLI --local --off: settings.local.json 에 그 플러그인을 false 로 두고, 다시 돌려도 파일이 같다', () => {
@@ -139,11 +148,11 @@ test('⭐ CLI --local --off: settings.local.json 에 그 플러그인을 false �
   const path = join(dir, '.claude', 'settings.local.json');
   const r = apply(dir, '--local', '--off', OFF);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /끈 플러그인 \(.*settings\.local\.json\): superpowers@claude-plugins-official/);
+  assert.match(r.stdout, /끈 플러그인 \(.*settings\.local\.json\): superpowers@harness-kit/);
   const once = readFileSync(path, 'utf8');
   const s = JSON.parse(once);
   assert.equal(s.enabledPlugins[OFF], false);
-  assert.equal(s.enabledPlugins['ponytail@ponytail'], true);
+  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
   assert.equal(apply(dir, '--local', '--off', OFF).status, 0);
   assert.equal(readFileSync(path, 'utf8'), once);
 });
@@ -159,10 +168,19 @@ test('⭐ CLI 공유 + --off: settings.json 은 정책대로 켜고, 끈 것은 
   const s = JSON.parse(once[0]);
   assert.equal(s.team, 1);
   assert.equal(s.enabledPlugins[OFF], true);
-  assert.equal(s.enabledPlugins['ponytail@ponytail'], true);
+  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
   assert.deepEqual(JSON.parse(once[1]), { env: { MINE: '1' }, enabledPlugins: { 'mine@m': true, [OFF]: false } });
   assert.equal(apply(dir, '--off', OFF).status, 0);
   assert.deepEqual([shared, local].map((p) => readFileSync(p, 'utf8')), once);
+});
+
+test('⭐ CLI --off 는 같은 플러그인의 다른 마켓 id 도 끈다 — 갱신에서 옛 정책 id 를 정리한다(로컬 설치 기록이 없으면 uninstall 이 실패한다)', () => {
+  const dir = target(null, { '.claude/settings.local.json': '{"enabledPlugins":{"ponytail@ponytail":true}}' });
+  const r = apply(dir, '--local', '--off', 'ponytail@ponytail');
+  assert.equal(r.status, 0, r.stderr);
+  const s = JSON.parse(readFileSync(join(dir, '.claude', 'settings.local.json'), 'utf8'));
+  assert.equal(s.enabledPlugins['ponytail@ponytail'], false);
+  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
 });
 
 test('⛔ CLI --off 가 정책이 켜는 플러그인이 아니면 아무 파일도 쓰지 않고 실패한다 — 쓸 수 있는 id 를 알려 준다', () => {

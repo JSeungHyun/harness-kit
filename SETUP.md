@@ -20,7 +20,7 @@ claude --version                       # 2.1.277 이상
 
 | `detect` 가 낸 것 | 행동 |
 |---|---|
-| `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 재설치인지 묻는다 — 덮어쓰지 않는다 |
+| `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 키트를 올리는 것인지 묻는다 — 그렇다면 아래 「갱신」, 아니면 덮어쓰지 않는다 |
 | `⚠️ 확인` 줄의 미커밋 변경 | 로컬 전용이면 진행하고 보고에 적는다 — 설치 전 `git status --porcelain` 출력을 적어 둔다(⑧-a 가 그것과 비교한다) · 공유를 고르면 ⛔ 멈춘다(설치 파일이 작업 중 변경과 한 커밋에 섞인다) · 겹침 줄(`설치가 고치고 git 에서 숨기는 경로에 …`)이 있으면 그 파일을 사용자에게 보여 주고 진행 여부를 묻는다. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 파일(`settings.local.json` 등)이 `git status` 에 안 나와 겹침 줄이 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 해서 위험은 낮다 |
 | `context-graph 있음` | 그 프로젝트의 그래프가 이미 있다 — ⛔ 데이터를 옮기지 않고 **graph 모듈을 설치하지 않는다**(②의 graph.md · ⑦의 그래프 단계 생략). 보고에 적는다 |
 
@@ -113,22 +113,22 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 ### ⑥ 설정 · 플러그인 · 규칙 자리
 
 ```bash
-claude plugin list --json                                    # 먼저 — 이 PC 의 플러그인 설치 기록 {id, scope, enabled} 배열. 아래 표로 --off 를 붙일지 정한다
-node .harness/tools/policy-apply.mjs [--off <정책 id>]…          # 공유 → .claude/settings.json
-node .harness/tools/policy-apply.mjs --local [--off <정책 id>]…  # 로컬 전용 → .claude/settings.local.json
+node <kit>/tools/plugin-plan.mjs                             # 먼저 — 이 PC 의 플러그인을 읽어 키트 마켓으로 옮길 명령을 낸다. 아래 표로 할 일을 정한다
+node .harness/tools/policy-apply.mjs --with gate-hook [--off <정책 id>]…          # 공유 → .claude/settings.json
+node .harness/tools/policy-apply.mjs --local --with gate-hook [--off <정책 id>]…  # 로컬 전용 → .claude/settings.local.json
 ```
 
-권한 · `env.PONYTAIL_DEFAULT_MODE=off` · 플러그인 선언이 기존 설정 위에 병합된다(다시 돌려도 같다). `--off <정책 id>` 는 그 플러그인을 `.claude/settings.local.json` 의 `enabledPlugins` 에 `false` 로 둔다 — 모드와 무관하게 늘 그 파일(개인 선택이라 공유 설정에 넣지 않는다). 여러 번 줄 수 있고, 정책이 켜는 id 가 아니면 아무것도 쓰지 않고 멈춘다.
+권한 · `env.PONYTAIL_DEFAULT_MODE=off` · 플러그인 선언 · 관문 훅이 기존 설정 위에 병합된다(다시 돌려도 같다). 관문 훅(`gate-hook`, Stop)은 이번 턴에 verify 를 돌리고 final-gate 를 거치지 않은 채 멈추면 한 번 되돌려 보낸다 — 실제 세션에서 모델은 verify 를 바로 돌리고 스킬을 건너뛰었다(코드 변경 뒤 0/7). `--off <정책 id>` 는 그 플러그인을 `.claude/settings.local.json` 의 `enabledPlugins` 에 `false` 로 둔다 — 모드와 무관하게 늘 그 파일(개인 선택이라 공유 설정에 넣지 않는다). 여러 번 줄 수 있고, 정책이 켜는 id 가 아니면 아무것도 쓰지 않고 멈춘다.
 
-⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local --off <정책 id>` 한 줄로 직접 돌리게 한다(공유면 `--local` 없이. `--off` 는 아래 표의 둘째 행이 있을 때만 붙인다 — 플러그인을 끄는 일까지 이 한 줄이 한다). 그 뒤 표의 나머지 행과 ⑧-c · ⑧-d 를 잇는다. 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다 — 정책 없이는 ponytail 이 켜진 채다.
+⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local --off <정책 id>` 한 줄로 직접 돌리게 한다(공유면 `--local` 없이. `--off` 는 아래 표에서 이전을 거절했을 때만 붙인다 — 플러그인을 끄는 일까지 이 한 줄이 한다). 그 뒤 ⑧-c · ⑧-d 를 잇는다. 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다 — 정책 없이는 ponytail 이 켜진 채다.
 
-superpowers 와 ponytail 각각에 대해:
+플러그인은 키트 마켓(`<kit>/.claude-plugin/marketplace.json`)이 실측한 커밋(sha)으로 **사용자 범위**에 둔다. 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 마켓 경로는 PC 마다 달라 프로젝트 설정에 넣지 않는다 — 공유 모드의 팀원도 자기 PC 에서 이 단계를 한다.
 
-| `list` 결과 | 행동 |
+| `plugin-plan` 출력 | 행동 |
 |---|---|
-| 정책의 id (`superpowers@claude-plugins-official` · `ponytail@ponytail`) 가 `enabled` | 아무것도 하지 않는다 |
-| 같은 이름이 **다른 마켓 id** 로 `enabled` (예: `superpowers@superpowers-marketplace`) | 설치하지 않는다. `policy-apply` 에 `--off <정책 id>` 를 붙인다 — 공유 모드에서도 `settings.local.json` 에 `false` 로 남고, 다시 돌려도 남는다 |
-| 없다 | 로컬 전용: `claude plugin install <정책 id> --scope local` — ponytail 은 먼저 `claude plugin marketplace add DietrichGebert/ponytail --scope local`. 공유: 같은 두 명령을 `--scope project` 로 — 로컬 전용에서 `project` 를 쓰면 커밋될 `.claude/settings.json` 이 생긴다 |
+| `✅ … 옮길 것 없다` | 아무것도 하지 않는다 |
+| `⚠️ … 옮긴다` + 명령 | 명령을 사용자에게 보여 주고 묻는다 — 이 PC 의 모든 프로젝트에 걸린다. 승인하면 **정책 반영 전에** 그 순서대로 실행한다(새 것을 먼저 깔고 옛 것을 지운다). 막히면 사용자가 `!` 로 한 줄씩 돌린다 |
+| 위에서 거절 · 비대화형 | 실행하지 않는다. 이 PC 에 같은 플러그인이 다른 마켓 id 로 있으면 `policy-apply` 에 `--off <정책 id>` 를 붙여 그것을 쓴다 — `settings.local.json` 에 `false` 로 남는다. ⚠️ 실측한 커밋에 고정되지 않는다 — 보고의 「사용자가 결정해야 하는 것」에 남긴다 |
 
 규칙 파일의 자리를 실제 장부 경로로 바꾼다:
 
@@ -246,6 +246,19 @@ claude -p --model haiku --tools "" --no-session-persistence --output-format stre
 - 요구가 오면 그래프 먼저 (node .harness/tools/graph-find.mjs), 끝나면 기록
 - 프로젝트 설정의 자동 승인(allow)은 이 폴더를 신뢰해야 적용된다 — 대화형으로 한 번 열어 신뢰 대화상자를 수락한다 (실측: 신뢰 전에는 「Ignoring … permissions.allow entries」)
 ```
+
+## 갱신 — 이미 얹은 프로젝트를 키트의 새 버전으로
+
+①의 `detect` 가 「이미 설치됨」을 내고, 사용자가 키트를 새 버전으로 올리려는 것이면 ②~⑦ 대신 이것을 한다. 키트는 먼저 그 PC 에서 받아 둔다(`git -C <kit> pull`).
+
+```bash
+node <kit>/tools/upgrade.mjs <대상>
+```
+
+- `.harness/` 의 도구 · lib · 정책은 키트 것이라 덮어쓴다. 기록 · 장부 · 기준선 · `harness.json` 은 건드리지 않는다
+- 규칙 · final-gate 스킬은 설치본이 키트 이력의 한 버전(장부 경로를 채운 것)과 같을 때만 바꾼다. `⚠️ … 손대지 않았다` 줄은 프로젝트가 고친 파일이다 — 그 줄이 가리키는 키트의 지금 것과 비교해 키트 변경만 옮기고, 프로젝트가 더한 것과 채운 장부 경로는 남긴다
+- 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. ⛔ 이전 전에 정책을 반영하면 옛 id 는 꺼지고 키트 마켓 플러그인은 없어 superpowers · ponytail 이 둘 다 빠진다 — 이전을 거절했으면 정책 줄의 `--off <옛 id>` 를 빼고 `--off <정책 id>` 를 붙인다
+- 끝나면 ⑧-a~⑧-d(도구 · 새 세션 규칙 로드 · ponytail 끄기 · 플러그인 하나씩)를 다시 하고, 보고에 출력 그대로 붙인다
 
 ## ⛔ 하지 않는 것
 

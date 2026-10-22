@@ -50,7 +50,7 @@ export function suggest(f) {
     const hit = dirtyPaths(f.dirty).filter(rewritten);
     if (hit.length) warn.push(`설치가 고치고 git 에서 숨기는 경로에 미커밋 변경: ${hit.join(', ')} — 내용을 먼저 확인한다`);
   }
-  if (f.installed) stop.push('이미 설치됨 (.harness/ · rules/harness.md · skills/final-gate 중 하나가 있다) — 재설치인지 사용자에게 묻는다');
+  if (f.installed) stop.push('이미 설치됨 (.harness/ · rules/harness.md · skills/final-gate 중 하나가 있다) — 키트를 새 버전으로 올리는 것이면 SETUP 「갱신」(node <kit>/tools/upgrade.mjs <대상>), 아니면 사용자에게 묻는다');
   if (f.nodeMajor < 22) stop.push(`Node ${f.nodeMajor} — 22 이상이 필요하다`);
   return {
     profile: isNew ? 'new' : 'existing',

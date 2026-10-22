@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 효과 입증 — 합성 대상에 하네스를 얹고 「하네스 없이」와 「있을 때」를 같은 조건에서 잰다. 설계안.
-// README §실측 의 원천이다. 값이 아니라 이 명령을 남긴다.
+// docs/proof.md 의 원천이다. 값이 아니라 이 명령을 남긴다.
 //   node proof/run.mjs            결정론 실측 — LLM 호출 없음
 //   node proof/run.mjs --claude   + 새 세션 실측 (claude -p --model haiku, 토큰을 쓴다)
 // 예상과 다른 행이 하나라도 있으면 exit 1.
@@ -227,7 +227,7 @@ function p4(dir) {
   put(dir, '.claude/settings.json', { permissions: { allow: ['Bash(npm test)'] }, hooks: { Stop: [] } });
   sh(tool('policy-apply'), dir);
   const s = json(dir, '.claude/settings.json');
-  const applied = s.env?.PONYTAIL_DEFAULT_MODE === 'off' && s.enabledPlugins?.['ponytail@ponytail'] === true
+  const applied = s.env?.PONYTAIL_DEFAULT_MODE === 'off' && s.enabledPlugins?.['ponytail@harness-kit'] === true
     && s.permissions.allow.includes('Bash(node .harness/tools/verify.mjs)');
   const kept = s.permissions.allow.includes('Bash(npm test)') && Array.isArray(s.hooks?.Stop);
   row('P4 설정 병합', '공유 — 기존 settings(권한 1 · 훅) 위에 정책 반영',
@@ -235,15 +235,15 @@ function p4(dir) {
 
   const local = install(scratch('local'), BUILD);
   put(local, '.claude/settings.json', '{"team":true}\n');
-  put(local, '.claude/settings.local.json', { enabledPlugins: { 'superpowers@claude-plugins-official': false } });
+  put(local, '.claude/settings.local.json', { enabledPlugins: { 'superpowers@harness-kit': false } });
   sh(`${tool('policy-apply')} --local --with graph-hook`, local);
   const once = readFileSync(join(local, '.claude', 'settings.local.json'), 'utf8');
   sh(`${tool('policy-apply')} --local --with graph-hook`, local);
   const l = json(local, '.claude/settings.local.json');
   const same = readFileSync(join(local, '.claude', 'settings.local.json'), 'utf8') === once;
   row('P4 설정 병합', '로컬 — --local --with graph-hook 두 번 (중복 처리 false 가 있음)',
-    `settings.json ${readFileSync(join(local, '.claude', 'settings.json'), 'utf8').trim() === '{"team":true}' ? '그대로' : '바뀜'} · 훅 ${l.hooks?.UserPromptSubmit?.length}개 · 끈 플러그인 ${l.enabledPlugins['superpowers@claude-plugins-official'] === false ? '꺼진 채' : '다시 켜짐'} · 재실행 ${same ? '같음' : '다름'}`,
-    l.hooks?.UserPromptSubmit?.length === 1 && l.enabledPlugins['superpowers@claude-plugins-official'] === false && same);
+    `settings.json ${readFileSync(join(local, '.claude', 'settings.json'), 'utf8').trim() === '{"team":true}' ? '그대로' : '바뀜'} · 훅 ${l.hooks?.UserPromptSubmit?.length}개 · 끈 플러그인 ${l.enabledPlugins['superpowers@harness-kit'] === false ? '꺼진 채' : '다시 켜짐'} · 재실행 ${same ? '같음' : '다름'}`,
+    l.hooks?.UserPromptSubmit?.length === 1 && l.enabledPlugins['superpowers@harness-kit'] === false && same);
   if (!WITH_CLAUDE) return;
 
   const before = plugins(dir);
@@ -375,7 +375,7 @@ function p2() {
 function p3(withPolicy, control) {
   const active = (dir) =>
     (sh('claude -p --model haiku --tools "" --no-session-persistence --output-format stream-json --verbose "ok"', dir).out.match(/PONYTAIL MODE ACTIVE/g) ?? []).length;
-  const records = () => plugins(withPolicy).filter((p) => p.scope === 'project' && p.id === 'ponytail@ponytail').length;
+  const records = () => plugins(withPolicy).filter((p) => p.scope === 'project' && p.id === 'ponytail@harness-kit').length;
   const before = records();
   const off = active(withPolicy); // 먼저 — off 세션은 사용자 전역 모드 플래그를 지운다
   const after = records();
@@ -384,7 +384,7 @@ function p3(withPolicy, control) {
   row('P3 ponytail', '정책 미반영 (대조군)', `훅의 PONYTAIL MODE ACTIVE ${on}회`, on > 0);
 
   // 사용자 범위로 이미 설치된 플러그인을 프로젝트가 선언하면 세션을 열 때 프로젝트 범위 기록이 생긴다 — 실측이 남긴 것은 되돌린다
-  sh('claude plugin uninstall ponytail@ponytail --scope project --keep-data', withPolicy);
+  sh('claude plugin uninstall ponytail@harness-kit --scope project --keep-data', withPolicy);
   const cleaned = records();
   row('P4 플러그인', '프로젝트가 선언 + 이 PC 에 사용자 범위로 이미 설치 → 세션을 연다 → 정리',
     `프로젝트 범위 설치 기록 ${before} → ${after} → 정리 뒤 ${cleaned}`, after === before + 1 && cleaned === before);

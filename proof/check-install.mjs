@@ -41,8 +41,9 @@ export function checkInstall(dir, profile, mode) {
   row('공통', '규칙 자리표시가 남지 않음', `남은 자리 ${left}`, has(dir, '.claude/rules/harness.md') && left === 0);
   row('공통', 'harness.json 검사 1개 이상 · 프로필 · 모드', `검사 ${cfg.checks?.length ?? 0} · profile ${cfg.profile} · mode ${cfg.mode}`,
     cfg.checks?.length >= 1 && cfg.profile === profile && cfg.mode === mode);
-  row('공통', `정책 반영 (${settingsRel})`, `ponytail ${settings.env?.PONYTAIL_DEFAULT_MODE ?? '미설정'} · 플러그인 선언 ${Object.keys(settings.enabledPlugins ?? {}).join(', ') || '없음'}`,
-    settings.env?.PONYTAIL_DEFAULT_MODE === 'off' && 'ponytail@ponytail' in (settings.enabledPlugins ?? {}));
+  const gate = JSON.stringify(settings.hooks?.Stop ?? []).includes('gate-hook.mjs');
+  row('공통', `정책 반영 (${settingsRel})`, `ponytail ${settings.env?.PONYTAIL_DEFAULT_MODE ?? '미설정'} · 플러그인 선언 ${Object.keys(settings.enabledPlugins ?? {}).join(', ') || '없음'} · 관문 훅 ${gate ? '있음' : '없음'}`,
+    settings.env?.PONYTAIL_DEFAULT_MODE === 'off' && 'ponytail@harness-kit' in (settings.enabledPlugins ?? {}) && gate);
   const list = sh('claude plugin list --json', dir).out;
   let ids = {};
   try {

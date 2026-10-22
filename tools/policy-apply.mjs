@@ -3,7 +3,7 @@
 // ⛔ 덮어쓰지 않는다: 권한은 합집합, env·플러그인·마켓은 정책의 키만 정하고 나머지는 보존한다.
 //   node .harness/tools/policy-apply.mjs [대상] [--local] [--with <이름>]… [--off <정책 id>]…
 //   --local: .claude/settings.local.json 에 (로컬 전용 모드) · --with: policy/<이름>.json 도 병합 (예: graph-hook)
-//   --off: 정책이 켜는 그 플러그인을 settings.local.json 에 false 로 — 다른 마켓 id 로 이미 켠 같은 플러그인용, 모드와 무관하게 local 파일
+//   --off: 그 플러그인 id 를 settings.local.json 에 false 로 — 모드와 무관하게 local 파일. 정책 id(다른 마켓으로 이미 켠 같은 플러그인이 있을 때) 또는 같은 플러그인의 옛 마켓 id(갱신)
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -70,8 +70,12 @@ cli(import.meta.url, () => {
     if (!/^[\w-]+$/.test(name ?? '')) throw new Error(`--with 에는 policy/ 안의 정책 이름만 준다 (예: graph-hook): ${name}`);
     extra.push(name);
   }
+  // 정책 id, 또는 같은 플러그인의 다른 마켓 id(갱신 때 옛 id 정리) — 이름이 다른 것은 오타로 본다
   const known = Object.keys(readJson(POLICY).enabledPlugins ?? {});
-  if ([...off].some((id) => !known.includes(id))) throw new Error(`--off 에는 정책이 켜는 플러그인 id 만 준다: ${known.join(', ')}`);
+  const names = new Set(known.map((id) => id.split('@')[0]));
+  if ([...off].some((id) => !known.includes(id) && !(/^[\w-]+@[\w.-]+$/.test(id ?? '') && names.has(id.split('@')[0])))) {
+    throw new Error(`--off 에는 정책이 켜는 플러그인 id(${known.join(', ')}) 나 같은 플러그인의 다른 마켓 id 만 준다`);
+  }
 
   const local = rest.includes('--local');
   const root = rest.find((a) => a !== '--local') ?? process.cwd();

@@ -17,7 +17,7 @@
 
 ## ⭐ 관문 — 작업을 끝냈다고 보고하기 직전에 매번 `final-gate` 스킬
 
-계획이 있으면 그 마지막 태스크가 보고를 부르고, 없으면 보고가 곧 관문이다. 과설계 리뷰 · 완료 증거 · 기록이 한 세트다.
+계획이 있으면 그 마지막 태스크가 보고를 부르고, 없으면 보고가 곧 관문이다. 과설계 리뷰 · 완료 증거 · 기록이 한 세트다. verify 를 돌리고 final-gate 없이 멈추면 Stop 훅이 한 번 되돌려 보낸다.
 
 ## 완료는 증거로 주장한다
 
@@ -55,13 +55,11 @@ EOF
 
 ## 플러그인
 
-superpowers 와 ponytail 을 쓴다. 이 PC 에 없으면 — 범위는 설치 모드(`.harness/harness.json` 의 `mode`)를 따른다. 로컬 전용은 `--scope local`, 공유는 `--scope project`:
+superpowers 와 ponytail 을 쓴다 — 키트 마켓(`harness-kit`)이 실측한 커밋을 사용자 범위로 둔다. 이 PC 에 없으면 아래가 옮길 명령을 낸다 — 이 PC 의 모든 프로젝트에 걸리므로 사용자에게 보여 주고 승인받은 뒤 실행한다:
 
 ```bash
-claude plugin install superpowers@claude-plugins-official --scope local
-claude plugin marketplace add DietrichGebert/ponytail --scope local
-claude plugin install ponytail@ponytail --scope local
+node <harness-kit 경로>/tools/plugin-plan.mjs
 ```
 
-다른 마켓의 같은 플러그인을 이미 쓰고 있으면 설치하지 말고 `node .harness/tools/policy-apply.mjs --local --off <id>` 로 끈다(`<id>` 는 위의 정책 id, 공유면 `--local` 없이 — `.claude/settings.local.json` 에 `false` 로 남는다).
+사용자가 옮기기를 거절하고 다른 마켓의 같은 플러그인을 계속 쓰면 `node .harness/tools/policy-apply.mjs --local --off <id>` 로 정책 id 를 끈다(`<id>` 는 정책 id, 공유면 `--local` 없이 — `.claude/settings.local.json` 에 `false` 로 남는다). 그 플러그인은 실측한 커밋에 고정되지 않는다.
 ponytail 모드는 꺼져 있다(`PONYTAIL_DEFAULT_MODE=off`) — 코드를 바꾼 보고 직전 `final-gate` 에서 `/ponytail-review` 로만 부른다.

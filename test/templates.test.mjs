@@ -10,6 +10,7 @@ const at = (rel) => new URL(`../${rel}`, import.meta.url);
 const SHIPPED = [
   'SETUP.md',
   'README.md',
+  'docs/proof.md',
   'templates/rules/harness.md',
   'templates/rules/graph.md',
   'templates/skills/final-gate/SKILL.md',
@@ -104,19 +105,16 @@ test('⛔ 지도 골격의 <…> 는 채울 자리뿐이다 — 명령 인자를
   for (const rel of ['templates/map/AGENTS.md', 'templates/map/CLAUDE.local.md']) assert.doesNotMatch(repoFile(rel), /`node [^`]*<[^>`]+>/, rel);
 });
 
-test('⛔ 플러그인 설치 범위는 모드를 따른다 — 로컬 전용에서 --scope project 면 커밋될 settings.json 이 생긴다', () => {
-  const rules = repoFile('templates/rules/harness.md');
-  const setup = repoFile('SETUP.md');
-  for (const [rel, s] of [['harness.md', rules], ['SETUP.md', setup]]) {
-    assert.match(s, /claude plugin install [^\n`]+ --scope local/, rel);
-    assert.match(s, /claude plugin marketplace add DietrichGebert\/ponytail --scope local/, rel);
-    assert.match(s, /공유[^\n]*--scope project/, rel);
+test('⛔ 플러그인은 plugin-plan 을 거쳐 사용자 범위로 — 키트 마켓 경로는 PC 마다 달라 프로젝트 설정에 넣지 않는다', () => {
+  for (const [rel, s] of [['harness.md', repoFile('templates/rules/harness.md')], ['SETUP.md', repoFile('SETUP.md')]]) {
+    assert.match(s, /tools\/plugin-plan\.mjs/, rel);
+    assert.doesNotMatch(s, /claude plugin (install|marketplace add) [^\n`]*--scope/, rel);
   }
 });
 
-test('⛔ 다른 마켓 id 의 플러그인은 policy-apply --off 로 끈다 — SETUP 은 목록을 먼저 본다(그래야 --off 를 붙인다)', () => {
+test('⛔ 이전은 정책 반영보다 먼저 — 거꾸로면 옛 id 는 꺼지고 새 플러그인은 없다. 거절하면 --off 로 끈다', () => {
   const setup = repoFile('SETUP.md');
-  assert.ok(setup.indexOf('claude plugin list --json') < setup.indexOf('node .harness/tools/policy-apply.mjs'));
+  assert.ok(setup.indexOf('tools/plugin-plan.mjs') < setup.indexOf('node .harness/tools/policy-apply.mjs'));
   for (const [rel, s] of [['SETUP.md', setup], ['harness.md', repoFile('templates/rules/harness.md')]]) {
     assert.match(s, /policy-apply\.mjs --local --off <(정책 )?id>/, rel);
   }

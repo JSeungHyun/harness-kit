@@ -58,6 +58,19 @@ test('이름에 > 가 들어가도 testcase 를 놓치지 않는다', () => {
   assert.equal(r.reason, '테스트 1 · 실패 0');
 });
 
+test('⛔ CDATA 속 </testcase> · <testcase> 로 실패를 숨기거나 테스트를 부풀리지 못한다', () => {
+  const closeFirst = '<testsuite><testcase classname="A" name="f"><system-out><![CDATA[dump </testcase>]]></system-out><failure message="boom"/></testcase></testsuite>';
+  assert.equal(judgeJunitXml([closeFirst]).reason, '테스트 1 · 실패 1');
+  const phantom = '<testsuite><testcase name="k"><skipped/></testcase><system-out><![CDATA[<testcase name="ghost"/>]]></system-out></testsuite>';
+  assert.match(judgeJunitXml([phantom]).reason, /0개.*건너뜀 1/);
+});
+
+test('출력(CDATA) · 주석에 든 <failure 글자는 실패가 아니다', () => {
+  const out = '<testsuite><testcase classname="A" name="p"><system-out><![CDATA[log <failure message="x"/>]]></system-out></testcase></testsuite>';
+  const comment = '<testsuite><testcase classname="A" name="c"><!-- <failure/> --></testcase></testsuite>';
+  assert.equal(judgeJunitXml([out, comment]).reason, '테스트 2 · 실패 0');
+});
+
 test('⭐ XML 이 한 개도 없으면 실패다 — 테스트가 안 돈 것이다', () => {
   assert.match(judgeJunitXml([]).reason, /한 개도/);
   assert.match(judgeJunitXml(['<?xml version="1.0"?><other/>']).reason, /한 개도/);

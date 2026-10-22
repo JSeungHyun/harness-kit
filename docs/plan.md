@@ -6,7 +6,7 @@
 
 **출처 (읽기 전용 — ⛔ 수정 금지):** `C:\Project\agent-harness` (main `4c975f3`) · `C:\Project\context-graph` (`436712b`)
 **작업 위치:** `C:\Project\harness-kit` 만.
-**실행 상태 (2026-10-02):** Task 0~11 완료 · 지시함 1차 6건 · 2차 9건 · 3차 1건 처리. `npm test` 151 통과 · `node proof/run.mjs` 예상과 다른 행 0/29 · `--claude` 0/41(플러그인 기록 전후 같음) · SETUP 종단 run4 신규·공유 20/20 · 기존·로컬 18/20(⛔ 2행은 실험 쪽 — 질문 범위 · 정리 범위. 고친 뒤 3/3 · 기록 원복, README §실측) · 자기 verify exit 0. 테스트 · 결정론 실측이 자기 임시 폴더를 지운다(%TEMP% 개수 전후 같음) · `--test-concurrency=4` 로 spawn EPERM 불안정 5회 중 1회 → 0회(⚠️ 2026-10-07 재발 — 자기 verify 2회 중 1회. 0회는 그날 표본이다. 실패가 `spawn EPERM` 뿐이면 다시 돌려 확인한다). setup-e2e 는 run4 뒤 다시 돌리지 않았다. `/ponytail-review` · `/security-review` · 커밋은 부모 몫
+**실행 상태 (2026-10-02):** Task 0~11 완료 · 지시함 1차 6건 · 2차 9건 · 3차 1건 처리. `npm test` 151 통과 · `node proof/run.mjs` 예상과 다른 행 0/29 · `--claude` 0/41(플러그인 기록 전후 같음) · SETUP 종단 run4 신규·공유 20/20 · 기존·로컬 18/20(⛔ 2행은 실험 쪽 — 질문 범위 · 정리 범위. 고친 뒤 3/3 · 기록 원복, docs/proof.md) · 자기 verify exit 0. 테스트 · 결정론 실측이 자기 임시 폴더를 지운다(%TEMP% 개수 전후 같음) · `--test-concurrency=4` 로 spawn EPERM 불안정 5회 중 1회 → 0회(⚠️ 2026-10-07 재발 — 자기 verify 2회 중 1회. 0회는 그날 표본이다. 실패가 `spawn EPERM` 뿐이면 다시 돌려 확인한다). setup-e2e 는 run4 뒤 다시 돌리지 않았다. `/ponytail-review` · `/security-review` · 커밋은 부모 몫
 
 ## 📬 harness 지시함 — ⛔ 다음 태스크보다 먼저 처리하고, 처리한 줄은 `- [x]` 로 바꾼다
 
@@ -84,6 +84,21 @@
 - [x] ① `policy-apply --off <정책 id>` — 다른 마켓 id 로 켜진 플러그인의 정책 id 를 `false` 로 넣는 직접 편집이 `policy-apply` 와 같이 Self-Modification 으로 막혀 사용자 `!` 줄에 node 한 줄을 더 붙여야 했다. 옵션이 그 쓰기를 한 명령에 담는다 — 모드와 무관하게 늘 `settings.local.json` · 정책 id 가 아니면 아무것도 쓰지 않고 exit 1. 기각: `claude plugin list --json` 자동 감지(실측 4.9초 · CLI 와 JSON 형식에 의존 · 테스트 우회 장치 필요) — 실패는 판단이 아니라 막힌 쓰기였다
 - [x] ② `detect` — 미커밋 변경은 로컬 전용에서 ⛔ 멈춤이 아니라 `⚠️ 확인`(`suggest.warn`). 합성 저장소 5경우 실측: 로컬 전용은 미커밋 3줄(추적 수정 1 · 새 파일 2) 위에 설치해도 `git status` 3줄 → 3줄 · 내용 그대로, 단 작업 중 변경에 `CLAUDE.local.md` · `.claude/settings.local.json` 이 있으면 설치가 그 둘을 고치고 숨긴다(겹침 줄. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 변경이 `git status` 에 안 나와 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 한다) · 공유는 설치 파일 29~30개가 작업 중 변경과 같이 보여 한 커밋에 섞인다 → 멈춤이 맞다
 - 보류: MyBatis 「조건 약화 훅」(매퍼 문에서 동등 조건이 빠지면 같은 자바 메서드의 형제 문 중 그 컬럼을 계산에 쓰는 줄을 알린다)을 선택 모듈로 — 1년 재생(2026-10-12): 처음 만든 운영 대상은 매퍼 커밋 105건 → 발동 1회 4줄(전부 진짜) · 두 번째 MyBatis 대상은 14건 → 동등 조건 변경 12건 · 자바 형제 28개를 찾고도 발동 0회. 일반화는 작다(매퍼 = 위치 상수가 아니라 `<mapper namespace` 를 가진 추적 XML · 그 대상 전용 SQL 사본 안내는 없으면 뺀다 · 원 대상 재생 결과 같음). 다른 대상에서 진짜 발동이 나오면 넣는다
+
+**7차 — 외부 평가 6항목 (2026-10-22 · 사전 시험 · 판정은 harness 세션):**
+- [x] ⑥ XML 판정 — CDATA · 주석 속 표식. 재현 5종 중 3종이 오판이었고, 그중 2종은 거짓 통과였다. 하나는 실패 앞 CDATA 에 든 `</testcase>` 이고, 다른 하나는 CDATA 속 가짜 `<testcase>` 가 「전부 건너뜀」을 통과로 만든 경우다. 판정 전에 CDATA · 주석을 걷어낸다(`lib/evidence.mjs`, 테스트 2개)
+- [x] ⑤ README — 문제 정의를 첫머리로 올렸다. 실측 절은 `docs/proof.md` 로 옮기고 README 에는 요지 표만 남겼다
+- [x] ④ 플러그인 고정 — 사용자가 「키트 마켓 sha 고정」을 골랐다. `.claude-plugin/marketplace.json` 에 실측한 커밋(superpowers 6.1.1 `d884ae0` · ponytail 4.9.0 `2ed6c52`)을 적었다. 정책 id 는 `@harness-kit` 이다. 격리 설정 폴더에서 적힌 커밋 그대로 설치됨을 확인했다(`github` 출처는 SSH 로 받아 실패 → `url`). SETUP ⑥ · `harness.md` · proof · check-install 의 id 도 함께 바꿨다
+- [x] ② 관문 훅(`tools/gate-hook.mjs` · `policy/gate-hook.json`, SETUP ⑥ 기본) — 사용자 「final-gate 가 제일 우선」. verify 를 신호로 쓰고 이번 턴에 final-gate 가 없으면 한 번 되돌린다. 훅에서 verify 를 돌리는 원래 제안은 기각. 근거와 기각한 변형은 `design.md` §3 · `docs/proof.md` 관문 훅
+- [x] 갱신 — 사용자: 「다른 PC 에서도 이 키트를 쓴다」. `tools/upgrade.mjs` 를 만들고 SETUP 「갱신」 · README 「키트를 쓰는 PC 마다」를 더했다. 설치 3곳의 사본으로 사전 시험했다. 규칙은 3/3 이 키트 첫 커밋과 같아 갱신됐고, 출력된 정책 줄을 그대로 돌리자 옛 id 꺼짐 · `@harness-kit` 켜짐 · 관문 훅 추가 · 그래프 훅 보존이 나왔다. `policy-apply --off` 는 같은 플러그인의 다른 마켓 id 도 받는다(로컬 설치 기록이 없으면 uninstall 이 실패한다). 새 세션이 SETUP 「갱신」을 따르는 종단 실측은 하지 않았다
+- [x] PC 이전도 SETUP 안에서 — 사용자 「1 도 setup 에서 수행할 수 있도록」. `tools/plugin-plan.mjs` 가 그 PC 의 `claude plugin list --json` 을 읽어 이전 명령(마켓 추가 → 새 것 설치 → 옛 사용자 범위 제거)을 낸다. SETUP ⑥ · 갱신이 그것을 사용자에게 묻고 정책 반영 전에 실행한다. 사전 시험: 격리 설정에 옛 마켓 사용자 범위 설치를 만들고 출력 명령을 Git Bash 로 그대로 돌렸다 — `@harness-kit` 두 개만 실측 커밋으로 남았고, 다시 돌리면 「옮길 것 없다」. 경로는 슬래시로 낸다(Git Bash 가 백슬래시를 지운다)
+- ⏸ 키트 커밋 · push(사용자 확인 대기) → 이 PC 설치 3곳과 다른 PC 프로젝트에서 SETUP 「갱신」
+- ⏸ 관문 훅 효과 — 실제 설치에서 다시 잰다(재생으로는 verify 턴 14개 중 11개에 울린다)
+- ⏸ `graph-append` 에 여러 줄 JSON 을 heredoc 으로 주면 「건너뜀」 경고가 4줄 나온다 — 합성 세션 3/3 에서 봤다. 기록은 들어갔다. 원인은 보지 않았다
+- 기각 ① graph 를 선택 모듈로 내리기 · 규칙 경량화 — 같은 세션 기록에서 가장 많이 쓰인 도구가 graph-find(122)다. 근거로 든 「매 턴 다시 읽는 지침」(대조 3)은 원천 프로젝트의 지침 전체라 키트 규칙 13KB 만의 값이 아니다. 실제로 뺄 대상이 나오면 SETUP ① context-graph 행의 생략 경로에 한 줄 더한다
+- 보류 ③ graph 근거 보강 — 표본 8건 · 라벨이 기록에서 나왔다는 한계에 동의한다. 새 대조는 실제 설치에서 기록이 쌓인 뒤
+- [x] final-gate 스킬이 코드 변경 뒤 0/7 — 내용은 스킬 없이 대부분 했다(`docs/proof.md` 실제 설치)
+- ⚠️ `node proof/run.mjs` 실행 불안정 — 2026-10-22 하루 6회 중 4회가 매번 다른 한 행에서 ⛔ 였다(P1 대조 `npm test` exit null · P10 판별 커밋 0 · P8 열린 작업 줄 없음 · P6 verify exit null). 모두 프로세스가 뜨지 못한 쪽이고, 판정 로직 쪽은 정상이었다. PC 부하가 클 때(node 기동 0.8~1초) 잦다. 원인은 확인하지 않았다. 고칠 자리는 둘로 보인다. 하나는 `sh()` 가 실행 실패(status null)를 재시도하지 않는 것이고, 다른 하나는 `detect` 가 git 실행 실패를 커밋 0 으로 읽는 것이다(실제 대상에서도 기존 저장소를 신규로 제안할 수 있다)
 
 처리하면 `SendMessage(to: "main")` 으로 짧게 보고한다.
 
@@ -224,7 +239,7 @@
 - [x] 정리 — 각 대상의 프로젝트 범위 플러그인 기록을 되돌리고, 남은 것(`~/.claude/projects/` 의 빈 폴더 등)을 보고에 적는다
 - [x] 결과가 기대와 다르면: SETUP 이 모호한가(→ SETUP 을 고친다) 기대가 틀렸나(→ 근거와 함께 기대를 고친다). ⛔ 재실행은 대상마다 2회까지 — 비용이 크다
 
-**완료 기준:** 두 대상의 `check-install` 표와 규칙 로드 결과가 README §실측에 들어간다. 다르게 나온 항목은 고쳤거나 이유가 적혀 있다.
+**완료 기준:** 두 대상의 `check-install` 표와 규칙 로드 결과가 `docs/proof.md` 에 들어간다. 다르게 나온 항목은 고쳤거나 이유가 적혀 있다.
 
 ### Task 11: 마무리
 - [x] `npm test` · `node proof/run.mjs` 를 다시 돌린다

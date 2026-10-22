@@ -1,0 +1,16 @@
+{
+  "_note": "관문 훅 — 이번 턴에 verify 를 돌리고 final-gate 를 거치지 않았으면 한 번 되돌려 보낸다. 백그라운드 작업을 기다리는 멈춤 · 되돌린 뒤의 멈춤에는 울리지 않는다. policy-apply --with gate-hook 으로 병합한다. 설계안.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.harness/tools/gate-hook.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
