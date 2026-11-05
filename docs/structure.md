@@ -90,7 +90,7 @@
 | | 무엇 |
 |---|---|
 | allow | 읽기 · 키트 점검 도구(`verify` · `decision-check` · `lesson-promote` · `state-check` · `graph-find`) · 읽기 전용 셸 |
-| deny | `rm` · `rmdir` · `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` |
+| deny | `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` — `rm` · `rmdir` 은 두지 않는다: PC(전역)가 정한다. 프로젝트 deny 는 전역 allow 를 이긴다 |
 | ask | `--force` · `git restore` · `stash drop·clear` |
 
 ⛔ 그래프 쓰기(`graph-append` · `graph-alias`)는 allow 에 없다 — 기본 모드에서는 사람이 승인한다. auto 모드에서는 사람이 아니라 분류기가 판정한다.

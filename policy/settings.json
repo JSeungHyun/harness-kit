@@ -2,7 +2,7 @@
   "_note": "대상 .claude/settings.json 에 병합할 정책 단일 원천. tools/policy-apply.mjs 가 기존 키를 보존하며 반영한다.",
   "_why": {
     "deny-push": "레포 밖으로 나가는 작업은 사람이 한다",
-    "deny-rm": "되돌릴 수 없는 삭제. mv 는 허용하되 덮어쓰기 위험은 남는다",
+    "rm-at-pc": "rm · rmdir 은 정책에 두지 않는다 — 허용 여부는 PC(사용자 범위)가 정한다. 프로젝트 deny 는 전역 allow 를 이겨 PC 의 결정을 막는다(2026-11-05 사용자: 전역 allow). 옛 정책이 쓴 차단은 policy-apply 가 걷는다",
     "ask-force": "--force 는 되돌리기가 사라지는 지점이다",
     "checkout-vs-restore": "git checkout -- <파일> 은 늘 작업 트리 변경을 버려 차단한다. git restore 는 --staged(스테이징만 푼다) 같은 무해한 꼴이 있어 묻는다 — 변경을 버려야 하는 절차는 git restore <파일> 로 쓰고 사람이 승인한다",
     "ponytail-review-only": "흐름의 베이스는 superpowers 다. ponytail 은 플러그인으로 켜지 않고 사용자 스킬 ponytail-review 만 둔다(PC 에서 한 번 — plugin-plan) — final-gate 가 /ponytail-review 로만 부른다. 모드가 없으니 PONYTAIL_DEFAULT_MODE 도 두지 않는다",
@@ -23,7 +23,6 @@
       "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(diff *)"
     ],
     "deny": [
-      "Bash(rm *)", "Bash(rmdir *)",
       "Bash(git push *)", "Bash(git reset --hard*)", "Bash(git clean *)",
       "Bash(git checkout -- *)", "Bash(git rebase *)",
       "Bash(curl * | bash*)", "Bash(wget * | bash*)",

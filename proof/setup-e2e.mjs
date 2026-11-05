@@ -149,7 +149,7 @@ function session(dir, kit, extra) {
 }
 
 const ask = (dir, q) =>
-  sh(`claude -p --model haiku --tools "" --no-session-persistence ${JSON.stringify(`도구를 쓰지 마라. ${q} 주어진 지시에 없으면 정확히 '모름'이라고만 답하라.`)}`, dir).out.trim();
+  sh(`claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence ${JSON.stringify(`도구를 쓰지 마라. ${q} 주어진 지시에 없으면 정확히 '모름'이라고만 답하라.`)}`, dir).out.trim();
 function ruleLoad(dir) {
   const done = ask(dir, '이 저장소에서 코드를 바꾼 작업의 완료를 주장하기 전에 반드시 돌려야 하는 명령은 정확히 무엇인가?');
   const graph = ask(dir, '이 저장소에서 과거 요구와 현업 용어를 찾을 때 먼저 돌리는 명령은 정확히 무엇인가?');

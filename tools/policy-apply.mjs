@@ -25,9 +25,15 @@ export const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), 
 // 옛 정책이 프로젝트에 쓴 것을 걷는다 — 플러그인은 PC 에서만 관리하므로 켬 · 끔(--off 가 쓴 옛 마켓 id) 모두 묻지 않고 걷는다
 const KIT_PLUGINS = ['superpowers', 'ponytail'];
 const OLD_MARKETS = { ponytail: 'DietrichGebert/ponytail' }; // 10-03 판 정책이 쓴 마켓 선언
+// 정책에서 뺀 권한 — 합집합 병합이라 남고, 프로젝트 deny 는 전역 allow 를 이긴다(rm 은 PC 가 정한다 · 2026-11-05)
+const OLD_RULES = { deny: ['Bash(rm *)', 'Bash(rmdir *)'] };
 export function dropOld(settings, declared = {}) {
   const out = structuredClone(settings);
   const gone = [];
+  for (const [k, rules] of Object.entries(OLD_RULES)) {
+    const hit = (out.permissions?.[k] ?? []).filter((r) => rules.includes(r));
+    if (hit.length) { out.permissions[k] = out.permissions[k].filter((r) => !rules.includes(r)); gone.push(...hit.map((r) => `permissions.${k}: ${r}`)); }
+  }
   for (const id of Object.keys(out.enabledPlugins ?? {})) {
     if (KIT_PLUGINS.includes(id.split('@')[0]) && !(id in declared)) { delete out.enabledPlugins[id]; gone.push(id); }
   }
@@ -125,7 +131,7 @@ cli(import.meta.url, () => {
     if (p !== POLICY) continue;
     const { settings, gone } = dropOld(merged, policy.enabledPlugins);
     merged = settings;
-    if (gone.length) notes.push(`걷음(옛 정책이 쓴 것 — 플러그인은 PC 에서 켠다): ${gone.join(', ')}`);
+    if (gone.length) notes.push(`걷음(옛 정책이 쓴 것 — 플러그인 · rm 은 PC 에서 정한다): ${gone.join(', ')}`);
   }
   // --local 이면 두 경로가 같아 한 번만 쓴다. 읽기는 모두 쓰기 앞에 — 어느 파일이 깨졌어도 반쯤 쓰지 않는다
   const out = new Map([[path, merged]]);

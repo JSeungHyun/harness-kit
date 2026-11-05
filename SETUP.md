@@ -239,12 +239,12 @@ git status --porcelain                                          # 의도한 파�
 **⑧-b. 규칙이 새 세션에 로드되는가** — 도구를 끈 새 세션으로 양성 2 · 음성 1
 
 ```bash
-claude -p --model haiku --tools "" --strict-mcp-config --no-session-persistence "도구를 쓰지 마라. 이 저장소에서 코드를 바꾼 작업의 완료를 주장하기 전에 반드시 돌려야 하는 명령은 정확히 무엇인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
-claude -p --model haiku --tools "" --strict-mcp-config --no-session-persistence "도구를 쓰지 마라. 이 저장소에서 과거 요구와 현업 용어를 찾을 때 먼저 돌리는 명령은 정확히 무엇인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
-claude -p --model haiku --tools "" --strict-mcp-config --no-session-persistence "도구를 쓰지 마라. 이 저장소의 배포 승인권자는 누구인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
+claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence "도구를 쓰지 마라. 이 저장소에서 코드를 바꾼 작업의 완료를 주장하기 전에 반드시 돌려야 하는 명령은 정확히 무엇인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
+claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence "도구를 쓰지 마라. 이 저장소에서 과거 요구와 현업 용어를 찾을 때 먼저 돌리는 명령은 정확히 무엇인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
+claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence "도구를 쓰지 마라. 이 저장소의 배포 승인권자는 누구인가? 주어진 지시에 없으면 정확히 '모름'이라고만 답하라." < /dev/null
 ```
 
-`--tools ""` 는 MCP 도구를 막지 않는다 — `--strict-mcp-config` 가 없으면 모델이 연결 도구(예: 문서 검색)를 불러 답이 흐려진다(2026-11-05 실측). 양성은 `verify.mjs` 와 `graph-find.mjs` 를, 음성은 「모름」을 답해야 한다. 응답은 모델 표본이라 흔들린다 — 양성이 「모름」이면 같은 질문을 두 번 더 해 **3회 중 2회 이상**이면 통과로 보고 「n/3」을 적는다(실측: 같은 설치에서 3회 중 1회 「모름」). 2회 이상 「모름」이면 `.claude/rules/` 의 위치를 본다.
+`--tools ""` 는 MCP 도구를 막지 않는다 — `--strict-mcp-config` 가 없으면 모델이 연결 도구(예: 문서 검색)를 불러 답이 흐려진다(2026-11-05 실측). 양성은 `verify.mjs` 와 `graph-find.mjs` 를, 음성은 「모름」을 답해야 한다. 측정 모델은 sonnet 이다 — haiku 는 규칙이 실려도 「모름」으로 빠진다(2026-11-05 실측: 설치 2곳 × 질문 3 × 3회에서 sonnet 18/18 · haiku 17/18, 지시 파일이 짧은 쪽에서도 빠졌다 · sonnet 회당 $0.02~0.04). 응답은 모델 표본이라 흔들린다 — 양성이 「모름」이면 같은 질문을 두 번 더 해 **3회 중 2회 이상**이면 통과로 보고 「n/3」을 적는다(실측: 같은 설치에서 3회 중 1회 「모름」). 2회 이상 「모름」이면 `.claude/rules/` 의 위치를 본다.
 
 **⑧-c. PC 가 키트에 맞는가 · ponytail 은 리뷰 스킬만인가** — 정책이 아니라 PC 의 상태다(⑥)
 

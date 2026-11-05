@@ -8,7 +8,7 @@
 |---|---|---|
 | 운영 데이터 | 재현 불가 — 원천 프로젝트의 기록 · 이슈 · 프롬프트 | graph 모듈 대조 2회 · 훅 재생 |
 | 결정론 | `node proof/run.mjs` | 하네스 없이 vs 있을 때 — LLM 없음 |
-| 새 세션 | `node proof/run.mjs --claude` | 규칙 로드 · ponytail 끄기 · 플러그인 (haiku) |
+| 새 세션 | `node proof/run.mjs --claude` | 규칙 로드 · ponytail 끄기 · 플러그인 (sonnet) |
 | SETUP 종단 | `node proof/setup-e2e.mjs` | 새 sonnet 세션이 SETUP 을 처음부터 끝까지 따르는가 → `proof/check-install.mjs` 가 파일 · git · 도구 출력으로 판정 |
 | 실제 설치 | 재현 불가 — 설치한 프로젝트의 세션 기록 | 코드를 바꾼 턴에 verify · final-gate 가 따랐나 |
 

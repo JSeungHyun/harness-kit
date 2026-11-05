@@ -2,7 +2,7 @@
 // 효과 입증 — 합성 대상에 하네스를 얹고 「하네스 없이」와 「있을 때」를 같은 조건에서 잰다. 설계안.
 // docs/proof.md 의 원천이다. 값이 아니라 이 명령을 남긴다.
 //   node proof/run.mjs            결정론 실측 — LLM 호출 없음
-//   node proof/run.mjs --claude   + 새 세션 실측 (claude -p --model haiku, 토큰을 쓴다)
+//   node proof/run.mjs --claude   + 새 세션 실측 (claude -p --model sonnet, 토큰을 쓴다)
 // 예상과 다른 행이 하나라도 있으면 exit 1.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, realpathSync, existsSync, rmSync } from 'node:fs';
@@ -339,7 +339,7 @@ function p10() {
 
 // 도구를 전부 끈 새 세션 — 지시 파일만 보고 답한다
 const ask = (dir, q) =>
-  sh(`claude -p --model haiku --tools "" --no-session-persistence ${JSON.stringify(`도구를 쓰지 마라. ${q} 주어진 지시에 없으면 정확히 '모름'이라고만 답하라.`)}`, dir).out.trim();
+  sh(`claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence ${JSON.stringify(`도구를 쓰지 마라. ${q} 주어진 지시에 없으면 정확히 '모름'이라고만 답하라.`)}`, dir).out.trim();
 const DONE_Q = '이 저장소에서 코드를 바꾼 작업의 완료를 주장하기 전에 반드시 돌려야 하는 명령은 정확히 무엇인가?';
 const GRAPH_Q = '이 저장소에서 과거 요구와 현업 용어를 찾을 때 먼저 돌리는 명령은 정확히 무엇인가?';
 

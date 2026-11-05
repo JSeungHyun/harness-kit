@@ -131,6 +131,13 @@ test('⛔ 플러그인은 plugin-plan 을 거쳐 사용자 범위로 — 키트 
   }
 });
 
+test('⑧-b 규칙 로드는 sonnet · --strict-mcp-config 로 잰다 — haiku 는 규칙이 실려도 「모름」으로 빠지고, --tools "" 는 MCP 를 막지 않는다', () => {
+  const lines = repoFile('SETUP.md').split(/\r?\n/).filter((l) => l.startsWith('claude -p') && l.includes('--tools ""'));
+  assert.equal(lines.length, 3);
+  for (const l of lines) assert.match(l, /--model sonnet .*--strict-mcp-config/);
+  for (const f of ['proof/run.mjs', 'proof/setup-e2e.mjs']) assert.match(repoFile(f), /claude -p --model sonnet --tools "" --strict-mcp-config/, f);
+});
+
 test('final-gate 는 바꾼 코드가 verify 의 테스트로 돌지 않을 때만 /code-review 를 더한다 — 정확성 증거가 없는 자리', () => {
   const s = repoFile('templates/skills/final-gate/SKILL.md');
   assert.match(s, /`\/code-review`\*\* — ⭐ \*\*바꾼 코드가 verify 의 테스트로 실행되지 않을 때만/);

@@ -162,6 +162,17 @@ test('⭐ CLI --local: 프로젝트의 superpowers · ponytail 항목을 켬 · 
   assert.deepEqual(s.env, { MINE: '1' });
 });
 
+test('⭐ 정책이 뺀 rm · rmdir 차단을 걷는다 — 남으면 PC 의 전역 allow 를 이긴다 · 프로젝트가 더한 deny 는 둔다', () => {
+  assert.ok(!readJson(POLICY).permissions.deny.some((r) => /^Bash\(rm(dir)? /.test(r)));
+  const dir = target(null, { '.claude/settings.local.json': JSON.stringify({ permissions: { deny: ['Bash(rm *)', 'Bash(rmdir *)', 'Bash(kill *)'] } }) });
+  const r = apply(dir, '--local');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /걷음.*permissions\.deny: Bash\(rm \*\)/);
+  const deny = readJson(join(dir, '.claude', 'settings.local.json')).permissions.deny;
+  assert.ok(deny.includes('Bash(kill *)'));
+  assert.ok(!deny.includes('Bash(rm *)') && !deny.includes('Bash(rmdir *)'));
+});
+
 test('⭐ CLI 공유: settings.json 에는 팀원 PC 용으로 superpowers 만 선언하고 ponytail 선언 · 모드는 걷는다', () => {
   const dir = target(null, { '.claude/settings.json': JSON.stringify({ env: { PONYTAIL_DEFAULT_MODE: 'off' }, enabledPlugins: { 'ponytail@harness-kit': true } }) });
   assert.equal(apply(dir).status, 0);
