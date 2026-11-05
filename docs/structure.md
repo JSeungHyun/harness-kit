@@ -83,7 +83,7 @@
 | 도구 | `.harness/tools/*.mjs` | 모델이 Bash 로 부른다 |
 | 데이터 | 그래프 `.harness/graph/requests.jsonl` · 장부 · 기준선 | 도구로만 읽고 쓴다 (§6 · §7) |
 | 권한 정책 | `permissions` 의 allow · deny · ask | 도구를 부를 때마다 (아래) |
-| 플러그인 | superpowers · ponytail 을 키트 마켓의 커밋으로 고정 · `PONYTAIL_DEFAULT_MODE=off` | 설치 · 갱신 때 (README) |
+| 플러그인 | superpowers 를 키트 마켓의 커밋으로 고정 · ponytail 은 그 커밋의 리뷰 스킬 `ponytail-review` 만 — 둘 다 PC(사용자 범위)에서 한 번, 로컬 설치는 프로젝트에 선언하지 않는다 | PC 맞추기 · 설치 · 갱신 때 (`plugin-plan` · SETUP) |
 
 **권한 정책** (`policy/settings.json` — 훅이 아니다)
 
@@ -225,11 +225,11 @@
 | 이벤트 | 무엇이 | 출처 | 하는 일 |
 |---|---|---|---|
 | `SessionStart` (startup · clear · compact) | `session-start` | superpowers | 스킬 사용 규칙(using-superpowers)을 넣는다 — 「관련 스킬이 있으면 먼저 부른다」 |
-| `SessionStart` | `ponytail-activate.js` | ponytail | 정책이 `PONYTAIL_DEFAULT_MODE=off` 라 아무것도 넣지 않는다 |
-| `UserPromptSubmit` | `ponytail-mode-tracker.js` | ponytail | `/ponytail <모드>` 전환을 기억한다 |
-| `SubagentStart` | `ponytail-subagent.js` | ponytail | 모드가 켜져 있을 때만 서브에이전트에 규칙을 넣는다 — off 면 없음 |
+| `SessionStart` | `ponytail-activate.js` | ponytail | 모드를 켠다 — **키트 기본(리뷰 스킬만)에서는 플러그인이 꺼져 있어 돌지 않는다** |
+| `UserPromptSubmit` | `ponytail-mode-tracker.js` | ponytail | `/ponytail <모드>` 전환을 기억한다 — 같음 |
+| `SubagentStart` | `ponytail-subagent.js` | ponytail | 모드가 켜져 있을 때만 서브에이전트에 규칙을 넣는다 — 같음 |
 
-- ponytail 을 플러그인 없이 사용자 스킬 `ponytail-review` 로만 둔 PC 에는 위 ponytail 훅 세 줄이 없다 — 로컬 전용 `policy-apply` 가 그 플러그인을 선언하지 않는다(SETUP ⑥)
+- 키트 기본은 ponytail 플러그인을 사용자 범위에서 끄고 사용자 스킬 `ponytail-review` 만 둔다(SETUP ⑥ · `plugin-plan`) — 위 ponytail 훅 세 줄이 돌지 않아 프롬프트 · 서브에이전트마다 node 를 띄우지 않는다. 지시 파일이 ponytail 모드를 쓰는 프로젝트만 자기 설정에서 플러그인을 켜고, 그 프로젝트에서만 세 줄이 돈다
 - ponytail 훅은 제한이 5초다. 프로세스 기동이 느린 PC(보안 프로그램이 새 프로세스마다 검사하는 경우)에서는 가끔 「timed out after 5s」로 결과가 버려진다 — 그 프롬프트의 모드 추적만 빠지고 작업에는 영향이 없다. 키트 훅은 10초 · 30초다
 
 ### 8.2 프로젝트가 더한 훅 — 예: 화면 디자인 스킬 게이트

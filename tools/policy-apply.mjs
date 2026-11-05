@@ -20,22 +20,23 @@ const hookKey = (h) => [h.command, ...(h.args ?? [])].join(' ');
 const commands = (groups = []) => groups.flatMap((g) => (g.hooks ?? []).map(hookKey));
 const kitTool = (key) => key.match(/\.harness\/tools\/[\w-]+\.mjs/)?.[0];
 
-// 같은 일을 하는 사용자 스킬이 이 PC 에 있으면 플러그인을 선언하지 않는다 — 로컬 전용만. 공유 설정은 스킬이 없을 수 있는 팀원 PC 를 위한 것이다
-const SKILL_INSTEAD = { 'ponytail@harness-kit': 'ponytail-review' };
 export const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-// plugin-plan 도 이것으로 그 플러그인을 옮길 대상에서 뺀다
-export const skillInstead = (id, configDir = claudeDir()) =>
-  SKILL_INSTEAD[id] && existsSync(join(configDir, 'skills', SKILL_INSTEAD[id], 'SKILL.md')) ? SKILL_INSTEAD[id] : '';
 
-export function skipSkillPlugins(policy, configDir, notes = []) {
-  const out = structuredClone(policy);
+// 옛 정책이 프로젝트에 쓴 것을 걷는다 — 플러그인은 PC 에서만 관리하므로 켬 · 끔(--off 가 쓴 옛 마켓 id) 모두 묻지 않고 걷는다
+const KIT_PLUGINS = ['superpowers', 'ponytail'];
+const OLD_MARKETS = { ponytail: 'DietrichGebert/ponytail' }; // 10-03 판 정책이 쓴 마켓 선언
+export function dropOld(settings, declared = {}) {
+  const out = structuredClone(settings);
+  const gone = [];
   for (const id of Object.keys(out.enabledPlugins ?? {})) {
-    const skill = skillInstead(id, configDir);
-    if (!skill) continue;
-    delete out.enabledPlugins[id];
-    notes.push(`${id.split('@')[0]}: 사용자 스킬 ${skill} 가 있어 플러그인을 선언하지 않는다 — /${skill} 로 부른다`);
+    if (KIT_PLUGINS.includes(id.split('@')[0]) && !(id in declared)) { delete out.enabledPlugins[id]; gone.push(id); }
   }
-  return out;
+  for (const [k, repo] of Object.entries(OLD_MARKETS)) {
+    if (out.extraKnownMarketplaces?.[k]?.source?.repo === repo) { delete out.extraKnownMarketplaces[k]; gone.push(`extraKnownMarketplaces.${k}`); }
+  }
+  if (out.env?.PONYTAIL_DEFAULT_MODE === 'off') { delete out.env.PONYTAIL_DEFAULT_MODE; gone.push('env.PONYTAIL_DEFAULT_MODE'); }
+  for (const k of ['enabledPlugins', 'env', 'extraKnownMarketplaces']) if (out[k] && !Object.keys(out[k]).length) delete out[k];
+  return { settings: out, gone };
 }
 
 export function mergeSettings(settings, policy) {
@@ -114,10 +115,17 @@ cli(import.meta.url, () => {
   const personal = settingsPath(root, true);
   let merged = readJson(path);
   const notes = [];
-  // --only: 기본 정책(권한 · ponytail 모드 · 플러그인)을 빼고 그 정책만 — 기존 체계를 지켜야 하는 대상
+  // --only: 기본 정책(권한 · 플러그인)을 빼고 그 정책만 — 기존 체계를 지켜야 하는 대상
   for (const p of [...(only ? [] : [POLICY]), ...extra.map(policyFile)]) {
     if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
-    merged = mergeSettings(merged, local ? skipSkillPlugins(readJson(p), claudeDir(), notes) : readJson(p));
+    const policy = readJson(p);
+    // 로컬 설치는 플러그인을 PC(사용자 범위)에서만 켠다 — 프로젝트에 선언하면 프로젝트마다 관리해야 한다
+    if (p === POLICY && local) delete policy.enabledPlugins;
+    merged = mergeSettings(merged, policy);
+    if (p !== POLICY) continue;
+    const { settings, gone } = dropOld(merged, policy.enabledPlugins);
+    merged = settings;
+    if (gone.length) notes.push(`걷음(옛 정책이 쓴 것 — 플러그인은 PC 에서 켠다): ${gone.join(', ')}`);
   }
   // --local 이면 두 경로가 같아 한 번만 쓴다. 읽기는 모두 쓰기 앞에 — 어느 파일이 깨졌어도 반쯤 쓰지 않는다
   const out = new Map([[path, merged]]);

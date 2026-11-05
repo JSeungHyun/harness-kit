@@ -42,15 +42,17 @@ export function checkInstall(dir, profile, mode) {
   row('공통', 'harness.json 검사 1개 이상 · 프로필 · 모드', `검사 ${cfg.checks?.length ?? 0} · profile ${cfg.profile} · mode ${cfg.mode}`,
     cfg.checks?.length >= 1 && cfg.profile === profile && cfg.mode === mode);
   const gate = JSON.stringify(settings.hooks?.Stop ?? []).includes('gate-hook.mjs');
-  row('공통', `정책 반영 (${settingsRel})`, `ponytail ${settings.env?.PONYTAIL_DEFAULT_MODE ?? '미설정'} · 플러그인 선언 ${Object.keys(settings.enabledPlugins ?? {}).join(', ') || '없음'} · 관문 훅 ${gate ? '있음' : '없음'}`,
-    settings.env?.PONYTAIL_DEFAULT_MODE === 'off' && 'ponytail@harness-kit' in (settings.enabledPlugins ?? {}) && gate);
+  // 플러그인은 PC 에서 켠다 — 로컬은 선언 없음, 공유는 팀원 PC 용 superpowers 만. ponytail 은 리뷰 스킬이라 선언 · 모드가 없다
+  const declared = Object.keys(settings.enabledPlugins ?? {}).filter((id) => settings.enabledPlugins[id]);
+  row('공통', `정책 반영 (${settingsRel})`, `플러그인 선언 ${declared.join(', ') || '없음'} · ponytail 모드 ${settings.env?.PONYTAIL_DEFAULT_MODE ?? '없음'} · 관문 훅 ${gate ? '있음' : '없음'}`,
+    declared.join() === (local ? '' : 'superpowers@harness-kit') && !settings.env?.PONYTAIL_DEFAULT_MODE && gate);
   const list = sh('claude plugin list --json', dir).out;
   let ids = {};
   try {
     const arr = JSON.parse(list.slice(list.indexOf('['), list.lastIndexOf(']') + 1));
     for (const n of ['superpowers', 'ponytail']) ids[n] = new Set(arr.filter((p) => p.enabled && nameOf(p.id) === n).map((p) => p.id)).size;
   } catch { ids = null; }
-  row('공통', '플러그인 id 하나씩', ids ? `superpowers ${ids.superpowers} · ponytail ${ids.ponytail}` : '목록을 읽지 못함', ids && ids.superpowers === 1 && ids.ponytail === 1);
+  row('공통', '플러그인 id 하나씩 (ponytail 은 리뷰 스킬만이면 0)', ids ? `superpowers ${ids.superpowers} · ponytail ${ids.ponytail}` : '목록을 읽지 못함', ids && ids.superpowers === 1 && ids.ponytail <= 1);
   row('공통', `장부 위치 (${ledger})`, `decisions ${cfg.state?.decisions} · lessons ${cfg.state?.lessons}`,
     cfg.state?.decisions === `${ledger}/decisions.md` && cfg.state?.lessons === `${ledger}/lessons.md` && has(dir, `${ledger}/decisions.md`) && has(dir, `${ledger}/lessons.md`));
   const records = text(dir, '.harness/graph/requests.jsonl').split(/\r?\n/).filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });

@@ -59,12 +59,10 @@ EOF
 
 ## 플러그인
 
-superpowers 와 ponytail 을 쓴다 — 키트 마켓(`harness-kit`)이 실측한 커밋을 사용자 범위로 둔다. 이 PC 에 없으면 아래가 옮길 명령을 낸다 — 이 PC 의 모든 프로젝트에 걸리므로 사용자에게 보여 주고 승인받은 뒤 실행한다:
+플러그인은 **PC(사용자 범위)에서 켠다** — 이 프로젝트 설정에는 선언하지 않는다(공유 모드만 팀원 PC 용으로 superpowers 를 선언한다). superpowers 는 키트 마켓(`harness-kit`)이 실측한 커밋으로, ponytail 은 플러그인이 아니라 사용자 스킬 `ponytail-review` 하나로 둔다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다. 이 PC 가 맞지 않으면 아래가 맞출 명령을 낸다 — 이 PC 의 모든 프로젝트에 걸리므로 사용자에게 보여 주고 승인받은 뒤 실행한다:
 
 ```bash
 node <harness-kit 경로>/tools/plugin-plan.mjs
 ```
 
-ponytail 은 사용자 스킬 `ponytail-review` 가 있으면 설치하지 않는다 — 관문이 쓰는 것은 `/ponytail-review` 뿐이다.
-사용자가 옮기기를 거절하고 다른 마켓의 같은 플러그인을 계속 쓰면 `node .harness/tools/policy-apply.mjs --local --off <id>` 로 정책 id 를 끈다(`<id>` 는 정책 id, 공유면 `--local` 없이 — `.claude/settings.local.json` 에 `false` 로 남는다). 그 플러그인은 실측한 커밋에 고정되지 않는다.
-ponytail 모드는 꺼져 있다(`PONYTAIL_DEFAULT_MODE=off`) — 코드를 바꾼 보고 직전 `final-gate` 에서 `/ponytail-review` 로만 부른다.
+ponytail 모드는 쓰지 않는다 — 코드를 바꾼 보고 직전 `final-gate` 에서 `/ponytail-review` 로만 부른다. 사용자가 ponytail 플러그인 끄기를 거절했으면 그 PC 의 전역 env 에 `PONYTAIL_DEFAULT_MODE=off` 를 두게 한다(모드가 superpowers 의 설계 · 질문 단계와 충돌한다).

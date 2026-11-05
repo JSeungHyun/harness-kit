@@ -55,21 +55,19 @@ export function upgrade(dir) {
     else out.push(`⚠️ ${dst} — 키트 이력의 어느 버전과도 다르다(프로젝트가 고쳤다) · 손대지 않았다. 병합할 지금 것: ${join(KIT, src)}`);
   }
 
-  // 정책이 켜는 이름(superpowers · ponytail)을 옛 마켓 id 로 켜 둔 것 — 남기면 같은 플러그인이 두 번 뜬다
-  const ids = Object.keys(read(join(KIT, 'policy', 'settings.json')).enabledPlugins ?? {});
-  const names = new Set(ids.map((id) => id.split('@')[0]));
+  // 옛 정책이 쓴 플러그인 선언 · ponytail 모드(옛 마켓 id 포함)는 policy-apply 가 걷는다 — 여기서는 --off 를 내지 않는다
   const sets = ['settings.local.json', 'settings.json'].map((f) => read(join(dir, '.claude', f)));
-  const stale = sets.flatMap((s) => Object.entries(s.enabledPlugins ?? {})
-    .filter(([id, on]) => on && names.has(id.split('@')[0]) && !ids.includes(id)).map(([id]) => ` --off ${id}`));
   // 키트 그래프 훅을 건 설치 — 다시 병합해야 훅 형식이 바뀐다(그 프로젝트 자신의 그래프 훅은 경로가 달라 빠진다)
   const graphHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('.harness/tools/graph-hook.mjs')) ? ' --with graph-hook' : '';
   // 관문 훅만 건 설치(--only gate-hook — 지시 파일이 흐름 · 권한을 정한 프로젝트)에 --with 를 내면 받지 않은 정책이 들어간다
-  const only = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs'))
-    && !sets.some((s) => s.env?.PONYTAIL_DEFAULT_MODE || Object.keys(s.enabledPlugins ?? {}).some((id) => names.has(id.split('@')[0])));
+  // 정책 전체를 받은 설치는 키트 도구 허용 규칙이 있다 — 플러그인 선언은 표식이 아니다(--only 대상이 ponytail 을 스스로 켤 수 있다)
+  const kitAllow = (read(join(KIT, 'policy', 'settings.json')).permissions?.allow ?? []).filter((r) => r.includes('.harness/tools/'));
+  const full = sets.some((s) => (s.permissions?.allow ?? []).some((r) => kitAllow.includes(r)));
+  const only = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full;
 
   out.push('', '다음 — 이 순서로 (설정이라 사용자가 돌리거나 승인한다):',
     `1. node ${KIT.replace(/\\/g, '/').replace(/\/$/, '')}/tools/plugin-plan.mjs — 이전 명령이 나오면 사용자 승인 뒤 먼저 실행한다`,
-    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook}${[...new Set(stale)].join('')}`}`,
+    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook}`}`,
     '3. node .harness/tools/verify.mjs');
   return out.join('\n');
 }

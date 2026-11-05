@@ -53,9 +53,8 @@ test('⭐ 설정은 쓰지 않는다 — 옛 플러그인 정리 · 정책 반�
   const before = read(dir, '.claude/settings.local.json');
   const r = run(dir);
   assert.equal(read(dir, '.claude/settings.local.json'), before);
-  assert.doesNotMatch(r.stdout, /--off superpowers@claude-plugins-official/); // 이미 꺼져 있다
-  // 로컬 설치 기록이 없으면 uninstall 은 실패한다 — 옛 id 는 --off 로 끈다
-  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --with gate-hook --off ponytail@ponytail$/m);
+  // 옛 id 선언(ponytail@ponytail: true)은 policy-apply 가 걷는다 — --off 를 내지 않는다
+  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --with gate-hook$/m);
 });
 
 test('⛔ 관문 훅만 건 설치(--only gate-hook)에는 정책 전체를 안내하지 않는다 — 받지 않은 권한 · ponytail 끄기 · 플러그인이 들어간다', () => {
@@ -63,6 +62,9 @@ test('⛔ 관문 훅만 건 설치(--only gate-hook)에는 정책 전체를 안�
   const r = run(dir);
   assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --only gate-hook$/m);
   assert.doesNotMatch(r.stdout, /--with gate-hook/);
+  // 그 대상이 ponytail 을 스스로 켜 두어도(지시 파일의 모드) 정책 전체 설치로 읽지 않는다
+  const own = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, env: { PONYTAIL_DEFAULT_MODE: 'lite' }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/gate-hook.mjs'] }] }] } }));
+  assert.match(own.stdout, /policy-apply\.mjs --local --only gate-hook$/m);
 });
 
 test('⭐ 키트 그래프 훅을 건 설치에는 --with graph-hook 도 낸다 — 옛 셸 형식 등록을 새 형식으로 바꾼다 · 그 프로젝트 자신의 그래프 훅은 아니다', () => {

@@ -112,11 +112,18 @@ test('⛔ 플러그인은 plugin-plan 을 거쳐 사용자 범위로 — 키트 
   }
 });
 
-test('⛔ 이전은 정책 반영보다 먼저 — 거꾸로면 옛 id 는 꺼지고 새 플러그인은 없다. 거절하면 --off 로 끈다', () => {
+test('final-gate 는 바꾼 코드가 verify 의 테스트로 돌지 않을 때만 /code-review 를 더한다 — 정확성 증거가 없는 자리', () => {
+  const s = repoFile('templates/skills/final-gate/SKILL.md');
+  assert.match(s, /`\/code-review`\*\* — ⭐ \*\*바꾼 코드가 verify 의 테스트로 실행되지 않을 때만/);
+  assert.match(s, /테스트가 그 코드를 돌리면 부르지 않는다/);
+});
+
+test('⛔ 이전은 정책 반영보다 먼저 — 거꾸로면 옛 선언은 걷히고 새 플러그인은 없다 · 플러그인은 PC 에서 켜고 ponytail 은 리뷰 스킬만', () => {
   const setup = repoFile('SETUP.md');
   assert.ok(setup.indexOf('tools/plugin-plan.mjs') < setup.indexOf('node .harness/tools/policy-apply.mjs'));
   for (const [rel, s] of [['SETUP.md', setup], ['harness.md', repoFile('templates/rules/harness.md')]]) {
-    assert.match(s, /policy-apply\.mjs --local (--with gate-hook )?--off <(정책 )?id>/, rel);
+    assert.match(s, /사용자 스킬 `ponytail-review`/, rel);
+    assert.match(s, /선언하지 않는다/, rel);
   }
 });
 

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { mergeSettings, POLICY, readJson } from '../tools/policy-apply.mjs';
-import { target, tmp, put } from './scene.mjs';
+import { target } from './scene.mjs';
 
 const APPLY = fileURLToPath(new URL('../tools/policy-apply.mjs', import.meta.url));
 const P = {
@@ -45,11 +45,10 @@ test('⛔ 원본을 변형하지 않고, _ 로 시작하는 주석 키를 옮기
   assert.equal(out._note, undefined);
 });
 
-test('⭐ 배포 정책이 superpowers·ponytail 을 켜고 ponytail 모드를 끈다', () => {
+test('⭐ 배포 정책은 superpowers 만 켠다 — ponytail 은 플러그인이 아니라 리뷰 스킬(PC 에서 plugin-plan)이고 모드 설정도 없다', () => {
   const p = readJson(POLICY);
-  assert.equal(p.env.PONYTAIL_DEFAULT_MODE, 'off');
-  assert.equal(p.enabledPlugins['superpowers@harness-kit'], true);
-  assert.equal(p.enabledPlugins['ponytail@harness-kit'], true);
+  assert.deepEqual(p.enabledPlugins, { 'superpowers@harness-kit': true });
+  assert.equal(p.env, undefined);
   assert.ok(p.permissions.allow.includes('Bash(node .harness/tools/verify.mjs)'));
 });
 
@@ -118,7 +117,8 @@ test('⭐ CLI --local --with graph-hook: settings.local.json 에 정책과 훅�
   assert.equal(spawnSync(process.execPath, [APPLY, dir, '--local', '--with', 'graph-hook']).status, 0);
   const once = readFileSync(path, 'utf8');
   const s = JSON.parse(once);
-  assert.equal(s.env.PONYTAIL_DEFAULT_MODE, 'off');
+  assert.ok(s.permissions.allow.includes('Bash(node .harness/tools/verify.mjs)'));
+  assert.equal(s.enabledPlugins, undefined);
   assert.equal(s.hooks.UserPromptSubmit.length, 1);
   assert.equal(readFileSync(join(dir, '.claude', 'settings.json'), 'utf8'), '{"team":1}');
   assert.equal(spawnSync(process.execPath, [APPLY, '--local', dir, '--with', 'graph-hook']).status, 0);
@@ -139,41 +139,43 @@ test('⭐ CLI: 기존 설정을 보존하며 반영하고, 다시 돌려도 같�
   const s = JSON.parse(once);
   assert.deepEqual(s.hooks, { Stop: [] });
   assert.ok(s.permissions.allow.includes('Bash(npm test)'));
-  assert.equal(s.env.PONYTAIL_DEFAULT_MODE, 'off');
+  assert.deepEqual(s.enabledPlugins, { 'superpowers@harness-kit': true });
   assert.equal(spawnSync(process.execPath, [APPLY, dir]).status, 0);
   assert.equal(readFileSync(path, 'utf8'), once);
 });
 
-// 사용자 스킬 ponytail-review 만 둔 PC (훅 없이 리뷰만) — 플러그인 선언을 넣으면 SETUP 마다 「설치할까요」가 나온다 (실전 적용)
-const configDir = (withSkill) => {
-  const dir = tmp('claudecfg-');
-  if (withSkill) put(dir, 'skills/ponytail-review/SKILL.md', '---\nname: ponytail-review\n---\n');
-  return dir;
+// 옛 정책이 프로젝트에 쓴 것 — 옛 마켓 id 의 켬 · 끔(--off) · 10-03 판 마켓 선언. 다른 플러그인 · env · 마켓은 사용자 것이다
+const OLD_SETTINGS = {
+  env: { PONYTAIL_DEFAULT_MODE: 'off', MINE: '1' },
+  enabledPlugins: { 'superpowers@harness-kit': true, 'ponytail@harness-kit': true, 'ponytail@ponytail': false, 'superpowers@claude-plugins-official': false, 'mine@m': true },
+  extraKnownMarketplaces: { ponytail: { source: { source: 'github', repo: 'DietrichGebert/ponytail' } }, mine: { source: { source: 'github', repo: 'me/m' } } },
 };
-const applyWith = (dir, cfg, ...args) => spawnSync(process.execPath, [APPLY, dir, ...args], { env: { ...process.env, CLAUDE_CONFIG_DIR: cfg }, encoding: 'utf8' });
 
-test('⭐ CLI --local: 사용자 스킬 ponytail-review 가 있으면 ponytail 플러그인을 선언하지 않는다 — 모드는 그대로 끈다', () => {
-  const dir = target(null);
-  const r = applyWith(dir, configDir(true), '--local');
+test('⭐ CLI --local: 프로젝트의 superpowers · ponytail 항목을 켬 · 끔 모두 묻지 않고 걷는다 — 플러그인은 PC 에서만 관리한다', () => {
+  const dir = target(null, { '.claude/settings.local.json': JSON.stringify(OLD_SETTINGS) });
+  const r = apply(dir, '--local');
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /ponytail: 사용자 스킬 ponytail-review/);
+  assert.match(r.stdout, /걷음.*superpowers@claude-plugins-official.*extraKnownMarketplaces\.ponytail.*env\.PONYTAIL_DEFAULT_MODE/);
   const s = readJson(join(dir, '.claude', 'settings.local.json'));
-  assert.equal('ponytail@harness-kit' in s.enabledPlugins, false);
-  assert.equal(s.enabledPlugins['superpowers@harness-kit'], true);
-  assert.equal(s.env.PONYTAIL_DEFAULT_MODE, 'off');
+  assert.deepEqual(s.enabledPlugins, { 'mine@m': true });
+  assert.deepEqual(s.extraKnownMarketplaces, { mine: OLD_SETTINGS.extraKnownMarketplaces.mine });
+  assert.deepEqual(s.env, { MINE: '1' });
 });
 
-test('CLI --local: 사용자 스킬이 없으면 ponytail 플러그인을 선언한다', () => {
-  const dir = target(null);
-  assert.equal(applyWith(dir, configDir(false), '--local').status, 0);
-  assert.equal(readJson(join(dir, '.claude', 'settings.local.json')).enabledPlugins['ponytail@harness-kit'], true);
-});
-
-test('⛔ CLI 공유: 이 PC 에 사용자 스킬이 있어도 팀 설정의 선언은 둔다 — 팀원 PC 에는 스킬이 없을 수 있다', () => {
-  const dir = target(null);
-  assert.equal(applyWith(dir, configDir(true)).status, 0);
+test('⭐ CLI 공유: settings.json 에는 팀원 PC 용으로 superpowers 만 선언하고 ponytail 선언 · 모드는 걷는다', () => {
+  const dir = target(null, { '.claude/settings.json': JSON.stringify({ env: { PONYTAIL_DEFAULT_MODE: 'off' }, enabledPlugins: { 'ponytail@harness-kit': true } }) });
+  assert.equal(apply(dir).status, 0);
   const s = readJson(join(dir, '.claude', 'settings.json'));
-  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
+  assert.deepEqual(s.enabledPlugins, { 'superpowers@harness-kit': true });
+  assert.equal(s.env, undefined);
+});
+
+test('⛔ CLI --only gate-hook 은 걷지 않는다 — 지시 파일이 ponytail 모드 · 플러그인을 정한 대상이다', () => {
+  const dir = target(null, { '.claude/settings.local.json': JSON.stringify(OLD_SETTINGS) });
+  assert.equal(apply(dir, '--local', '--only', 'gate-hook').status, 0);
+  const s = readJson(join(dir, '.claude', 'settings.local.json'));
+  assert.deepEqual(s.enabledPlugins, OLD_SETTINGS.enabledPlugins);
+  assert.deepEqual(s.env, OLD_SETTINGS.env);
 });
 
 test('⭐ CLI --only gate-hook: 관문 훅만 건다 — 기존 체계(권한 · ponytail 모드 · 플러그인)를 지켜야 하는 대상', () => {
@@ -198,8 +200,7 @@ test('⛔ CLI: 대상 설정이 깨진 JSON 이면 덮어쓰지 않고 실패한
 });
 
 const OFF = 'superpowers@harness-kit';
-// 빈 설정 폴더 — 이 PC 의 ~/.claude 에 사용자 스킬이 있으면 --local 의 ponytail 선언이 빠져 결과가 PC 마다 달라진다
-const apply = (...args) => spawnSync(process.execPath, [APPLY, ...args], { env: { ...process.env, CLAUDE_CONFIG_DIR: configDir(false) }, encoding: 'utf8' });
+const apply = (...args) => spawnSync(process.execPath, [APPLY, ...args], { encoding: 'utf8' });
 
 test('⭐ CLI --local --off: settings.local.json 에 그 플러그인을 false 로 두고, 다시 돌려도 파일이 같다', () => {
   const dir = target(null);
@@ -210,7 +211,6 @@ test('⭐ CLI --local --off: settings.local.json 에 그 플러그인을 false �
   const once = readFileSync(path, 'utf8');
   const s = JSON.parse(once);
   assert.equal(s.enabledPlugins[OFF], false);
-  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
   assert.equal(apply(dir, '--local', '--off', OFF).status, 0);
   assert.equal(readFileSync(path, 'utf8'), once);
 });
@@ -226,19 +226,9 @@ test('⭐ CLI 공유 + --off: settings.json 은 정책대로 켜고, 끈 것은 
   const s = JSON.parse(once[0]);
   assert.equal(s.team, 1);
   assert.equal(s.enabledPlugins[OFF], true);
-  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
   assert.deepEqual(JSON.parse(once[1]), { env: { MINE: '1' }, enabledPlugins: { 'mine@m': true, [OFF]: false } });
   assert.equal(apply(dir, '--off', OFF).status, 0);
   assert.deepEqual([shared, local].map((p) => readFileSync(p, 'utf8')), once);
-});
-
-test('⭐ CLI --off 는 같은 플러그인의 다른 마켓 id 도 끈다 — 갱신에서 옛 정책 id 를 정리한다(로컬 설치 기록이 없으면 uninstall 이 실패한다)', () => {
-  const dir = target(null, { '.claude/settings.local.json': '{"enabledPlugins":{"ponytail@ponytail":true}}' });
-  const r = apply(dir, '--local', '--off', 'ponytail@ponytail');
-  assert.equal(r.status, 0, r.stderr);
-  const s = JSON.parse(readFileSync(join(dir, '.claude', 'settings.local.json'), 'utf8'));
-  assert.equal(s.enabledPlugins['ponytail@ponytail'], false);
-  assert.equal(s.enabledPlugins['ponytail@harness-kit'], true);
 });
 
 test('⛔ CLI --off 가 정책이 켜는 플러그인이 아니면 아무 파일도 쓰지 않고 실패한다 — 쓸 수 있는 id 를 알려 준다', () => {

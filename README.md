@@ -18,14 +18,14 @@ Claude Code 가 「테스트 통과, 끝났습니다」라고 보고해도 실�
 ```
 
 Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
-플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 규칙이 기대는 동작은 두 가지다. 하나는 brainstorming 의 종료 조건이고, 다른 하나는 `PONYTAIL_DEFAULT_MODE=off` 다.
+플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. **플러그인은 PC(사용자 범위)에서 켜고 프로젝트에는 선언하지 않는다** — 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. ponytail 은 플러그인이 아니라 그 커밋의 리뷰 스킬 `ponytail-review` 하나만 쓴다(모드 없음). 규칙이 기대는 superpowers 동작은 brainstorming 의 종료 조건이다.
 
 ### 플러그인을 올릴 때 — 이 레포에서
 
 1. `node tools/plugin-plan.mjs --upstream` — 고정 커밋과 각 플러그인 저장소의 최신 커밋을 비교하고, 새 버전과 바뀐 것 링크를 낸다
-2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `PONYTAIL_DEFAULT_MODE` · `ponytail-review` · final-gate 가 부르는 스킬 이름)이 그대로인가, 이득이 있나
-3. 올리면 `marketplace.json` 의 `sha` · `version` 을 바꾸고 `node proof/run.mjs --claude`(P3 가 ponytail 끄기를 잰다) → 커밋 · push
-4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update` 명령을 낸다 — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
+2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `ponytail-review` 스킬 한 파일 · final-gate 가 부르는 스킬 이름)이 그대로인가, 이득이 있나. 사전 시험은 `--plugin-dir` 로 새 판을 싣고 `--settings` 로 설치본을 끈 세션
+3. 올리면 `marketplace.json` 의 `sha` · `version` 을 바꾸고 `node proof/run.mjs --claude` → 커밋 · push
+4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update … --scope user` 명령을 낸다(ponytail 고정을 올렸으면 `node tools/plugin-plan.mjs --review-skill` 로 리뷰 스킬을 새 커밋 것으로 덮어쓴다) — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
 
 ### 이미 얹은 프로젝트를 새 버전으로 — 다른 PC 포함
 
@@ -35,8 +35,9 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 <이 레포 경로>/SETUP.md 의 「갱신」을 따라 이 프로젝트를 갱신해줘
 ```
 
-- `tools/plugin-plan.mjs` 가 그 PC 의 플러그인을 읽어 키트 마켓으로 옮길 명령을 낸다. 세션이 사용자에게 묻고 실행한다 — PC 마다 한 번이고, 다음 프로젝트부터는 「옮길 것 없다」
-- `tools/upgrade.mjs` 가 도구 · 정책 · 손대지 않은 규칙을 올리고, 설정에 넣을 명령(관문 훅 · 옛 플러그인 id 끄기)을 낸다. 프로젝트가 고친 규칙은 덮어쓰지 않는다
+- `tools/plugin-plan.mjs` 가 그 PC 의 플러그인을 읽어 키트 마켓에 맞출 명령을 낸다. 세션이 사용자에게 묻고 실행한다 — PC 마다 한 번이고, 다음 프로젝트부터는 「옮길 것 없다」
+- `tools/upgrade.mjs` 가 도구 · 정책 · 손대지 않은 규칙을 올리고, 설정에 넣을 명령(권한 · 관문 훅 — 옛 플러그인 선언은 걷는다)을 낸다. 프로젝트가 고친 규칙은 덮어쓰지 않는다
+- 키트가 플러그인 구성을 바꿨으면 그 PC 에서 먼저 SETUP 「PC 맞추기」를 한 번 한다 — 그 PC 의 Claude Code 에게 `<이 레포 경로>/SETUP.md 의 「PC 맞추기」를 따라 이 PC 를 맞춰줘`
 
 ## 두 모듈
 
