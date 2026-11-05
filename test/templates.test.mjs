@@ -79,6 +79,25 @@ test('훅 조건이 graph.md · SETUP · graph-hook 정책에서 같다', () => 
   for (const rel of ['templates/rules/graph.md', 'SETUP.md', 'policy/graph-hook.json']) assert.match(repoFile(rel), /상위3 점유 < 50%/, rel);
 });
 
+test('⭐ 조건 전에 그래프 훅을 켜는 사용자 결정이 graph.md · SETUP · graph-hook 정책에서 같다 — 20건을 넘기면 점유를 다시 잰다(10차: 맡긴 설치가 「⛔ 20건 전 훅」과 부딪혀 사용자에게 다시 물었다)', () => {
+  for (const rel of ['templates/rules/graph.md', 'SETUP.md', 'policy/graph-hook.json']) assert.match(repoFile(rel), /사용자가 조건 전에 켜기로 정/, rel);
+  for (const rel of ['templates/rules/graph.md', 'SETUP.md']) assert.match(repoFile(rel), /20건을 넘기면 점유/, rel);
+  assert.match(repoFile('SETUP.md'), /^\| 사용자가 정하지 않았는데 그래프 20건 전에 훅 \|/m);
+});
+
+test('⭐ 테스트 없는 기존 대상도 ⑤ 「테스트 러너가 아직 없다」 행이고, 그때 verify 는 코드 변경의 증거가 아니다 — 관문의 /code-review 를 가리킨다(10차: 기존 · 테스트 없음 설치 2곳)', () => {
+  const row = repoFile('SETUP.md').split(/\r?\n/).find((l) => l.startsWith('| 테스트 러너가 아직 없다')) ?? '';
+  assert.match(row, /기존/);
+  assert.match(row, /\/code-review/);
+  assert.match(row, /빌드/);
+});
+
+test('SETUP ④ 표 — import 없는 `CLAUDE.md` 단독도 「그대로」 행이다 · ⑦ lesson 필드는 규칙 파일의 예시를 가리킨다(10차)', () => {
+  const setup = repoFile('SETUP.md');
+  assert.match(setup, /^\| `CLAUDE\.md` 만 \(import 유무와 무관\)/m);
+  assert.match(setup, /lesson-append\.mjs`[^\n]*\.claude\/rules\/harness\.md/);
+});
+
 test('final-gate 스킬의 이름이 디렉터리 이름과 같고, 보고 직전에 매번 쓰인다', () => {
   const s = repoFile('templates/skills/final-gate/SKILL.md');
   assert.match(s, /^---\r?\nname: final-gate\r?\n/);

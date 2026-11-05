@@ -1,5 +1,5 @@
 {
-  "_note": "그래프 훅 — 살아있는 기록 20건 이상 + graph-find --check exit 0 + 상위3 점유 < 50% (graph-measure . --tickets <이슈 제목 json>, 질의 집합이 없으면 「독점 미측정」) 일 때만 policy-apply --with graph-hook 으로 병합한다. 설계안.",
+  "_note": "그래프 훅 — 살아있는 기록 20건 이상 + graph-find --check exit 0 + 상위3 점유 < 50% (graph-measure . --tickets <이슈 제목 json>, 질의 집합이 없으면 「독점 미측정」) 일 때, 또는 사용자가 조건 전에 켜기로 정했을 때(--check exit 0 은 지킨다 · 20건을 넘기면 점유를 다시 잰다) policy-apply --with graph-hook 으로 병합한다. 설계안.",
   "hooks": {
     "UserPromptSubmit": [
       {

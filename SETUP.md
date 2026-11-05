@@ -94,7 +94,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | 대상에 있는 것 (`detect` 의 지시 파일 줄) | 공유 | 로컬 전용 |
 |---|---|---|
 | 없음 | `cp <kit>/templates/map/AGENTS.md <대상>/AGENTS.md` + `cp <kit>/templates/map/CLAUDE.md <대상>/CLAUDE.md` | `cp <kit>/templates/map/CLAUDE.local.md <대상>/CLAUDE.local.md` |
-| `CLAUDE.md` (또는 둘 다, import 있음) | 그대로 | 그대로 |
+| `CLAUDE.md` 만 (import 유무와 무관) · 또는 둘 다이고 `CLAUDE.md` 가 `@AGENTS.md` 를 import | 그대로 | 그대로 |
 | `AGENTS.md` 만 | `cp <kit>/templates/map/CLAUDE.md <대상>/CLAUDE.md` | `<대상>/CLAUDE.local.md` 를 `@AGENTS.md` 한 줄로 만든다 (이미 있으면 맨 위에 그 한 줄) |
 | 둘 다, `CLAUDE.md` 가 import 안 함 | `AGENTS.md` 가 안 읽히고 있다고 보고하고 import 한 줄을 제안 | 같음 |
 
@@ -118,7 +118,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | pytest | `pytest --junitxml=test-results/junit.xml` | `junit-xml` · `test-results` |
 | Node (Jest) · junit 리포터가 없다 | `npm test` — ⛔ 리포터를 넣으려고 의존성을 더하지 않는다 | `exit-code` — Jest 는 테스트가 0개면 스스로 실패한다(`--passWithNoTests` 가 없을 때) |
 | 결과 XML 을 낼 수 없다 | 테스트 명령 | `exit-code` — ⚠️ 테스트 0개를 못 잡는다고 사용자에게 알린다 |
-| 테스트 러너가 아직 없다 (신규 · 골격 전) | 실제로 도는 검사만 — 타입 검사(`npm run typecheck` 등) · 아래 그래프 무결성 | `exit-code` — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다 |
+| 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(`npm run typecheck` 등) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
 | 그래프 무결성 (graph 모듈을 얹으면) | `node .harness/tools/graph-find.mjs --check` — 기존 context-graph 면 그 도구(예: `node tools/graph-find.mjs --check`) | `exit-code` |
@@ -181,7 +181,7 @@ grep -n '<decisions>\|<lessons>\|<graph-tools>\|<graph-rules>' .claude/rules/har
 git log --format='%h %ad %s%n%b' --date=short -60      # 본문까지 본다 — 근본 원인은 대개 본문에 있다
 ```
 
-- 수정 커밋(`fix` · 버그 · 원인) 중 **근본 원인이 드러난 것**만 lessons 2~3건 — `node .harness/tools/lesson-append.mjs`. 이미 테스트·규칙으로 막혀 있으면 `guard` 에 그 위치를 적는다
+- 수정 커밋(`fix` · 버그 · 원인) 중 **근본 원인이 드러난 것**만 lessons 2~3건 — `node .harness/tools/lesson-append.mjs`(필드는 `.claude/rules/harness.md` 의 예시 — 맡긴 설치처럼 규칙이 아직 안 읽힌 세션은 그 파일을 연다). 이미 테스트·규칙으로 막혀 있으면 `guard` 에 그 위치를 적는다
 - 요구 단위 커밋 3~5건 → 그래프 `node .harness/tools/graph-append.mjs` — `req` 는 그때의 요구, `date` 는 **그 커밋 날짜**(소급), `files` 는 그 커밋의 변경 파일 중 **지금도 있는 것**(`git show --name-only --format= <해시>` — 사라진 경로는 `--check` 를 깨뜨린다). ⛔ **`terms`(현업 용어 → 코드 식별자)를 채워야 값이 있다** — 커밋 제목만 넣은 기록은 0 이다. 커밋 유래 기록은 기여가 낮으니 건수를 채우려고 늘리지 않는다
 - ⛔ 소급 기록에 `supersedes` 를 붙이지 않는다. ⛔ 개인 식별자(사번·이름·연락처)를 적지 않는다 — 사람은 역할로
 - 그래프는 `.claude/rules/graph.md` 의 기록 규칙을 따른다
@@ -202,6 +202,7 @@ node .harness/tools/verify.mjs                # ⛔ exit 0 — 「기준선 실�
 ⛔ 확인 없이 `--baseline` 을 돌리지 않는다 — 기준선에 들어간 실패는 더 울리지 않는다. 비대화형이면 SETUP 을 시킨 지시가 정한 대로 하고 보고에 남긴다.
 
 **그래프 훅** — 켜는 조건은 **살아있는 기록 20건 이상 + `node .harness/tools/graph-find.mjs --check` exit 0 + 상위3 점유 < 50%** 다. 아니면 켜지 않고 보고에 「n건 · 점유 n% — 조건이 차면 켠다」를 남긴다.
+**사용자가 조건 전에 켜기로 정하면 켠다** — `--check` exit 0 만 지키고, 정한 것을 다시 묻지 않는다. 보고에는 「n건 · 점유 미측정 — 사용자 결정으로 조건 전에 켬」, 「사용자가 결정해야 하는 것」에는 「20건을 넘기면 점유를 재고 유지 여부를 정한다」를 남긴다. 실측은 `docs/proof.md` 「조건 전에 켠 그래프 훅」 — 판정자 1명 · 한 프로젝트라 이것으로 조건을 풀지 않는다.
 점유는 확신 질의 중 가장 자주 1위를 한 기록 3개가 1위인 비율이다 — 건수는 대리 지표다. 소급 측정: 20건 42% · 50건에서 재상승 — 켠 뒤에도 잰다. 질의 집합(이슈 제목 export — `[{title}]` · `[{subj}]` · `{tasks:[{subj}]}`)이 없으면 앞의 둘만 보고, 보고에 「독점 미측정」을 쓴다. 점유가 높으면 1위를 독점하는 광역 기록을 주제별로 나눈다.
 
 ```bash
@@ -311,7 +312,7 @@ node <kit>/tools/upgrade.mjs <대상>
 | 대상의 기존 파일을 옮기거나 덮어쓰기 · 지시 파일에 절 추가 | 기존 참조가 깨지고, 두 파일이 갈라진다. 규칙은 `.claude/rules/` 에 |
 | 기존 context-graph 의 데이터를 옮기기 | 그 프로젝트의 그래프다 — 전환은 범위 밖 |
 | 확인 없이 `verify --baseline` | 진짜 실패가 조용해진다 |
-| 그래프 20건 전에 훅 | 몇 건이 모든 질의에 걸려 지연만 남는다 |
+| 사용자가 정하지 않았는데 그래프 20건 전에 훅 | 몇 건이 모든 질의에 걸려 지연만 남는다 |
 | 훅·스크립트로 기록을 자동 추출 | 검증 관문이 없다 — 낡은 정보를 더 빨리 쌓는다 |
 | 개인 식별자를 그래프·장부에 | 공유 모드에서는 그대로 커밋된다 |
 | 묻지 않고 공유 모드 · scan-shared 를 끄거나 `--no-verify` 로 건너뛰기 | 기록에 쌓인 사번·실명·이슈 번호가 저장소 밖으로 나간다 |
