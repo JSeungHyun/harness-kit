@@ -78,9 +78,10 @@ test('⛔ 그래프는 읽기 도구만 자동 승인한다 — 쓰기(append·a
   assert.deepEqual(allow.filter((r) => /graph-(append|alias|view|hook)/.test(r)), []);
 });
 
-const HOOK = { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"', timeout: 30 }] }] };
+const HOOK = { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/graph-hook.mjs'], timeout: 30 }] }] };
+const OLD = { type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"', timeout: 30 };
 
-test('⭐ 훅은 이벤트별로 더하고, 같은 command 가 있으면 다시 더하지 않는다 — 기존 훅 보존', () => {
+test('⭐ 훅은 이벤트별로 더하고, 같은 command·args 가 있으면 다시 더하지 않는다 — 기존 훅 보존', () => {
   const mine = { hooks: [{ type: 'command', command: 'node lint.mjs' }] };
   const once = mergeSettings({ hooks: { UserPromptSubmit: [mine], Stop: [{ x: 1 }] } }, { hooks: HOOK });
   assert.deepEqual(once.hooks.UserPromptSubmit, [mine, HOOK.UserPromptSubmit[0]]);
@@ -94,10 +95,21 @@ test('⭐ 명시적으로 끈 플러그인은 다시 켜지 않는다 — 중복
   assert.equal(out.enabledPlugins['ponytail@ponytail'], true);
 });
 
-test('훅 정책이 그래프 훅을 timeout 30 으로 선언한다', () => {
-  const h = readJson(fileURLToPath(new URL('../policy/graph-hook.json', import.meta.url))).hooks.UserPromptSubmit[0].hooks[0];
-  assert.equal(h.command, 'node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"');
-  assert.equal(h.timeout, 30);
+test('⭐ 옛 셸 형식 키트 훅은 새 형식으로 바꿔 끼운다 — 둘 다 남으면 두 번 돈다 · 같은 그룹의 사용자 훅은 남긴다', () => {
+  const mine = { type: 'command', command: 'node lint.mjs' };
+  const out = mergeSettings({ hooks: { UserPromptSubmit: [{ hooks: [OLD] }, { hooks: [mine, OLD] }] } }, { hooks: HOOK });
+  assert.deepEqual(out.hooks.UserPromptSubmit, [{ hooks: [mine] }, HOOK.UserPromptSubmit[0]]);
+  assert.deepEqual(mergeSettings(out, { hooks: HOOK }), out);
+});
+
+test('훅 정책은 셸 없이 node 를 바로 띄운다(exec 형식) — 이 PC 실측 bash 경유 1.61초 → 1.13초', () => {
+  const hook = (name, event) => readJson(fileURLToPath(new URL(`../policy/${name}.json`, import.meta.url))).hooks[event][0].hooks[0];
+  for (const [name, event, timeout] of [['graph-hook', 'UserPromptSubmit', 30], ['gate-hook', 'Stop', 10]]) {
+    const h = hook(name, event);
+    assert.equal(h.command, 'node');
+    assert.deepEqual(h.args, [`\${CLAUDE_PROJECT_DIR}/.harness/tools/${name}.mjs`]);
+    assert.equal(h.timeout, timeout);
+  }
 });
 
 test('⭐ CLI --local --with graph-hook: settings.local.json 에 정책과 훅을 병합하고, 다시 돌려도 같다', () => {

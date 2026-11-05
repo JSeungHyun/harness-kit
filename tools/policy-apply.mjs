@@ -16,7 +16,9 @@ export const POLICY = policyFile('settings');
 const MAPS = ['env', 'enabledPlugins', 'extraKnownMarketplaces'];
 const PERMS = ['allow', 'deny', 'ask'];
 
-const commands = (groups = []) => groups.flatMap((g) => (g.hooks ?? []).map((h) => h.command));
+const hookKey = (h) => [h.command, ...(h.args ?? [])].join(' ');
+const commands = (groups = []) => groups.flatMap((g) => (g.hooks ?? []).map(hookKey));
+const kitTool = (key) => key.match(/\.harness\/tools\/[\w-]+\.mjs/)?.[0];
 
 // 같은 일을 하는 사용자 스킬이 이 PC 에 있으면 플러그인을 선언하지 않는다 — 로컬 전용만. 공유 설정은 스킬이 없을 수 있는 팀원 PC 를 위한 것이다
 const SKILL_INSTEAD = { 'ponytail@harness-kit': 'ponytail-review' };
@@ -50,7 +52,15 @@ export function mergeSettings(settings, policy) {
   if (policy.hooks) {
     out.hooks = { ...settings.hooks };
     for (const [event, groups] of Object.entries(policy.hooks)) {
-      const have = out.hooks[event] ?? [];
+      // 같은 키트 도구의 옛 등록(셸 형식 등)은 빼고 새 것으로 — 둘 다 남으면 두 번 돈다
+      const fresh = commands(groups);
+      const tools = fresh.map(kitTool).filter(Boolean);
+      const stale = (h) => tools.includes(kitTool(hookKey(h))) && !fresh.includes(hookKey(h));
+      const have = (out.hooks[event] ?? []).flatMap((g) => {
+        if (!g.hooks?.some(stale)) return [g];
+        const hooks = g.hooks.filter((h) => !stale(h));
+        return hooks.length ? [{ ...g, hooks }] : [];
+      });
       const add = groups.filter((g) => !commands([g]).some((c) => commands(have).includes(c)));
       out.hooks[event] = [...have, ...add];
     }

@@ -58,6 +58,21 @@ test('⭐ 설정은 쓰지 않는다 — 옛 플러그인 정리 · 정책 반�
   assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --with gate-hook --off ponytail@ponytail$/m);
 });
 
+test('⛔ 관문 훅만 건 설치(--only gate-hook)에는 정책 전체를 안내하지 않는다 — 받지 않은 권한 · ponytail 끄기 · 플러그인이 들어간다', () => {
+  const dir = installed(oldRule, { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.harness/tools/gate-hook.mjs"' }] }] } });
+  const r = run(dir);
+  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --only gate-hook$/m);
+  assert.doesNotMatch(r.stdout, /--with gate-hook/);
+});
+
+test('⭐ 키트 그래프 훅을 건 설치에는 --with graph-hook 도 낸다 — 옛 셸 형식 등록을 새 형식으로 바꾼다 · 그 프로젝트 자신의 그래프 훅은 아니다', () => {
+  const hook = (cmd) => ({ UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd }] }] });
+  const kit = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook('node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"') }));
+  assert.match(kit.stdout, /policy-apply\.mjs --local --with gate-hook --with graph-hook$/m);
+  const own = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook('node "$CLAUDE_PROJECT_DIR/tools/graph-hook.mjs"') }));
+  assert.match(own.stdout, /policy-apply\.mjs --local --with gate-hook$/m);
+});
+
 test('⭐ 그래프가 이미 있는 대상 — 키트 그래프 도구를 넣지 않고 규칙이 그 프로젝트의 그래프를 가리킨다', () => {
   const graph = { tools: 'tools', rules: '`AGENTS.md` 의 그래프 기록 절' };
   const dir = target({ profile: 'existing', mode: 'local', graph, state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, {

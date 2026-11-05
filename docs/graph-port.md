@@ -27,7 +27,8 @@
     "UserPromptSubmit": [{
       "hooks": [{
         "type": "command",
-        "command": "node \"$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs\"",
+        "command": "node",
+        "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/graph-hook.mjs"],
         "timeout": 30,
         "statusMessage": "그래프 조회 중..."
       }]
@@ -36,7 +37,8 @@
 }
 ```
 
-- `matcher` 없음(전체 프롬프트) · `$CLAUDE_PROJECT_DIR` 를 큰따옴표로(경로 공백) · `timeout: 30`(실측 평균 1.6초 · 최대 6.7초 · 277회 중 8회 초과)
+- `matcher` 없음(전체 프롬프트) · `timeout: 30`(실측 평균 1.6초 · 최대 6.7초 · 277회 중 8회 초과)
+- exec 형식(`command` + `args`) — 셸을 띄우지 않고 node 를 바로 띄운다. 경로에 공백이 있어도 따옴표가 필요 없다. 원천의 셸 형식(`node "$CLAUDE_PROJECT_DIR/..."`)은 Windows 에서 Git Bash 를 한 번 더 띄운다(2026-11-05 이 PC 실측 중앙값 1.61 → 1.13초, Claude Code 2.1.318). 옛 등록은 `policy-apply` 가 새 형식으로 바꿔 끼운다
 - 스크립트 몫은 36ms 이고 나머지는 Node 기동이다 — 느리면 환경을 의심한다
 
 ⛔ **출력 문장 — 전부 실패로 만들어진 것이라 바꾸지 않는다** (특성 테스트가 문자열로 지킨다):

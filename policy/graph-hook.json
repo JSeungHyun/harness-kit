@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs\"",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/graph-hook.mjs"],
             "timeout": 30,
             "statusMessage": "그래프 조회 중..."
           }

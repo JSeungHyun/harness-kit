@@ -1,38 +1,112 @@
-# 구조 — 언제 무엇이 도는가
+# 구조 — 큰 그림 · 훅 · 검증 · 구성
 
 > 상태: **설계안** · 대상에 설치된 모습 기준이다. 왜 그렇게 정했나는 [design.md](design.md), 그래프가 깨지면 안 되는 동작은 [graph-port.md](graph-port.md)
 
-## 0. 한눈에
+## 0. 큰 그림
+
+키트는 **두 모듈**이다. **증거**는 「끝났다」를 모델이 아니라 도구가 판정하게 하고, **그래프**는 사용자의 말 → 코드 위치 · 함정을 기록해 같은 조사를 두 번 하지 않게 한다.
+일의 흐름(설계 · TDD · 서브에이전트)은 키트가 아니라 **superpowers** 플러그인이, 과설계 점검은 **ponytail** 플러그인의 `/ponytail-review` 가 맡는다.
+
+| 모듈 | 하는 일 | 구성 |
+|---|---|---|
+| 증거 | 완료를 도구로 판정 · 보고 직전 관문 | `verify` · `final-gate` 스킬 · 관문 훅 · 장부 |
+| 그래프 | 요구 → 용어 · 파일 · 함정 기록과 조회 | `graph-*` 도구 · 기록 파일 · 그래프 훅(조건부) |
+
+**한 턴의 흐름**
+
+```
+사용자 질문
+  └ [그래프 훅] 관련 기록을 찾아 붙인다 (기록이 쌓인 뒤에만 켠다)
+작업 — 흐름은 superpowers (설계 → TDD · 서브에이전트 → 디버깅)
+  └ verify           「끝났다」를 도구가 판정
+  └ final-gate 스킬   범위 검토 · 과설계 리뷰 · 증거 · 파일 목록 · 기록
+턴 종료
+  └ [관문 훅] verify 를 돌렸는데 final-gate 를 건너뛰었으면 한 번 되돌린다
+```
+
+**키트가 아닌 것** — superpowers · ponytail 의 훅과 스킬, 프로젝트가 더한 훅은 §8 에 따로 둔다. §1~§4 는 키트 것만 다룬다.
+
+## 1. 훅 — 키트가 거는 것은 둘
+
+| 훅 | 언제 | 하는 일 | 켜는 때 |
+|---|---|---|---|
+| 관문 훅 `gate-hook.mjs` (10초) | `Stop` — 턴이 끝날 때 | 이번 턴에 verify 를 돌리고 final-gate 를 안 거쳤으면 한 번 되돌려 보낸다. 백그라운드 작업을 기다리는 멈춤 · 되돌린 뒤의 멈춤은 통과 | 설치 때 기본(SETUP ⑥) |
+| 그래프 훅 `graph-hook.mjs` (30초) | `UserPromptSubmit` — 질문을 칠 때 | 프롬프트로 그래프를 조회해 카드 1~2장 · 후보 색인 · 침묵 중 하나를 넣는다 (§6.4) | ⛔ 조건부 — 기록이 쌓인 뒤 (§6.4) |
+
+- 이 밖에 git `pre-commit` 훅이 하나 있다 — `scan-shared.mjs`, **공유 모드만**. 커밋되는 기록 · 장부 · 규칙에 민감 정보 패턴이 있으면 막는다
+- 나머지는 훅이 아니라 규칙이 「언제 무엇을 부르라」고 시킨다. 관문(`final-gate`)은 규칙과 스킬 설명이 부르고, 건너뛰면 관문 훅이 한 번 되돌린다(design §3)
+- 설정은 `policy-apply` 가 `.claude/settings.json`(공유) 또는 `settings.local.json`(로컬)에 병합한다 — ⛔ 덮어쓰지 않는다. 권한은 합집합이고 프로젝트가 더한 훅은 그대로 둔다(예: §8.2)
+- 둘 다 셸 없이 node 를 바로 띄운다(exec 형식 `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/…"]`) — Windows 에서 Git Bash 를 거치지 않아 한 번에 약 0.5초 덜 든다. 옛 셸 형식 등록은 `policy-apply` 가 바꿔 끼우고, 갱신(`upgrade`)이 그 명령을 낸다
+- 훅이 실패하면 조용히 통과한다 — 프롬프트와 종료를 막지 않는다
+
+## 2. 검증 — 「끝났다」를 무엇으로 판정하나
+
+### 2.1 `verify` — 완료 증거
+
+`.harness/harness.json` 의 `checks[]` 를 전부 돌린다. 하나라도 실패하거나 검사가 0개면 exit 1.
+
+| `kind` | 통과 |
+|---|---|
+| `junit-xml` | 이번 실행이 쓴 XML 에 testcase 1개 이상 · 기준선 밖 실패 0 |
+| `exit-code` | 명령 exit 0 — `--check` 같은 도구 자체 검사 |
+| `file-unchanged` | 생성 명령 뒤 `git status --porcelain -- <evidence>` 가 비었다 |
+| `output-match` | 명령 exit 0 · stdout 이 `expect` 정규식에 맞는다 |
+
+원래 있던 테스트 실패는 기준선(`verify --baseline`, ⛔ 사용자가 확인한 뒤에만)으로 적어 두고, 그 밖의 실패만 실패로 친다.
+
+### 2.2 `final-gate` — 끝냈다고 보고하기 직전, 매번 (계획이 있든 없든)
+
+1. 코드를 바꿨으면 범위 검토(사용자 말 원문 + 이번 diff 만 받은 서브에이전트가 요청 밖 변경을 찾는다) → `/ponytail-review`(과설계만 본다). 걷어냈으면 2 를 그 뒤에 돈다
+2. 완료 증거 — 작업 종류별
+
+   | 작업 | 증거 |
+   |---|---|
+   | 코드 변경 | `verify` exit 0 (§2.1) |
+   | 기록 변경 | `graph-find --check` exit 0 |
+   | 운영 데이터 · 설정 | 실행 · 확인 쿼리와 전/후 결과 |
+   | 조사 · 측정 | 정답 라벨 n건 대조 + 검증한 범위 |
+
+3. 보고 한 세트 — 작업 파일 목록 · 기록(`graph-append` · decisions → `decision-check` · `lesson-append` → `lesson-promote`) · 증거 출력 그대로 · 못 한 것은 `⏸`
+   - 남길 게 없으면 그 판단을 한 줄로 밝힌다 · 낡은 기록은 그 자리에서 고친다(`supersedes`)
+4. 브랜치를 마무리하는 보고(merge · PR 직전)면 `/security-review` 1회 → superpowers `finishing-a-development-branch`
+
+### 2.3 `graph-find --check` — 기록의 무결성
+
+대체 사슬 4종 · 없는 경로 · 같은 용어에서 낡은 기록이 1위 · `⏸` 표식 누락 후보. 앞의 셋이 있으면 exit 1 (§6.3).
+
+## 3. 구성 — 프로젝트에 남는 것
 
 | 층 | 무엇 | 언제 |
 |---|---|---|
 | 매 세션 로드 | 지시 파일(로컬 `CLAUDE.local.md` · 공유 `AGENTS.md` + `CLAUDE.md`) · `.claude/rules/harness.md` · `.claude/rules/graph.md` | 세션을 열 때 Claude Code 가 읽는다 |
-| 훅 | 플러그인 훅 · 그래프 훅(조건부) · 프로젝트가 더한 훅 | 이벤트마다 자동 (§1) |
-| 권한 정책 | `permissions` 의 allow · deny · ask | 도구를 부를 때마다 |
-| 스킬 | `final-gate` · superpowers 흐름 · `/ponytail-review` · 프로젝트 스킬 | 규칙과 스킬 설명이 부르게 한다 (§2) |
+| 스킬 | `final-gate` | 규칙과 스킬 설명이 부르게 한다 (§2.2) |
 | 도구 | `.harness/tools/*.mjs` | 모델이 Bash 로 부른다 |
-| 데이터 | 그래프 `.harness/graph/requests.jsonl` · 장부 · 기준선 | 도구로만 읽고 쓴다 (§3 · §4) |
+| 데이터 | 그래프 `.harness/graph/requests.jsonl` · 장부 · 기준선 | 도구로만 읽고 쓴다 (§6 · §7) |
+| 권한 정책 | `permissions` 의 allow · deny · ask | 도구를 부를 때마다 (아래) |
+| 플러그인 | superpowers · ponytail 을 키트 마켓의 커밋으로 고정 · `PONYTAIL_DEFAULT_MODE=off` | 설치 · 갱신 때 (README) |
 
-⭐ **키트가 직접 거는 Claude Code 훅은 둘이다.** 하나는 관문 훅(설치 때)이고, 다른 하나는 그래프 훅(기록이 쌓인 뒤)이다. 나머지는 규칙이 「언제 무엇을 부르라」고 시킨다. 관문(`final-gate`)은 규칙과 스킬 설명이 부르고, verify 를 돌린 턴에 건너뛰면 관문 훅이 한 번 되돌려 보낸다(design §3).
+**권한 정책** (`policy/settings.json` — 훅이 아니다)
 
-## 1. 이벤트마다 자동으로 도는 것
+| | 무엇 |
+|---|---|
+| allow | 읽기 · 키트 점검 도구(`verify` · `decision-check` · `lesson-promote` · `state-check` · `graph-find`) · 읽기 전용 셸 |
+| deny | `rm` · `rmdir` · `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` |
+| ask | `--force` · `git restore` · `stash drop·clear` |
 
-| 이벤트 | 무엇이 | 출처 | 하는 일 |
-|---|---|---|---|
-| `SessionStart` (startup · clear · compact) | `session-start` | superpowers | 스킬 사용 규칙(using-superpowers)을 넣는다 — 「관련 스킬이 있으면 먼저 부른다」 |
-| `SessionStart` | `ponytail-activate.js` | ponytail | 정책이 `PONYTAIL_DEFAULT_MODE=off` 라 아무것도 넣지 않는다 |
-| `UserPromptSubmit` | `graph-hook.mjs` | 키트 · ⛔ 조건부 | 프롬프트로 그래프를 조회해 카드 1~2장 · 후보 색인 · 침묵 중 하나를 넣는다 (§3.4) |
-| `UserPromptSubmit` | `ponytail-mode-tracker.js` | ponytail | `/ponytail <모드>` 전환을 기억한다 |
-| `SubagentStart` | `ponytail-subagent.js` | ponytail | 모드가 켜져 있을 때만 서브에이전트에 규칙을 넣는다 — off 면 없음 |
-| `Stop` | `gate-hook.mjs` | 키트 | 이번 턴에 verify 를 돌리고 final-gate 를 안 거쳤으면 한 번 되돌려 보낸다. 백그라운드 작업을 기다리는 멈춤 · 되돌린 뒤의 멈춤은 통과 |
-| 도구 호출마다 | 권한 정책 (훅이 아니다) | 키트 `policy/settings.json` | allow — 읽기 · 키트 점검 도구(`verify` · `decision-check` · `lesson-promote` · `state-check` · `graph-find`) · 읽기 전용 셸 / deny — `rm` · `rmdir` · `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` / ask — `--force` · `git restore` · `stash drop·clear` |
-| git `pre-commit` | `scan-shared.mjs` | 키트 · 공유 모드만 | 커밋되는 기록 · 장부 · 규칙에 민감 정보 패턴이 있으면 막는다 |
+⛔ 그래프 쓰기(`graph-append` · `graph-alias`)는 allow 에 없다 — 기본 모드에서는 사람이 승인한다. auto 모드에서는 사람이 아니라 분류기가 판정한다.
 
-- ponytail 을 플러그인 없이 사용자 스킬 `ponytail-review` 로만 둔 PC 에는 위 ponytail 훅 세 줄이 없다 — 로컬 전용 `policy-apply` 가 그 플러그인을 선언하지 않는다(SETUP ⑥)
-- 설정은 `policy-apply` 가 `.claude/settings.json`(공유) 또는 `settings.local.json`(로컬)에 병합한다 — ⛔ 덮어쓰지 않는다. 권한은 합집합이고 프로젝트가 더한 훅은 그대로 둔다(예: §6)
-- ⛔ 그래프 쓰기(`graph-append` · `graph-alias`)는 allow 에 없다 — 사람이 보고 승인한다
+## 4. 설치 · 갱신 — 대상에 맞춰 얹는다
 
-## 2. 작업 한 번 — 어떤 스킬 · 도구를 언제
+| 언제 | 무엇이 |
+|---|---|
+| 설치 전 판별 | `detect` — 신규 구축인지 기존 이식인지 · 멈출 것(⛔) · 확인할 것(⚠️) |
+| 공유 / 로컬 | `install-mode` — 공유는 팀이 같이 커밋하고, 로컬은 설치 경로를 git 에서 숨긴다 |
+| 그래프가 이미 있는 프로젝트 | 증거 모듈만 — 키트 그래프 도구를 복사하지 않고 `harness.json` 의 `graph` 가 기존 도구 · 규칙을 가리킨다. 관문 훅은 `policy-apply --only gate-hook` |
+| 키트가 새 버전이 되면 | `upgrade` — 도구 · 정책 · 손대지 않은 규칙을 올린다(프로젝트가 고친 규칙은 덮어쓰지 않는다) · `plugin-plan` — PC 마다 한 번 플러그인을 키트 마켓으로 옮기는 명령 |
+
+절차는 SETUP.md 가 정본이다.
+
+## 5. 작업 한 번 — 어떤 스킬 · 도구를 언제
 
 | 단계 | 무엇을 | 시키는 곳 |
 |---|---|---|
@@ -42,27 +116,12 @@
 | ④ 구현 | superpowers 의 TDD · 서브에이전트 주도 개발 · 디버깅. ⛔ 되돌리기 어려운 작업(삭제 · 이력 재작성 · 운영 반영 · 레포 밖 · 비밀값)은 착수 전에 승인 | harness.md 흐름 |
 | ⑤ 묻지 않고 정했다 | decisions 1절에 가정을 적고 진행 | harness.md |
 | ⑥ 실패를 고쳤다 | `lesson-append` — 근본 원인이 없으면 거부한다 | harness.md 장부 |
-| ⑦ 끝냈다고 보고하기 직전 | ⭐ `final-gate` 스킬 — 아래 | harness.md 관문 · 스킬 설명 |
+| ⑦ 끝냈다고 보고하기 직전 | ⭐ `final-gate` 스킬 (§2.2) | harness.md 관문 · 스킬 설명 |
 | ⑧ 브랜치를 마무리 | `/security-review` 1회 → superpowers `finishing-a-development-branch` | final-gate 4 |
 
-**`final-gate` — 매번, 계획이 있든 없든**
+## 6. 그래프 상세
 
-1. 코드를 바꿨으면 `/ponytail-review` — 과설계만 본다. 걷어냈으면 2 를 그 뒤에 돈다
-2. 완료 증거 — 작업 종류별
-
-   | 작업 | 증거 |
-   |---|---|
-   | 코드 변경 | `verify` exit 0 (§5) |
-   | 기록 변경 | `graph-find --check` exit 0 |
-   | 운영 데이터 · 설정 | 실행 · 확인 쿼리와 전/후 결과 |
-   | 조사 · 측정 | 정답 라벨 n건 대조 + 검증한 범위 |
-
-3. 보고 한 세트 — 작업 파일 목록 · 기록(`graph-append` · decisions → `decision-check` · `lesson-append` → `lesson-promote`) · 증거 출력 그대로 · 못 한 것은 `⏸`
-   - 남길 게 없으면 그 판단을 한 줄로 밝힌다 · 낡은 기록은 그 자리에서 고친다(`supersedes`)
-
-## 3. 그래프
-
-### 3.1 저장
+### 6.1 저장
 
 `.harness/graph/requests.jsonl` — 한 줄이 기록 하나인 append-only 파일이다. 도구는 자기 파일 위치 기준(`../graph/`)으로 찾는다 — 훅이 어느 cwd 에서 돌아도 같은 파일을 읽는다. ⛔ 자동 로드되지 않는다 — 도구와 훅으로만 읽으므로 무한히 쌓여도 세션 비용이 0 이다.
 
@@ -83,7 +142,7 @@
 - `req` 머리말: `정본: `(같은 주제의 통합본 — 훅이 1장만 낸다) · `용어 학습: `(`graph-alias` 가 붙인다) · `용어 사전: `
 - 저장은 평평한 줄 목록이다. 기록 순서(줄 순서) · 대체됨 · 언제부터 낡았나는 읽을 때 `supersedes` 로 만든다
 
-### 3.2 쓰기
+### 6.2 쓰기
 
 | 언제 | 무엇으로 |
 |---|---|
@@ -95,7 +154,7 @@
 
 ⛔ 예시 낱말을 어느 필드에도 넣지 않는다 — 전 필드가 색인된다. ⛔ 개인 식별자 · 비밀값을 적지 않는다. 판단 규칙 전부는 `.claude/rules/graph.md` §4.
 
-### 3.3 탐색 — `graph-find`
+### 6.3 탐색 — `graph-find`
 
 | 명령 | 답하는 물음 |
 |---|---|
@@ -123,7 +182,7 @@
 4. 문장을 통째로 줘서 0건이면 같은 토크나이저로 쪼개 다시 찾는다
 5. **출력** — 카드(점수 · 날짜 · 요구 · `용어 → 실체` · 테이블 · 파일 · ⚠️ 함정) + 같은 용어의 이력(최신순, 낡은 것 표시) + 상위 결과에 자주 나온 파일
 
-### 3.4 훅 — 질문마다 대신 조회 (`graph-hook`)
+### 6.4 훅 — 질문마다 대신 조회 (`graph-hook`)
 
 **켜는 조건** — 살아있는 기록 20건 이상 + `--check` exit 0 + 상위 3 기록 점유 < 50%(`graph-measure` 로 잰다. 질의 집합이 없으면 보고에 「독점 미측정」). 켜기: `policy-apply --local --with graph-hook`(공유는 `--local` 없이).
 
@@ -136,9 +195,9 @@
 | 침묵 | 최고점수 ≤ 2 — 「계속 진행」 같은 발화 | 아무것도 |
 | `⏸` | 하다 만 기록이 이 질의에 5점 이상 | 순위와 무관하게 「열린 작업」 줄을 붙인다 |
 
-훅이 실패하면 조용히 통과한다 — 프롬프트를 막지 않는다. 숫자는 `tools/graph-hook.mjs` 의 상수이고 근거는 graph-port.md §1 · §5.
+숫자는 `tools/graph-hook.mjs` 의 상수이고 근거는 graph-port.md §1 · §5.
 
-### 3.5 재기 · 보기
+### 6.5 재기 · 보기
 
 | 명령 | 언제 |
 |---|---|
@@ -146,7 +205,7 @@
 | `graph-measure . --tickets <json>` | 이슈 제목을 질의로 — 확신율 · 상위 3 점유. 훅을 켜기 전후 |
 | `graph-view [출력경로]` | 기록 전체를 HTML 한 장으로 (기본은 임시 폴더) |
 
-## 4. 장부 — 성격마다 하나
+## 7. 장부 — 성격마다 하나
 
 | 장부 | 무엇 | 도구 | 위치 — 공유 / 로컬 |
 |---|---|---|---|
@@ -159,20 +218,23 @@
 
 **승격은 한 방향 — 그래프 · lessons → 규칙.** 「다음 세션이 이걸 안 읽으면 같은 실수를 하나」 → 그러면 규칙이다.
 
-## 5. 완료 증거 — `verify`
+## 8. 키트 밖에서 같이 도는 것
 
-`.harness/harness.json` 의 `checks[]` 를 전부 돌린다. 하나라도 실패하거나 검사가 0개면 exit 1.
+### 8.1 플러그인 훅 — superpowers · ponytail
 
-| `kind` | 통과 |
-|---|---|
-| `junit-xml` | 이번 실행이 쓴 XML 에 testcase 1개 이상 · 기준선 밖 실패 0 |
-| `exit-code` | 명령 exit 0 — `--check` 같은 도구 자체 검사 |
-| `file-unchanged` | 생성 명령 뒤 `git status --porcelain -- <evidence>` 가 비었다 |
-| `output-match` | 명령 exit 0 · stdout 이 `expect` 정규식에 맞는다 |
+| 이벤트 | 무엇이 | 출처 | 하는 일 |
+|---|---|---|---|
+| `SessionStart` (startup · clear · compact) | `session-start` | superpowers | 스킬 사용 규칙(using-superpowers)을 넣는다 — 「관련 스킬이 있으면 먼저 부른다」 |
+| `SessionStart` | `ponytail-activate.js` | ponytail | 정책이 `PONYTAIL_DEFAULT_MODE=off` 라 아무것도 넣지 않는다 |
+| `UserPromptSubmit` | `ponytail-mode-tracker.js` | ponytail | `/ponytail <모드>` 전환을 기억한다 |
+| `SubagentStart` | `ponytail-subagent.js` | ponytail | 모드가 켜져 있을 때만 서브에이전트에 규칙을 넣는다 — off 면 없음 |
 
-## 6. 프로젝트가 더한 훅과 같이 돌 때 — 예: 화면 디자인 스킬 게이트
+- ponytail 을 플러그인 없이 사용자 스킬 `ponytail-review` 로만 둔 PC 에는 위 ponytail 훅 세 줄이 없다 — 로컬 전용 `policy-apply` 가 그 플러그인을 선언하지 않는다(SETUP ⑥)
+- ponytail 훅은 제한이 5초다. 프로세스 기동이 느린 PC(보안 프로그램이 새 프로세스마다 검사하는 경우)에서는 가끔 「timed out after 5s」로 결과가 버려진다 — 그 프롬프트의 모드 추적만 빠지고 작업에는 영향이 없다. 키트 훅은 10초 · 30초다
 
-키트 밖의 예다. Impeccable 4.5.0(화면 디자인 스킬)과 그 스킬을 먼저 부르게 하는 게이트를 들인 프로젝트에서는 아래가 §1 에 더해진다.
+### 8.2 프로젝트가 더한 훅 — 예: 화면 디자인 스킬 게이트
+
+키트 밖의 예다. Impeccable 4.5.0(화면 디자인 스킬)과 그 스킬을 먼저 부르게 하는 게이트를 들인 프로젝트에서는 아래가 §1 · §8.1 에 더해진다.
 
 | 이벤트 | 무엇이 | 하는 일 |
 |---|---|---|

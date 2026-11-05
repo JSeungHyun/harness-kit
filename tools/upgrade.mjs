@@ -58,13 +58,18 @@ export function upgrade(dir) {
   // 정책이 켜는 이름(superpowers · ponytail)을 옛 마켓 id 로 켜 둔 것 — 남기면 같은 플러그인이 두 번 뜬다
   const ids = Object.keys(read(join(KIT, 'policy', 'settings.json')).enabledPlugins ?? {});
   const names = new Set(ids.map((id) => id.split('@')[0]));
-  const stale = ['settings.local.json', 'settings.json'].flatMap((f) =>
-    Object.entries(read(join(dir, '.claude', f)).enabledPlugins ?? {})
-      .filter(([id, on]) => on && names.has(id.split('@')[0]) && !ids.includes(id)).map(([id]) => ` --off ${id}`));
+  const sets = ['settings.local.json', 'settings.json'].map((f) => read(join(dir, '.claude', f)));
+  const stale = sets.flatMap((s) => Object.entries(s.enabledPlugins ?? {})
+    .filter(([id, on]) => on && names.has(id.split('@')[0]) && !ids.includes(id)).map(([id]) => ` --off ${id}`));
+  // 키트 그래프 훅을 건 설치 — 다시 병합해야 훅 형식이 바뀐다(그 프로젝트 자신의 그래프 훅은 경로가 달라 빠진다)
+  const graphHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('.harness/tools/graph-hook.mjs')) ? ' --with graph-hook' : '';
+  // 관문 훅만 건 설치(--only gate-hook — 지시 파일이 흐름 · 권한을 정한 프로젝트)에 --with 를 내면 받지 않은 정책이 들어간다
+  const only = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs'))
+    && !sets.some((s) => s.env?.PONYTAIL_DEFAULT_MODE || Object.keys(s.enabledPlugins ?? {}).some((id) => names.has(id.split('@')[0])));
 
   out.push('', '다음 — 이 순서로 (설정이라 사용자가 돌리거나 승인한다):',
     `1. node ${KIT.replace(/\\/g, '/').replace(/\/$/, '')}/tools/plugin-plan.mjs — 이전 명령이 나오면 사용자 승인 뒤 먼저 실행한다`,
-    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} --with gate-hook${[...new Set(stale)].join('')}`,
+    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook}${[...new Set(stale)].join('')}`}`,
     '3. node .harness/tools/verify.mjs');
   return out.join('\n');
 }

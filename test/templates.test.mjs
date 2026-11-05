@@ -127,6 +127,13 @@ test('⛔ 이 레포의 템플릿이 커밋에서 빠지지 않는다 — 전역
   assert.equal(r.stdout.trim(), '');
 });
 
+test('final-gate 에 범위 검토가 있다 — 요청 밖 변경은 verify 도 과설계 리뷰도 못 본다 (docs/proof.md 범위 검토)', () => {
+  const s = repoFile('templates/skills/final-gate/SKILL.md');
+  assert.match(s, /범위 검토/);
+  assert.match(s, /사용자 말 원문/);
+  assert.match(s, /요청 밖 변경/);
+});
+
 test('⛔ final-gate 의 기록 단계에 「기록의 두 장치」가 있다 — 「기록해라」만 있으면 조용히 건너뛴다 (design §3)', () => {
   const s = repoFile('templates/skills/final-gate/SKILL.md');
   assert.match(s, /남길 게 없으면 그 판단을 한 줄로/);

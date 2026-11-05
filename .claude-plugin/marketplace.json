@@ -5,9 +5,9 @@
   "plugins": [
     {
       "name": "superpowers",
-      "version": "7.0.1",
+      "version": "7.0.2",
       "description": "흐름 — 설계 · 계획 · TDD · 검증 규율",
-      "source": { "source": "url", "url": "https://github.com/obra/superpowers.git", "sha": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b" }
+      "source": { "source": "url", "url": "https://github.com/obra/superpowers.git", "sha": "22f0b463e7a5e579904dd6211a520321035526f7" }
     },
     {
       "name": "ponytail",

@@ -18,7 +18,7 @@ Claude Code 가 「테스트 통과, 끝났습니다」라고 보고해도 실�
 ```
 
 Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
-플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.1 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 규칙이 기대는 동작은 두 가지다. 하나는 brainstorming 의 종료 조건이고, 다른 하나는 `PONYTAIL_DEFAULT_MODE=off` 다.
+플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. 규칙이 기대는 동작은 두 가지다. 하나는 brainstorming 의 종료 조건이고, 다른 하나는 `PONYTAIL_DEFAULT_MODE=off` 다.
 
 ### 플러그인을 올릴 때 — 이 레포에서
 
@@ -69,6 +69,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | **원래 있던 실패와 새 실패의 구분** | ❌ 러너는 늘 exit 1 | ⭐ 기준선 — 기준선 밖 실패만 실패 |
 | **묻지 않은 가정 · 반복 실패의 적립** | ❌ | ⭐ `decision-check` · `lesson-append` · `lesson-promote` |
 | **현업 용어 → 코드 식별자 · 함정 한 줄** | ❌ 어디에도 없다 | ⭐ 그래프 `terms` · `note` |
+| **요청하지 않은 변경** | ❌ verify 는 통과하고, 과설계 리뷰는 범위를 안 본다 | ⭐ 범위 검토 — 사용자 말 원문 + diff 만 받은 서브에이전트(final-gate) |
 
 ## ⛔ 도입하지 말아야 할 때
 
@@ -105,4 +106,4 @@ node proof/run.mjs          # 결정론 실측 (LLM 없음)
 node proof/run.mjs --claude # + 새 세션 실측 (토큰을 쓴다)
 ```
 
-설계: `docs/design.md` · 계획: `docs/plan.md` · 구조(언제 무엇이 도는가 · 그래프 저장과 탐색): `docs/structure.md`
+설계: `docs/design.md` · 계획: `docs/plan.md` · 구조(큰 그림 · 훅 · 검증 · 구성 · 그래프 저장과 탐색): `docs/structure.md`
