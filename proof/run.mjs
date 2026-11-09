@@ -11,7 +11,6 @@ import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { judgeJunitXml } from '../lib/evidence.mjs';
-import { hash12 } from '../lib/mdtable.mjs';
 
 const KIT = fileURLToPath(new URL('..', import.meta.url));
 // tmpdir() 는 Windows 에서 8.3 단축 경로(ABCDEF~1)일 수 있다 — 대상은 긴 경로로 만들고, 단축 경로는 따로 잰다
@@ -34,6 +33,8 @@ function put(dir, rel, body) {
 }
 const first = (out, re) => (out.match(re) ?? [''])[0].trim();
 const line1 = (out) => out.trim().split(/\r?\n/)[0].slice(0, 60);
+// verify 의 검사 결과 줄(✅/⛔ <id> — <이유>)의 이유 — 첫 줄은 「코드 검사 없음 — …」일 수 있다
+const why = (out) => first(out, /(?<=^(?:✅|⛔) .+? — ).*/m);
 const tool = (name) => `node .harness/tools/${name}.mjs`;
 // 이 실측이 만든 임시 대상 — 끝에 지운다 (setup-e2e 는 들여다볼 대상이라 남긴다)
 const made = [];
@@ -99,7 +100,7 @@ function p1() {
     const npm = sh('npm test', dir);
     const v = sh(tool('verify'), dir);
     row('P1 거짓 완료', condition,
-      `npm test exit ${npm.code} (${first(npm.out, /ℹ pass \d+/) || '요약 없음'}) → verify exit ${v.code} · ${first(v.out, /(?<=— ).*/)}`,
+      `npm test exit ${npm.code} (${first(npm.out, /ℹ pass \d+/) || '요약 없음'}) → verify exit ${v.code} · ${why(v.out)}`,
       npm.code === npmCode && v.code === verifyCode);
   };
   stage('테스트 파일에 test() 가 없다', "import { sum } from '../src/sum.mjs';\n// 테스트를 쓰다 말았다\n", 0, 1);
@@ -112,7 +113,7 @@ function p1() {
   const naive = judgeJunitXml([readFileSync(join(dir, 'test-results', 'junit.xml'), 'utf8')]);
   const v = sh(tool('verify'), dir);
   row('P1 거짓 완료', '테스트 명령이 아무것도 안 돌게 바뀜 (직전 통과 XML 이 남음)',
-    `npm test exit ${npm.code} · 남은 XML 만 읽으면 ${naive.ok ? '통과' : '실패'} → verify exit ${v.code} · ${first(v.out, /(?<=— ).*/)}`,
+    `npm test exit ${npm.code} · 남은 XML 만 읽으면 ${naive.ok ? '통과' : '실패'} → verify exit ${v.code} · ${why(v.out)}`,
     npm.code === 0 && naive.ok && v.code === 1);
 }
 
@@ -138,7 +139,7 @@ function p6() {
   install(dir, [{ id: '테스트', cmd: 'npm test', kind: 'junit-xml', evidence: 'test-results' }]);
   const tests = (extra = '', legacyOk = false) => put(dir, 'test/sum.test.mjs', `${HEAD}test('더한다', () => assert.equal(sum(1, 2), 3));\n`
     + `test('옛 반올림 규칙', () => assert.equal(sum(0.1, 0.2), ${legacyOk ? 'sum(0.1, 0.2)' : '0.3'}));\n${extra}`);
-  const verify = () => { const v = sh(tool('verify'), dir); return { code: v.code, why: first(v.out, /(?<=— ).*/) }; };
+  const verify = () => { const v = sh(tool('verify'), dir); return { code: v.code, why: why(v.out) }; };
 
   tests();
   const npm = sh('npm test', dir);
@@ -162,38 +163,21 @@ function p7() {
     const dir = install(scratch('match'), [{ id: '잔여 행', cmd, kind: 'output-match', expect: '^rows=0$' }]);
     const plain = sh(cmd, dir);
     const v = sh(tool('verify'), dir);
-    row('P7 output-match', `검증 쿼리가 rows=${rows0} 을 낸다 (기대 ^rows=0$)`, `명령 exit ${plain.code} → verify exit ${v.code} · ${first(v.out, /(?<=— ).*/)}`, plain.code === 0 && v.code === (ok ? 0 : 1));
+    row('P7 output-match', `검증 쿼리가 rows=${rows0} 을 낸다 (기대 ^rows=0$)`, `명령 exit ${plain.code} → verify exit ${v.code} · ${why(v.out)}`, plain.code === 0 && v.code === (ok ? 0 : 1));
   }
 }
 
 // P5 — evidence 도구를 설치된 배치에서 CLI 로 돌린다
 function p5() {
   const dir = install(scratch('state'), BUILD);
-  const ago = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10);
   const decisions = readFileSync(join(dir, STATE.decisions), 'utf8')
-    .replace('YYYY-MM-DD', ago)
     .replace('# 1. 답변이 필요합니다', '# 1. 답변이 필요합니다\n\n## Q1 · 결제 실패 시 재시도를 3회로 가정했다\n');
   put(dir, STATE.decisions, decisions);
   const dc = sh(tool('decision-check'), dir);
-  row('P5 가정', '20일 묵은 열린 질문 1건', `${first(dc.out, /열린 결정[^\n]*/)} · ${dc.out.includes('⚠️') ? '경고' : '경고 없음'} · exit ${dc.code}`,
-    dc.code === 0 && dc.out.includes('⚠️'));
+  row('P5 가정', '열린 질문 1건', `${first(dc.out, /열린 결정[^\n]*/)} · exit ${dc.code}`, dc.code === 0 && dc.out.includes('Q1 결제 실패'));
 
   const diary = sh(tool('lesson-append'), dir, JSON.stringify({ symptom: '배포가 실패했다', cause: '', category: '검증 부족' }));
   row('P5 교훈', '근본 원인 없이 적기', `exit ${diary.code} · ${line1(diary.out)}`, diary.code === 1);
-  for (const symptom of ['치환이 조용히 아무것도 안 바꿨다', '생성 스크립트가 빈 파일을 썼는데 통과했다']) {
-    sh(tool('lesson-append'), dir, JSON.stringify({ symptom, cause: '실패를 알리지 않는 명령의 결과를 확인하지 않았다', category: '검증 부족' }));
-  }
-  const pr = sh(tool('lesson-promote'), dir);
-  row('P5 교훈', '같은 분류 2회 · 막는 것 없음', first(pr.out, /검증 부족 ×\d+[^\n]*/) || line1(pr.out), pr.out.includes('검증 부족 ×2'));
-
-  put(dir, 'src/engine.mjs', 'export const v = 1;\n');
-  const h = hash12(Buffer.from('export const v = 1;\n'));
-  put(dir, 'docs/harness/current.md', `| 파일 | 상태 | 해시 |\n|---|---|---|\n| \`src/engine.mjs\` | 분석완료 | \`${h}\` |\n| \`src/gone.mjs\` | 분석완료 | \`abc123abc123\` |\n`);
-  put(dir, '.harness/harness.json', { state: { ...STATE, current: 'docs/harness/current.md' }, checks: BUILD });
-  put(dir, 'src/engine.mjs', 'export const v = 2;\n');
-  const st = sh(tool('state-check'), dir);
-  row('P5 대장', '분석 뒤 원본이 바뀜 + 가리키는 파일 소멸', `${first(st.out, /대장 [^\n]*/)} · exit ${st.code}`,
-    st.code === 1 && st.out.includes('↻ src/engine.mjs'));
 }
 
 // P8 — 그래프: 설치된 배치(.harness/tools · .harness/graph)에서 기록 → 조회 → 훅

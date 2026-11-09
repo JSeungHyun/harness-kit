@@ -15,8 +15,6 @@
       "Read", "Glob", "Grep",
       "Bash(node .harness/tools/verify.mjs)",
       "Bash(node .harness/tools/decision-check.mjs)",
-      "Bash(node .harness/tools/lesson-promote.mjs)",
-      "Bash(node .harness/tools/state-check.mjs)",
       "Bash(node .harness/tools/graph-find.mjs)",
       "Bash(node .harness/tools/graph-find.mjs *)",
       "Bash(git status *)", "Bash(ls *)", "Bash(pwd)", "Bash(grep *)",

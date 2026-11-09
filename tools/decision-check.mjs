@@ -1,16 +1,13 @@
 #!/usr/bin/env node
-// ④ DECISIONS — 묻지 않고 넘어간 가정이 답 없이 묵고 있는지 본다. 설계안.
-// ⛔ exit 1 하지 않는다 — 답을 기다리는 것은 결함이 아니다. 경고는 임계를 넘겼을 때만 낸다.
+// ④ DECISIONS — 묻지 않고 넘어간 가정 중 답을 기다리는 것(1절)을 목록으로 낸다. 설계안.
+// ⛔ exit 1 하지 않는다 — 답을 기다리는 것은 결함이 아니다. 날짜 경고는 지웠다 — 파일 갱신일 기준이라 어느 항목을 고쳐도 다시 시작해 0번 울렸다(plan 11차).
 
 import { readFileSync } from 'node:fs';
 import { loadConfig, cli } from '../lib/config.mjs';
 
-export const STALE_DAYS = 14;
-
-export function auditDecisions(cfg, today = new Date()) {
+export function auditDecisions(cfg) {
   if (!cfg.state.decisions) throw new Error('.harness/harness.json 에 state.decisions 가 없다');
   const text = readFileSync(cfg.state.decisions, 'utf8');
-  const updated = text.match(/\|\s*갱신일\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|/);
   const open = [];
   let inOpen = false;
   for (const line of text.split(/\r?\n/)) {
@@ -22,8 +19,7 @@ export function auditDecisions(cfg, today = new Date()) {
     const q = inOpen && line.match(/^##\s+(Q\d+)\s*·\s*(.+?)\s*$/);
     if (q) open.push({ id: q[1], title: q[2] });
   }
-  const staleDays = updated ? Math.round((today - new Date(updated[1])) / 86400000) : null;
-  return { open, staleDays, warn: open.length > 0 && staleDays !== null && staleDays > STALE_DAYS };
+  return { open };
 }
 
 cli(import.meta.url, () => {
@@ -33,7 +29,6 @@ cli(import.meta.url, () => {
     return;
   }
   const r = auditDecisions(cfg);
-  console.log(`열린 결정 ${r.open.length}건 · 갱신 후 ${r.staleDays ?? '?'}일`);
+  console.log(`열린 결정 ${r.open.length}건`);
   for (const q of r.open) console.log(`  · ${q.id} ${q.title}`);
-  if (r.warn) console.log(`⚠️ ${STALE_DAYS}일을 넘겼다 — 되돌리기 비용이 오르고 있다. 사용자에게 1절을 보여준다`);
 });

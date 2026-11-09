@@ -98,6 +98,42 @@ test('⛔ CLI --check: 이상이 있으면 exit 1, 깨끗하면 exit 0', () => {
   assert.equal(scene([{ req: 'A', files: [] }]).run('graph-find', ['--check']).status, 0);
 });
 
+test('⛔ graph-append — note 는 한 줄 · 800자까지다. 넘으면 아무것도 쓰지 않고 exit 1 · 기존 기록은 그대로 읽는다', () => {
+  const { store } = scene();
+  assert.throws(() => appendRecord({ req: 'A', note: '첫 줄\n둘째 줄' }, { store }), /한 줄/);
+  assert.throws(() => appendRecord({ req: 'A', note: '가'.repeat(801) }, { store }), /800/);
+  appendRecord({ req: 'B', note: '가'.repeat(800) }, { store });
+  const s = scene([{ req: '옛 기록', note: '가'.repeat(1200) }]);
+  const r = s.run('graph-append', [], [JSON.stringify({ req: 'C', note: '짧다' }), JSON.stringify({ req: 'D', note: '가'.repeat(900) })].join('\n'));
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /800/);
+  assert.deepEqual(load(s.store).map((x) => x.req), ['옛 기록']);
+  // alias 의 --note 도 같은 문을 지난다
+  assert.equal(s.run('graph-alias', ['적립금', 'point_balance', '--note', '가'.repeat(900)]).status, 1);
+  assert.deepEqual(load(s.store).map((x) => x.req), ['옛 기록']);
+  // 여러 줄로 편 JSON 한 건(heredoc)은 그대로 받는다
+  const pretty = s.run('graph-append', [], JSON.stringify({ req: 'E', note: '짧다' }, null, 2));
+  assert.equal(pretty.status, 0, pretty.stderr);
+  assert.deepEqual(load(s.store).map((x) => x.req), ['옛 기록', 'E']);
+});
+
+// 20개 — --check 의 독점 측정은 살아있는 기록 20건부터
+const W20 = ['배송', '반품', '교환', '적립금', '쿠폰', '정산', '재고', '알림', '결제', '환불', '주문', '회원', '등급', '배너', '상품', '리뷰', '문의', '공지', '이벤트', '포인트'];
+
+test('⭐ --check — 한 기록이 다른 기록의 질문(자기를 뺀 1위)을 독점하면 경고한다 · exit 0(신호용)', () => {
+  const broad = { req: '용어 사전: 쇼핑몰 전반', terms: Object.fromEntries(W20.map((w) => [w, `${w} 설명`])) };
+  const r = scene([broad, ...W20.map((w) => ({ req: `${w} 처리`, terms: { [w]: `${w}_tbl` } }))]).run('graph-find', ['--check']);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /⚠️ 1위 독점 — .*용어 사전: 쇼핑몰 전반/);
+  // 고루 퍼지면 울리지 않는다
+  const even = scene(W20.flatMap((w) => [{ req: `${w} 처리`, terms: { [w]: 'a' } }, { req: `${w} 화면`, terms: { [w]: 'b' } }])).run('graph-find', ['--check']);
+  assert.equal(even.status, 0);
+  assert.match(even.stdout, /상위3 점유 \d+%/);
+  assert.doesNotMatch(even.stdout, /⚠️ 1위 독점/);
+  // 20건 미만은 재지 않는다
+  assert.doesNotMatch(scene([broad, ...W20.slice(0, 8).map((w) => ({ req: `${w} 처리`, terms: { [w]: 'x' } }))]).run('graph-find', ['--check']).stdout, /⚠️ 1위 독점/);
+});
+
 const SHOP = [
   { req: '배송 상태 화면', terms: { 배송: 'shipping_status' } },
   { req: '알림 발송 설정', terms: { 알림: 'notify_rule' } },

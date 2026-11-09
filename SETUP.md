@@ -64,9 +64,7 @@ cp <kit>/templates/scan.json <대상>/.harness/scan.json                   # 공
 node -e "for (const d of ['lib','tools','policy']) require('fs').cpSync(process.argv[1]+'/'+d, process.argv[2]+'/.harness/'+d, {recursive:true, filter:(f)=>!/graph-[\w-]+\.(mjs|json)$/.test(f)})" <kit> <대상>
 ```
 
-복사한 `decisions.md` 의 갱신일 칸(`YYYY-MM-DD`)을 설치일로 바꾼다 — 자리표시 그대로면 `decision-check` 가 「갱신 후 ?일」을 낸다.
 대상에 이미 가정 장부 · 교훈 파일이 있으면 템플릿을 복사하지 않고 ⑤에서 그 경로를 적는다(⛔ 옮기지 않는다).
-파일 단위 분석 진행을 추적하는 일(레거시 이해 · 레퍼런스 대조)이면 `<kit>/templates/state/current.md` 도 복사하고 `state.current` 에 적는다.
 
 ### ③ 설치 모드 — git 이 무엇을 보게 할지
 
@@ -108,6 +106,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 `profile` · `mode` 를 ①에서 정한 값으로, `state.decisions` · `state.lessons` 를 `<장부>/…` (또는 대상이 이미 쓰는 장부 경로)로 적는다.
 `context-graph 있음` 이면 `"graph": { "tools": "<그 프로젝트의 그래프 도구 폴더, 예: tools>", "rules": "<기록 규칙이 있는 곳 — 지시 파일의 절 · 스킬 이름>" }` 도 적는다 — ⑥ 의 규칙 자리와 「갱신」이 이 값을 쓴다.
 `checks` 에는 **실제로 도는 명령**만, 그리고 결과 XML 을 **매번 새로 쓰는** 명령만 적는다 — verify 는 이번 실행이 쓰지 않은 XML 을 증거로 쓰지 않는다.
+테스트 검사에는 `covers` — **그 테스트가 실제로 돌리는 코드**의 glob 배열(예: `["src/**"]` · 모노레포 `["backend/src/main/**"]`)을 적는다. 타입 검사 · 그래프 무결성 · 다른 언어의 테스트에는 두지 않는다. 관문 훅은 덮이지 않은 코드 변경에 `/code-review` 를 요구하고, `covers` 가 하나도 없으면 verify 첫 줄이 「코드 검사 없음 — 코드 변경의 증거는 /code-review」다.
 
 | 스택 | `cmd` | `kind` · `evidence` |
 |---|---|---|
@@ -137,7 +136,7 @@ node .harness/tools/policy-apply.mjs --with gate-hook          # 공유 → .cla
 node .harness/tools/policy-apply.mjs --local --with gate-hook  # 로컬 전용 → .claude/settings.local.json
 ```
 
-권한 · 관문 훅이 기존 설정 위에 병합된다(다시 돌려도 같다). 관문 훅(`gate-hook`, Stop)은 이번 턴에 verify 를 돌리고 final-gate 를 거치지 않은 채 멈추면 한 번 되돌려 보낸다 — 실제 세션에서 모델은 verify 를 바로 돌리고 스킬을 건너뛰었다(코드 변경 뒤 0/7).
+권한 · 관문 훅이 기존 설정 위에 병합된다(다시 돌려도 같다). 관문 훅(`gate-hook`, Stop)은 이번 턴의 증거 세트 — 코드를 바꿨으면 `/ponytail-review` · 덮는 검사(`covers`)가 없으면 `/code-review` · 덮는 검사가 있으면 마지막 코드 변경 뒤의 verify · verify 를 돌렸으면 final-gate — 에서 빠진 것만 적어 한 번 되돌려 보낸다. 실제 세션에서 모델은 verify 를 바로 돌리고 스킬을 건너뛰었다(코드 변경 뒤 0/7). 결과를 기다리는 작업(서브에이전트 · 백그라운드 verify)이 도는 멈춤은 통과이고, 상주 개발 서버만 떠 있으면 울린다.
 
 **플러그인은 PC(사용자 범위)에서 켜고, 프로젝트에는 선언하지 않는다** — 로컬 설치는 플러그인 선언을 쓰지 않는다. 그래서 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. 공유 모드만 팀원 PC 용으로 `settings.json` 에 superpowers 를 선언한다. 프로젝트 설정에 남은 superpowers · ponytail 항목(켬이든 끔이든 · 옛 마켓 id 포함), 옛 정책의 `extraKnownMarketplaces.ponytail`, `PONYTAIL_DEFAULT_MODE=off` 는 `policy-apply` 가 걷고 출력의 `걷음:` 줄로 알린다. ⛔ 「이 id 를 false 로 두면 전역에서 켜져도 이 프로젝트에서는 꺼진 채」 같은 이유로 남길지 사용자에게 묻지 않는다 — 플러그인은 PC 에서만 관리한다(사용자 결정). `--only gate-hook` 은 걷지 않는다.
 
@@ -218,7 +217,7 @@ node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 - 브레인스토밍 스펙 · 설계 문서가 있으면 현업 용어 → **계획한 식별자**를 그래프에 시드한다. `note` 에 `설계 용어 — 구현 후 재확인` 과 출처 경로. 구현에서 이름이 바뀌면 `supersedes` 로 맞춘다
   - 용어가 몇 개뿐이면 용어마다 `node .harness/tools/graph-alias.mjs <용어> "<계획한 식별자>" --note "설계 용어 — 구현 후 재확인"`
   - 문서에서 여럿을 한꺼번에 뽑으면 기존 이식의 용어 사전처럼 `graph.md` 의 기록 단위(「이 용어들이 같은 질문에서 함께 필요한가」)로 묶어 `graph-append` 주제 기록으로 — 용어 1개짜리 기록 수십 건은 `req` 가 빈약해 정확일치를 못 받는다
-- ⭐ **`checks` 에 junit 검사가 있으면, 첫 테스트 전에는 verify 가 「실행된 테스트가 0개」로 실패하는 것이 정상이다** — 보고에 그렇게 적는다. ⛔ 통과시키려고 검사를 빼거나 `exit-code` 로 바꾸지 않는다. 테스트 러너가 아직 없어 exit-code 검사(⑤ 「테스트 러너가 아직 없다」)만 두었으면 exit 0 이 나온다 — 보고에 「테스트 검사 없음 — 첫 테스트 때 junit 검사를 더한다」를 적는다
+- ⭐ **`checks` 에 junit 검사가 있으면, 첫 테스트 전에는 verify 가 「실행된 테스트가 0개」로 실패하는 것이 정상이다** — 보고에 그렇게 적는다. ⛔ 통과시키려고 검사를 빼거나 `exit-code` 로 바꾸지 않는다. 테스트 러너가 아직 없어 exit-code 검사(⑤ 「테스트 러너가 아직 없다」)만 두었으면 exit 0 이 나온다 — 보고에 「테스트 검사 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다」를 적는다
 - 훅은 켜지 않는다 — 조건이 차면 위 「그래프 훅」대로
 
 ### ⑧ 검증 — ⛔ 자기 보고도 도구 출력도 믿지 않는다
@@ -228,8 +227,6 @@ node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 ```bash
 node .harness/tools/verify.mjs; echo "exit=$?"    # 기존: exit 0 · 신규: junit 검사가 있으면 첫 테스트 전 「실행된 테스트가 0개」, exit-code 검사만이면 exit 0
 node .harness/tools/decision-check.mjs
-node .harness/tools/lesson-promote.mjs
-node .harness/tools/state-check.mjs
 node .harness/tools/graph-find.mjs --check; echo "exit=$?"     # ⛔ exit 0 (graph 모듈을 얹었으면)
 node .harness/tools/install-mode.mjs <local|share>             # 다시 돌려도 같다 — 모드대로인지 다시 확인
 node .harness/tools/scan-shared.mjs; echo "exit=$?"            # 공유 모드만 — ⛔ exit 0 (소급 기록에 민감 정보가 없는가)
@@ -273,7 +270,7 @@ node <kit>/tools/plugin-plan.mjs    # ⛔ 「옮길 것 없다」 — 리뷰 스
 
 ## ⚠️ 이 프로젝트에 새로 생기는 제약
 - 작업을 끝냈다고 보고하기 직전에 final-gate — 완료 증거 · 작업 파일 목록 · 기록이 한 세트
-- 코드 변경의 완료 증거는 node .harness/tools/verify.mjs
+- 코드 변경의 완료 증거는 node .harness/tools/verify.mjs — 코드를 바꾼 턴은 /ponytail-review, 검사가 덮지 않는 코드면 /code-review 도(관문 훅이 확인한다)
 - 요구가 오면 그래프 먼저 (node .harness/tools/graph-find.mjs), 끝나면 기록
 - 프로젝트 설정의 자동 승인(allow)은 이 폴더를 신뢰해야 적용된다 — 대화형으로 한 번 열어 신뢰 대화상자를 수락한다 (실측: 신뢰 전에는 「Ignoring … permissions.allow entries」)
 ```
@@ -287,6 +284,9 @@ node <kit>/tools/upgrade.mjs <대상>
 ```
 
 - `.harness/` 의 도구 · lib · 정책은 키트 것이라 덮어쓴다. 기록 · 장부 · 기준선 · `harness.json` 은 건드리지 않는다
+- 키트에서 지운 도구 · lib · 템플릿(`<kit>/policy/removed.json`)은 설치본에서 걷는다(`🧹 걷음` 줄). 내용을 쓴 대장은 남기고 `⚠️` 로 알린다. 지운 도구의 allow 줄은 「다음」의 정책 줄이 걷는다
+- `⚠️ 그래프 기록이 지운 경로를 가리킨다` 줄이 나오면 **같은 턴에** 그 경로를 뺀 기록으로 `supersedes` 한다 — 그대로 두면 `graph-find --check` 가 빨강이고, 그것을 검사로 둔 설치는 verify 가 빨강이 되어 모든 코드 턴이 관문에 막힌다
+- ⛔ `빌드 · 테스트 단서(…)가 보이는데 covers 를 가진 검사가 없다`(exit 1)면 멈춘다 — ⑤ 대로 그 코드를 돌리는 테스트 검사에 `covers` 를 적고 갱신을 다시 돌린다. 이 PC 에서 테스트를 못 돌리면 사용자에게 알리고 보고에 「코드 검사 없음 — 코드 변경은 /code-review」를 남긴다(그동안 관문 훅이 코드 변경마다 `/code-review` 를 요구한다)
 - 규칙 · final-gate 스킬은 설치본이 키트 이력의 한 버전(장부 경로를 채운 것)과 같을 때만 바꾼다. `⚠️ … 손대지 않았다` 줄은 프로젝트가 고친 파일이다 — 그 줄이 가리키는 키트의 지금 것과 비교해 키트 변경만 옮기고, 프로젝트가 더한 것과 채운 장부 경로는 남긴다
 - 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. 정책 줄은 옛 정책이 이 프로젝트에 쓴 플러그인 선언 · `PONYTAIL_DEFAULT_MODE` 를 걷고(출력의 `걷음:`), 키트 훅을 새 형식으로 바꿔 끼운다. ⛔ 이전을 먼저 한다 — 선언만 걷히고 PC 에 키트 마켓 플러그인이 없으면 superpowers 가 빠진다
 - 플러그인 판은 세션을 열 때 실린다 — 갱신 뒤 열려 있던 세션은 새로 연다

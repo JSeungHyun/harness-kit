@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { target, repoFile } from './scene.mjs';
+import { target, repoFile, put } from './scene.mjs';
 
 const KIT = fileURLToPath(new URL('..', import.meta.url));
 const TOOL = join(KIT, 'tools', 'upgrade.mjs');
@@ -14,6 +14,8 @@ const fill = (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<le
   .replaceAll('<graph-tools>', '.harness/tools').replaceAll('<graph-rules>', '`.claude/rules/graph.md`');
 // 키트 이력의 첫 버전 — 실제 설치 3곳의 규칙이 이것에 장부 경로를 채운 것과 같았다
 const first = execFileSync('git', ['-C', KIT, 'rev-list', '--reverse', 'HEAD', '--', RULE], { encoding: 'utf8' }).split('\n')[0];
+// 지운 대장 템플릿 — HEAD 이력에서 읽는다(키트에서 지운 뒤에도 같은 값)
+const CURRENT = execFileSync('git', ['-C', KIT, 'show', 'HEAD:templates/state/current.md'], { encoding: 'utf8' });
 const oldRule = fill(execFileSync('git', ['-C', KIT, 'show', `${first}:${RULE}`], { encoding: 'utf8' }));
 
 function installed(rule = oldRule, settings = { enabledPlugins: { 'ponytail@ponytail': true, 'superpowers@claude-plugins-official': false } }) {
@@ -106,4 +108,56 @@ test('⛔ 설치되지 않은 대상은 거부한다', () => {
   const r = run(target(null));
   assert.equal(r.status, 1);
   assert.match(r.stderr, /SETUP/);
+});
+
+test('⭐ 키트에서 지운 도구 · lib 는 설치본에서도 걷는다 — 복사는 덮어쓰기만 한다 · 프로젝트가 더한 도구는 둔다', () => {
+  const dir = installed();
+  for (const f of ['.harness/tools/state-check.mjs', '.harness/tools/lesson-promote.mjs', '.harness/lib/mdtable.mjs', '.harness/tools/our-tool.mjs']) put(dir, f, '// 옛 것');
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  for (const f of ['.harness/tools/state-check.mjs', '.harness/tools/lesson-promote.mjs', '.harness/lib/mdtable.mjs']) assert.ok(!existsSync(join(dir, f)), f);
+  assert.ok(existsSync(join(dir, '.harness/tools/our-tool.mjs')));
+  assert.match(r.stdout, /걷음.*state-check\.mjs/);
+});
+
+test('⭐ 지운 템플릿은 손대지 않은 설치본만 걷는다 — 쓴 대장은 남기고 알린다', () => {
+  const untouched = target({ profile: 'existing', mode: 'local', state: { ...STATE, current: '.harness/state/current.md' }, checks: [] }, {
+    '.harness/state/current.md': CURRENT,
+  });
+  assert.match(run(untouched).stdout, /걷음.*current\.md/);
+  assert.ok(!existsSync(join(untouched, '.harness/state/current.md')));
+  const used = target({ profile: 'existing', mode: 'local', state: { ...STATE, current: '.harness/state/current.md' }, checks: [] }, {
+    '.harness/state/current.md': `${CURRENT}| \`src/a.mjs\` | 분석완료 | \`abc\` | |\n`,
+  });
+  assert.match(run(used).stdout, /⚠️ \.harness\/state\/current\.md — .*남겼다/);
+  assert.ok(existsSync(join(used, '.harness/state/current.md')));
+});
+
+test('⛔ 빌드 · 테스트 단서가 보이는데 covers 를 가진 검사가 없으면 갱신 보고를 ⛔ 로 멈춘다(exit 1)', () => {
+  const pkg = { 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) };
+  const bare = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, pkg);
+  const r = run(bare);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /⛔ .*package\.json test.*covers/);
+  const covered = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'] }] }, pkg);
+  assert.equal(run(covered).status, 0);
+});
+
+test('⭐ 지우는 경로를 살아있는 그래프 기록이 가리키면 목록을 낸다 — 그대로 두면 --check 빨강 → verify 빨강', () => {
+  const rec = (req, files, extra = {}) => JSON.stringify({ date: '2026-10-01', recorded: '2026-10-01', req, files, ...extra });
+  const dir = installed();
+  put(dir, '.harness/graph/requests.jsonl', [rec('대장 점검 도구 사용법', ['.harness/tools/state-check.mjs']), rec('옛 기록', ['.harness/tools/lesson-promote.mjs']),
+    rec('새 기록', [], { supersedes: '옛 기록' })].join('\n'));
+  const r = run(dir);
+  assert.match(r.stdout, /그래프 기록이 지운 경로를 가리킨다/);
+  assert.match(r.stdout, /state-check\.mjs ← 대장 점검 도구 사용법/);
+  assert.doesNotMatch(r.stdout, /← 옛 기록/);
+});
+
+test('⛔ 「지운 것」 목록이 키트와 맞는다 — 지운 도구 · 템플릿이 키트에 남거나 allow 가 정책에 남으면 갱신이 다시 넣는다', () => {
+  const removed = JSON.parse(repoFile('policy/removed.json'));
+  for (const f of removed.files) assert.ok(!existsSync(join(KIT, f.replace(/^\.harness\//, ''))), f);
+  for (const src of Object.keys(removed.templates)) assert.ok(!existsSync(join(KIT, src)), src);
+  const allow = JSON.parse(repoFile('policy/settings.json')).permissions.allow;
+  for (const a of removed.allow) assert.ok(!allow.includes(a), a);
 });

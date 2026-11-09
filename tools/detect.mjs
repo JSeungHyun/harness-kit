@@ -27,7 +27,7 @@ const dirtyPaths = (dirty) => dirty.flatMap((l) => l.slice(3).split(' -> ')).map
 const rewritten = (p) => p === 'CLAUDE.local.md' || p.startsWith('.claude/');
 
 // 루트와 하위 폴더 한 단계 — backend/ · frontend/ 로 나눈 저장소는 루트에 단서가 없다. typecheck 는 테스트 러너가 생기기 전의 exit-code 검사 후보다
-function testHints(dir) {
+export function testHints(dir) {
   const subs = readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
     .map((e) => e.name)

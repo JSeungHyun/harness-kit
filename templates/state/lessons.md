@@ -7,7 +7,6 @@
 | | |
 |---|---|
 | 입력 | `node .harness/tools/lesson-append.mjs <<< '<JSON>'` |
-| 승격 후보 | `node .harness/tools/lesson-promote.mjs` |
 
 분류: `누락된 컨텍스트` · `잘못된 도구` · `미흡한 권한` · `검증 부족`
 

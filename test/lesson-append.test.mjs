@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../lib/config.mjs';
-import { cells } from '../lib/mdtable.mjs';
 import { appendLesson, NO_GUARD } from '../tools/lesson-append.mjs';
 import { target, repoFile } from './scene.mjs';
 
@@ -17,6 +16,8 @@ const OK = {
   guard: '',
 };
 const lastRow = (cfg) => readFileSync(cfg.state.lessons, 'utf8').trimEnd().split(/\r?\n/).at(-1);
+// 표 한 줄의 칸 — 값 안의 \| 는 구분자가 아니다
+const cells = (line) => line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '').split(/(?<!\\)\|/).map((s) => s.trim());
 
 test('설치 템플릿의 표에 교훈 한 건을 덧붙이고 id 를 돌려준다', () => {
   const cfg = loadConfig(scene());

@@ -208,6 +208,31 @@ export function check(recs, { fileExists } = {}) {
   return { problems, gone, noRecorded, retro, stale, unmarked, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
 }
 
+// 정렬: 정확일치 유무 → 점수 → 살아있는 기록 → 최신
+// 정확일치 먼저 — 합만으로 세우면 1위가 정확일치 0 인 비율 39%, 첫 키로 바꾼 뒤 11%(본문 질의 75건). 바꾸려면 다시 잰다
+const rank = (pool, qs) => pool.map((r) => ({ r, ...scoreDetail(r, qs) })).filter((x) => x.s > 0)
+  .sort((a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s
+    || (a.r.validTo ? 1 : 0) - (b.r.validTo ? 1 : 0)
+    || String(b.r.date).localeCompare(String(a.r.date)));
+
+// 1위 독점 — 살아있는 기록마다 그 req 로 묻되 자기는 빼고 1위를 센다. 광역 기록이 다른 질문을 가로채면 훅 카드가 한 장으로 쏠린다(설치 실측: note 1,102자 기록이 상위3 점유 81%)
+// 자기를 넣으면 제목 정확일치로 늘 자기가 1위라 독점이 안 보인다(이 PC 그래프 4곳 174/180 · 10/10 · 29/29 · 11/11)
+export function monopoly(recs) {
+  const dead = new Set(recs.flatMap(sup));
+  const live = recs.filter((r) => !dead.has(r.req));
+  const wins = new Map();
+  let n = 0;
+  for (const q of live) {
+    const qs = [...tokenizeKo(q.req), ...tokenizeIds(q.req)];
+    const top = rank(live.filter((r) => r !== q), qs)[0];
+    if (!top) continue;
+    n++;
+    wins.set(top.r, (wins.get(top.r) || 0) + 1);
+  }
+  const top = [...wins].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return { live: live.length, n, top, share: n ? Math.round((top.reduce((a, [, v]) => a + v, 0) / n) * 100) : 0 };
+}
+
 if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
   let args = process.argv.slice(2);
   const recs = index(load());
@@ -316,28 +341,34 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
       console.log(`  ⚠️ ${r.date} ${r.req.slice(0, 56)}`);
       console.log(`       ⇒ 아직 하다 만 것이면 note 앞에 ⏸ 를 붙인다 (훅이 순위 밖이어도 붙여 준다). 끝난 것이면 그냥 둔다`);
     }
+    // 훅을 켜는 조건과 같은 수 — 20건 · 상위3 점유 50%. 신호용이라 exit 에 넣지 않는다
+    console.log('\n── 1위 독점 (자기를 뺀 1위 — 한 기록이 다른 질문을 가로채나) ──');
+    const m = monopoly(recs);
+    if (m.live < 20) console.log(`  살아있는 기록 ${m.live}건 — 20건부터 잰다`);
+    else {
+      console.log(`  질의 ${m.n} · 상위3 점유 ${m.share}%${m.share < 50 ? ' — 이상 없음' : ''}`);
+      if (m.share >= 50) {
+        for (const [r, v] of m.top) console.log(`  ⚠️ 1위 독점 — ${v}/${m.n}  ${r.req.slice(0, 50)} (note ${(r.note || '').length}자)`);
+        console.log('       ⇒ 광역 기록을 주제별로 나누거나 note 를 줄인다 — 이대로 훅을 켜면 카드가 이 기록으로 쏠린다');
+      }
+    }
     console.log('\n── 시간 ──');
     console.log(`  recorded 없음 ${noRecorded.length}건 (구 기록 — 순서는 줄 번호로 판정한다)`);
     console.log(`  소급 기록 ${retro.length}건 (date < recorded — 정상이다, 과거를 나중에 적은 것)`);
     process.exit(problems.length || gone.length || stale.length ? 1 : 0);
   }
 
-  // ⛔ 대체된 기록은 기본 제외(--all 로 포함). 정렬: 정확일치 유무 → 점수 → 살아있는 기록 → 최신
-  // 정확일치 먼저 — 합만으로 세우면 1위가 정확일치 0 인 비율 39%, 첫 키로 바꾼 뒤 11%(본문 질의 75건). 바꾸려면 다시 잰다
+  // ⛔ 대체된 기록은 기본 제외(--all 로 포함)
   const all = args.includes('--all');
   args = args.filter((a) => a !== '--all');
   const pool = all ? recs : recs.filter((r) => !r.validTo);
-  const rank = (qs) => pool.map((r) => ({ r, ...scoreDetail(r, qs) })).filter((x) => x.s > 0)
-    .sort((a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s
-      || (a.r.validTo ? 1 : 0) - (b.r.validTo ? 1 : 0)
-      || String(b.r.date).localeCompare(String(a.r.date)));
   let queries = args;
-  let ranked = rank(queries);
+  let ranked = rank(pool, queries);
   // 문장을 통째로 주면 한 덩어리 부분일치라 0건이 난다 — 0건이고 공백이 있으면 훅과 같은 토크나이저로 다시 찾는다
   if (!ranked.length && args.some((a) => /\s/.test(a))) {
     const sentence = args.join(' ');
     queries = [...tokenizeKo(sentence), ...tokenizeIds(sentence)];
-    ranked = rank(queries);
+    ranked = rank(pool, queries);
     if (ranked.length) console.log(`(문장을 토큰 ${queries.length}개로 나눠 다시 찾았다)\n`);
   }
   if (!ranked.length) {

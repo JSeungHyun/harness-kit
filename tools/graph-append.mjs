@@ -4,7 +4,7 @@
 //   {"req":"<요구 한 줄>","terms":{"<현업 용어>":"<시스템에서 무엇인가>"},"files":["<경로>"],"note":"<함정 한 줄>"}
 //   EOF
 // date 는 세상 시간(작업이 일어난 때), recorded 는 기록 시간 — 둘 다 오늘이 기본이고, 소급할 때만 date 를 준다.
-import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { STORE } from './graph-find.mjs';
 
@@ -12,10 +12,16 @@ const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' &&
 // 경로에 붙인 `:256` 줄번호는 존재 검사와 역방향 조회를 빗나가게 한다
 const paths = (v) => strs(v).map((f) => f.replace(/:\d+(-\d+)?$/, ''));
 
+// note 상한 — 이 PC 그래프 4곳 note 346개: 중앙 324 · p90 711자 · 800 초과 31개(9%). 자기를 뺀 1위를 가장 많이 가로챈 기록(1,132자)이 걸린다. 바꾸려면 다시 잰다
+export const NOTE_MAX = 800;
+
 export function normalize(rec, today) {
   if (!rec || typeof rec.req !== 'string' || !rec.req.trim()) {
     throw new Error('req 는 필수다 (사용자 요구를 한 줄로)');
   }
+  // 긴 note 는 낱말이 많아 다른 질문의 훅 1위를 가로챈다(설치 실측: 1,102자 기록이 상위3 점유 81%)
+  if (rec.note && /[\r\n]/.test(rec.note)) throw new Error('note 는 한 줄이다 — 함정 · 기각한 대안을 줄바꿈 없이');
+  if (rec.note && rec.note.length > NOTE_MAX) throw new Error(`note 가 ${rec.note.length}자다 — ${NOTE_MAX}자까지. 긴 note 는 다른 질문의 1위를 가로챈다 — 주제별 기록으로 나누거나 줄인다`);
   // terms 는 객체가 권장이다. 배열도 받고(구 기록), 없으면 req 의 한글 토큰에서 뽑는다
   let terms = rec.terms;
   if (terms && !Array.isArray(terms) && typeof terms === 'object') {
@@ -53,24 +59,17 @@ if (process.argv[1] && process.argv[1].endsWith('graph-append.mjs')) {
   process.stdin.on('data', (c) => { raw += c; });
   process.stdin.on('end', () => {
     if (!raw.trim()) { console.error('⛔ stdin 으로 JSON 을 준다. 사용법은 파일 머리 주석 참조.'); process.exit(1); }
-    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
-    let n = 0;
-    for (const l of lines) {
-      try {
-        const out = appendRecord(JSON.parse(l));
-        console.log(`+ ${out.date}  ${out.req.slice(0, 44)}  (파일 ${out.files.length})`);
-        n++;
-      } catch (e) {
-        // 한 줄 JSON 이 아니면 전체를 하나의 객체로 재시도한다
-        if (lines.length === 1) { console.error(`⛔ ${e.message}`); process.exit(1); }
-        console.error(`⛔ 건너뜀: ${e.message}`);
-      }
-    }
-    if (lines.length > 1 && n === 0) {
-      try { const out = appendRecord(JSON.parse(raw)); console.log(`+ ${out.date}  ${out.req.slice(0, 44)}`); n = 1; }
-      catch (e) { console.error(`⛔ ${e.message}`); process.exit(1); }
-    }
-    const total = existsSync(STORE) ? readFileSync(STORE, 'utf8').trim().split('\n').filter(Boolean).length : 0;
-    console.log(`기록 ${n}건 추가 · 누적 ${total}건`);
+    // 줄마다 JSON(JSONL), 아니면 전체가 객체 하나(여러 줄로 편 JSON). ⛔ 하나라도 거부되면 아무것도 쓰지 않는다 — 반쯤 쓰면 다시 돌릴 때 겹친다
+    let recs;
+    try {
+      let input;
+      try { input = raw.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => JSON.parse(l)); } catch { input = [JSON.parse(raw)]; }
+      const today = localToday();
+      recs = input.map((r) => normalize(r, today));
+    } catch (e) { console.error(`⛔ ${e.message} — 아무것도 쓰지 않았다`); process.exit(1); }
+    mkdirSync(dirname(STORE), { recursive: true });
+    appendFileSync(STORE, recs.map((r) => `${JSON.stringify(r)}\n`).join(''), 'utf8');
+    for (const out of recs) console.log(`+ ${out.date}  ${out.req.slice(0, 44)}  (파일 ${out.files.length})`);
+    console.log(`기록 ${recs.length}건 추가 · 누적 ${readFileSync(STORE, 'utf8').trim().split('\n').filter(Boolean).length}건`);
   });
 }

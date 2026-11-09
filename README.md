@@ -43,7 +43,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 
 | 모듈 | 막는 실패 | 도구 (`.harness/tools/`) |
 |---|---|---|
-| **evidence** | 완료를 거짓 보고한다 · 묻지 않고 넘어간 가정이 묵는다 · 같은 실패를 반복한다 | `verify` · `gate-hook` · `decision-check` · `lesson-append` · `lesson-promote` · `state-check` · `policy-apply` |
+| **evidence** | 완료를 거짓 보고한다 · 묻지 않고 넘어간 가정이 묵는다 · 같은 실패를 반복한다 | `verify` · `gate-hook` · `decision-check` · `lesson-append` · `policy-apply` |
 | **graph** | 같은 것을 두 번 조사한다 · 사용자의 말과 코드의 이름 사이 다리가 없다 | `graph-find` · `graph-append` · `graph-alias` · `graph-hook` · `graph-view` · `graph-measure` |
 | 설치 | — | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` |
 
@@ -68,7 +68,8 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | 파일 목록 · 동반변경 · 언제 바뀌었나 | ✅ git | 그래프의 값이 아니다 |
 | **완료의 결정론적 증거** | ❌ 종료코드·러너 요약은 테스트 0개를 통과시킨다 | ⭐ `verify` — 이번 실행이 쓴 XML 의 testcase 를 센다 |
 | **원래 있던 실패와 새 실패의 구분** | ❌ 러너는 늘 exit 1 | ⭐ 기준선 — 기준선 밖 실패만 실패 |
-| **묻지 않은 가정 · 반복 실패의 적립** | ❌ | ⭐ `decision-check` · `lesson-append` · `lesson-promote` |
+| **검사가 돌리지 않는 코드** | ❌ verify 녹색은 검사 목록만 증명한다(Java 를 바꿨는데 검사는 `npm test`) | ⭐ 검사의 `covers` — 덮이지 않은 코드 변경에 관문 훅이 `/code-review` 를 요구한다 |
+| **묻지 않은 가정 · 반복 실패의 적립** | ❌ | ⭐ `decision-check`(답을 기다리는 목록) · `lesson-append`(근본 원인 없으면 거부) |
 | **현업 용어 → 코드 식별자 · 함정 한 줄** | ❌ 어디에도 없다 | ⭐ 그래프 `terms` · `note` |
 | **요청하지 않은 변경** | ❌ verify 는 통과하고, 과설계 리뷰는 범위를 안 본다 | ⭐ 범위 검토 — 사용자 말 원문 + diff 만 받은 서브에이전트(final-gate) |
 

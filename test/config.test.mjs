@@ -14,13 +14,12 @@ test('경로를 대상 루트 기준 절대경로로 돌려준다', () => {
 });
 
 test('~ 로 시작하는 경로를 홈 기준으로 편다', () => {
-  const cfg = loadConfig(target({ state: { currentRoot: '~/ref' }, checks: [] }));
-  assert.equal(cfg.state.currentRoot, join(homedir(), 'ref'));
+  const cfg = loadConfig(target({ state: { decisions: '~/ref' }, checks: [] }));
+  assert.equal(cfg.state.decisions, join(homedir(), 'ref'));
 });
 
 test('선언되지 않은 상태 파일은 undefined, 검사가 없으면 빈 배열이다', () => {
   const cfg = loadConfig(target({ state: { lessons: 'l.md' } }));
-  assert.equal(cfg.state.current, undefined);
   assert.equal(cfg.state.decisions, undefined);
   assert.deepEqual(cfg.checks, []);
 });
@@ -79,4 +78,11 @@ test('⛔ output-match 에 expect 가 없거나 정규식이 깨졌으면 거부
   assert.throws(() => loadConfig(target({ checks: [{ id: 'q', cmd: 'node -v', kind: 'output-match' }] })), /expect/);
   assert.throws(() => loadConfig(target({ checks: [{ id: 'q', cmd: 'node -v', kind: 'output-match', expect: '(' }] })), /정규식/);
   assert.equal(loadConfig(target({ checks: [{ id: 'q', cmd: 'node -v', kind: 'output-match', expect: String.raw`^v\d+` }] })).checks.length, 1);
+});
+
+test('⛔ covers 는 glob 문자열 배열이다 — 관문 훅이 바꾼 파일을 덮는 검사를 이것으로 가른다', () => {
+  const dir = (covers) => target({ checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code', covers }] });
+  assert.throws(() => loadConfig(dir('src/**')), /covers/);
+  assert.throws(() => loadConfig(dir(['src/**', ''])), /covers/);
+  assert.deepEqual(loadConfig(dir(['src/**', 'lib/**/*.mjs'])).checks[0].covers, ['src/**', 'lib/**/*.mjs']);
 });

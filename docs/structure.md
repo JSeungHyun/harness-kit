@@ -21,7 +21,7 @@
   └ verify           「끝났다」를 도구가 판정
   └ final-gate 스킬   범위 검토 · 과설계 리뷰 · 증거 · 파일 목록 · 기록
 턴 종료
-  └ [관문 훅] verify 를 돌렸는데 final-gate 를 건너뛰었으면 한 번 되돌린다
+  └ [관문 훅] 이번 턴의 증거 세트(과설계 리뷰 · code-review · 마지막 변경 뒤 verify · final-gate)에서 빠진 것이 있으면 한 번 되돌린다
 ```
 
 **키트가 아닌 것** — superpowers · ponytail 의 훅과 스킬, 프로젝트가 더한 훅은 §8 에 따로 둔다. §1~§4 는 키트 것만 다룬다.
@@ -30,9 +30,19 @@
 
 | 훅 | 언제 | 하는 일 | 켜는 때 |
 |---|---|---|---|
-| 관문 훅 `gate-hook.mjs` (10초) | `Stop` — 턴이 끝날 때 | 이번 턴에 verify 를 돌리고 final-gate 를 안 거쳤으면 한 번 되돌려 보낸다. 백그라운드 작업을 기다리는 멈춤 · 되돌린 뒤의 멈춤은 통과 | 설치 때 기본(SETUP ⑥) |
+| 관문 훅 `gate-hook.mjs` (10초) | `Stop` — 턴이 끝날 때 | 이번 턴(사람 입력 이후)의 증거 세트에서 빠진 것만 이유에 적어 한 번 되돌려 보낸다(아래 표). 결과를 기다리는 작업(서브에이전트 · 백그라운드 verify)이 도는 멈춤 · 되돌린 뒤의 멈춤은 통과 — 상주 개발 서버만 떠 있으면 통과가 아니다 | 설치 때 기본(SETUP ⑥) |
 | 그래프 훅 `graph-hook.mjs` (30초) | `UserPromptSubmit` — 질문을 칠 때 | 프롬프트로 그래프를 조회해 카드 1~2장 · 후보 색인 · 침묵 중 하나를 넣는다 (§6.4) | ⛔ 조건부 — 기록이 쌓인 뒤 (§6.4) |
 
+**관문 훅의 증거 세트** — 코드 변경 = 이번 턴의 Edit · Write · NotebookEdit 중 프로젝트 안 · 문서(`*.md` 등) · `.harness/` · `.claude/` 밖의 파일. 서브에이전트가 바꾼 파일은 메인 기록에 없어 보지 못한다
+
+| 이번 턴에 | 있어야 하는 것 |
+|---|---|
+| 코드를 바꿨다 | `ponytail-review` 호출(플러그인 접두어 `…:ponytail-review` 도) |
+| 바꾼 코드가 `harness.json` 검사의 `covers`(glob) 어디에도 안 든다 | `code-review` 호출 |
+| 바꾼 코드를 덮는 검사가 있다 | 마지막 코드 변경 뒤의 `verify` — 과설계 리뷰로 걷어낸 뒤의 회귀를 잡는다 |
+| `verify` 를 돌렸다 | `final-gate` 호출 |
+
+- 백그라운드 판정은 Stop 입력 `background_tasks` 원소의 `type` 이다(2.1.319 덤프: `shell` 은 `command` · `subagent` 는 `agent_type` 을 가진다). `shell` 은 `command` 가 verify 일 때만 기다림으로 친다
 - 이 밖에 git `pre-commit` 훅이 하나 있다 — `scan-shared.mjs`, **공유 모드만**. 커밋되는 기록 · 장부 · 규칙에 민감 정보 패턴이 있으면 막는다
 - 나머지는 훅이 아니라 규칙이 「언제 무엇을 부르라」고 시킨다. 관문(`final-gate`)은 규칙과 스킬 설명이 부르고, 건너뛰면 관문 훅이 한 번 되돌린다(design §3)
 - 설정은 `policy-apply` 가 `.claude/settings.json`(공유) 또는 `settings.local.json`(로컬)에 병합한다 — ⛔ 덮어쓰지 않는다. 권한은 합집합이고 프로젝트가 더한 훅은 그대로 둔다(예: §8.2)
@@ -43,7 +53,7 @@
 
 ### 2.1 `verify` — 완료 증거
 
-`.harness/harness.json` 의 `checks[]` 를 전부 돌린다. 하나라도 실패하거나 검사가 0개면 exit 1.
+`.harness/harness.json` 의 `checks[]` 를 전부 돌린다. 하나라도 실패하거나 검사가 0개면 exit 1. 검사마다 선택 필드 `covers`(그 검사가 실제로 돌리는 코드의 glob 배열)를 둔다 — 하나도 없으면 출력 첫 줄이 「코드 검사 없음 — 코드 변경의 증거는 /code-review」다(exit 은 그대로). 형식이 틀리면 로더가 거부한다.
 
 | `kind` | 통과 |
 |---|---|
@@ -56,7 +66,7 @@
 
 ### 2.2 `final-gate` — 끝냈다고 보고하기 직전, 매번 (계획이 있든 없든)
 
-1. 코드를 바꿨으면 범위 검토(사용자 말 원문 + 이번 diff 만 받은 서브에이전트가 요청 밖 변경을 찾는다) → `/ponytail-review`(과설계만 본다). 걷어냈으면 2 를 그 뒤에 돈다
+1. 코드를 바꿨으면 범위 검토(사용자 말 원문 + 이번 diff 만 받은 서브에이전트가 요청 밖 변경을 찾는다) → `/ponytail-review`(과설계만 본다) → 바꾼 코드를 덮는 검사(`covers`)가 없으면 `/code-review`. 걷어냈으면 2 를 그 뒤에 돈다 — 관문 훅이 이 셋과 마지막 변경 뒤 verify 를 확인한다(§1)
 2. 완료 증거 — 작업 종류별
 
    | 작업 | 증거 |
@@ -66,13 +76,13 @@
    | 운영 데이터 · 설정 | 실행 · 확인 쿼리와 전/후 결과 |
    | 조사 · 측정 | 정답 라벨 n건 대조 + 검증한 범위 |
 
-3. 보고 한 세트 — 작업 파일 목록 · 기록(`graph-append` · decisions → `decision-check` · `lesson-append` → `lesson-promote`) · 증거 출력 그대로 · 못 한 것은 `⏸`
+3. 보고 한 세트 — 작업 파일 목록 · 기록(`graph-append` · decisions → `decision-check` · `lesson-append`) · 증거 출력 그대로 · 못 한 것은 `⏸`
    - 남길 게 없으면 그 판단을 한 줄로 밝힌다 · 낡은 기록은 그 자리에서 고친다(`supersedes`)
 4. 브랜치를 마무리하는 보고(merge · PR 직전)면 `/security-review` 1회 → superpowers `finishing-a-development-branch`
 
 ### 2.3 `graph-find --check` — 기록의 무결성
 
-대체 사슬 4종 · 없는 경로 · 같은 용어에서 낡은 기록이 1위 · `⏸` 표식 누락 후보. 앞의 셋이 있으면 exit 1 (§6.3).
+대체 사슬 4종 · 없는 경로 · 같은 용어에서 낡은 기록이 1위 · `⏸` 표식 누락 후보 · 1위 독점(경고만). 앞의 셋이 있으면 exit 1 (§6.3).
 
 ## 3. 구성 — 프로젝트에 남는 것
 
@@ -89,7 +99,7 @@
 
 | | 무엇 |
 |---|---|
-| allow | 읽기 · 키트 점검 도구(`verify` · `decision-check` · `lesson-promote` · `state-check` · `graph-find`) · 읽기 전용 셸 |
+| allow | 읽기 · 키트 점검 도구(`verify` · `decision-check` · `graph-find`) · 읽기 전용 셸 — 키트에서 지운 도구의 allow 는 `policy-apply` 가 걷는다(`policy/removed.json`) |
 | deny | `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` — `rm` · `rmdir` 은 두지 않는다: PC(전역)가 정한다. 프로젝트 deny 는 전역 allow 를 이긴다 |
 | ask | `--force` · `git restore` · `stash drop·clear` |
 
@@ -102,7 +112,7 @@
 | 설치 전 판별 | `detect` — 신규 구축인지 기존 이식인지 · 멈출 것(⛔) · 확인할 것(⚠️) |
 | 공유 / 로컬 | `install-mode` — 공유는 팀이 같이 커밋하고, 로컬은 설치 경로를 git 에서 숨긴다 |
 | 그래프가 이미 있는 프로젝트 | 증거 모듈만 — 키트 그래프 도구를 복사하지 않고 `harness.json` 의 `graph` 가 기존 도구 · 규칙을 가리킨다. 관문 훅은 `policy-apply --only gate-hook` |
-| 키트가 새 버전이 되면 | `upgrade` — 도구 · 정책 · 손대지 않은 규칙을 올린다(프로젝트가 고친 규칙은 덮어쓰지 않는다) · `plugin-plan` — PC 마다 한 번 플러그인을 키트 마켓으로 옮기는 명령 |
+| 키트가 새 버전이 되면 | `upgrade` — 도구 · 정책 · 손대지 않은 규칙을 올린다(프로젝트가 고친 규칙은 덮어쓰지 않는다) · 키트에서 지운 것(`policy/removed.json`)을 걷는다(쓴 대장은 남긴다) · 지운 경로를 가리키는 그래프 기록을 알린다 · 빌드 · 테스트 단서가 있는데 `covers` 검사가 없으면 ⛔ exit 1 · `plugin-plan` — PC 마다 한 번 플러그인을 키트 마켓으로 옮기는 명령 |
 
 절차는 SETUP.md 가 정본이다.
 
@@ -131,7 +141,7 @@
 | `terms` | `{"<현업 용어>": "<시스템의 실체>"}` | 키는 사용자의 말, 값은 테이블 · URL · 컬럼 · 서비스 |
 | `files` | 실제로 만진 파일 | 줄번호는 떼고 저장한다 |
 | `tables` | DB 테이블 | 선택 |
-| `note` | 함정 · 기각한 대안 한 줄 | `⏸` 로 시작하면 하다 만 것 |
+| `note` | 함정 · 기각한 대안 한 줄 | `⏸` 로 시작하면 하다 만 것. 줄바꿈 · 800자 초과는 `graph-append` 가 거부한다(exit 1 · 한 건이라도 거부되면 아무것도 쓰지 않는다) |
 | `supersedes` | 이 기록이 무효화하는 이전 `req` — 1개 또는 배열 | 한 글자만 달라도 사슬이 끊긴다 → `--check` 가 잡는다 |
 | `date` · `recorded` | 일이 일어난 날 · 적은 날 | 둘 다 오늘이 기본, 소급할 때만 `date` 를 준다 |
 
@@ -162,7 +172,7 @@
 | `--files <경로조각>` | 이 파일을 만진 요구 (1홉) |
 | `--with <경로조각>` | 이 파일을 고치면 같이 움직이는 파일 (2홉 — `⛔항상` · `⭐자주`) |
 | `--open` | 하다 만 것(`⏸`) 전부 |
-| `--check` | 무결성 — 대체 사슬 4종 · 없는 경로 · 같은 용어에서 낡은 기록이 1위 · `⏸` 표식 누락 후보. 앞의 셋이 있으면 exit 1 |
+| `--check` | 무결성 — 대체 사슬 4종 · 없는 경로 · 같은 용어에서 낡은 기록이 1위 · `⏸` 표식 누락 후보 · 1위 독점(살아있는 기록 20건부터 — 기록마다 그 `req` 로 묻되 자기를 뺀 1위의 상위3 점유가 50% 이상이면 ⚠️, exit 0). 앞의 셋이 있으면 exit 1 |
 | `--promote [정본문서]` | 자주 나오는 용어 → 정본 문서로 올릴 후보 |
 | `--all` | 대체된 기록까지 본다 |
 
@@ -210,9 +220,8 @@
 | 장부 | 무엇 | 도구 | 위치 — 공유 / 로컬 |
 |---|---|---|---|
 | 그래프 | 사실 · 함정 · 용어 · 기각한 대안 · 하다 만 것 | `graph-*` | `.harness/graph/requests.jsonl` |
-| decisions | 묻지 않고 정한 가정 | `decision-check` — 14일 묵으면 경고, exit 0 고정 | `docs/harness/` / `.harness/state/` |
-| lessons | 반복 실패 + 근본 원인 | `lesson-append` · `lesson-promote` — 같은 분류 2회 이상 + 막는 것 없음 → 규칙 승격 후보 | 같음 |
-| 진행 대장 (선택) | 파일 · 상태 · 해시 | `state-check` — 해시가 바뀐 행을 재작업으로 돌린다. `harness.json` 의 `state.current` 가 있을 때만 | 같음 |
+| decisions | 묻지 않고 정한 가정 | `decision-check` — 답을 기다리는 1절 목록, exit 0 고정 | `docs/harness/` / `.harness/state/` |
+| lessons | 반복 실패 + 근본 원인 | `lesson-append` — 근본 원인이 없으면 거부한다 | 같음 |
 | 기준선 | 원래 있던 테스트 실패 | `verify --baseline` — ⛔ 사용자가 확인한 뒤에만 | `.harness/baseline/<검사 id>.txt` |
 | 규칙 · 지도 | 행동을 바꿔야 하는 것 | — 매 세션 로드 | `.claude/rules/` · 지시 파일 |
 

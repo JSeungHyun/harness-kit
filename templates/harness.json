@@ -1,5 +1,5 @@
 {
-  "_note": "harness-kit 설정. 모든 경로는 대상 저장소 루트 기준. 장부는 공유 모드 docs/harness/, 로컬 전용 모드 .harness/state/ — 대상이 이미 쓰는 장부가 있으면 그 경로. 형식은 SETUP.md ⑤.",
+  "_note": "harness-kit 설정. 모든 경로는 대상 저장소 루트 기준. 장부는 공유 모드 docs/harness/, 로컬 전용 모드 .harness/state/ — 대상이 이미 쓰는 장부가 있으면 그 경로. 형식은 SETUP.md ⑤. covers 는 그 검사가 실제로 돌리는 코드 — 관문 훅이 덮이지 않은 코드 변경에 /code-review 를 요구한다.",
   "profile": "<new | existing>",
   "mode": "<share | local>",
   "state": {
@@ -11,7 +11,8 @@
       "id": "테스트",
       "cmd": "<결과 XML 을 매번 새로 쓰는 테스트 명령>",
       "kind": "junit-xml",
-      "evidence": "<결과 XML 파일 또는 디렉터리>"
+      "evidence": "<결과 XML 파일 또는 디렉터리>",
+      "covers": ["<이 테스트가 돌리는 코드의 glob — 예: src/**>"]
     }
   ]
 }

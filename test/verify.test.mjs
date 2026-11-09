@@ -120,6 +120,17 @@ test('CLI: 전부 통과면 exit 0 이다', () => {
   assert.equal(r.status, 0);
 });
 
+test('⭐ covers 를 가진 검사가 없으면 첫 줄에 「코드 검사 없음」을 낸다 — 녹색이 코드 변경의 증거가 아니다 · exit 은 그대로', () => {
+  const bare = spawnSync(process.execPath, [VERIFY, target({ checks: [{ id: 'ok', cmd: exit(0), kind: 'exit-code' }] })], { encoding: 'utf8' });
+  assert.equal(bare.status, 0);
+  assert.equal(bare.stdout.split(/\r?\n/)[0], '코드 검사 없음 — 코드 변경의 증거는 /code-review');
+  const failed = spawnSync(process.execPath, [VERIFY, target({ checks: [{ id: 'no', cmd: exit(2), kind: 'exit-code' }] })], { encoding: 'utf8' });
+  assert.equal(failed.status, 1);
+  assert.match(failed.stdout, /^코드 검사 없음/);
+  const covered = spawnSync(process.execPath, [VERIFY, target({ checks: [{ id: 'ok', cmd: exit(0), kind: 'exit-code', covers: ['src/**'] }] })], { encoding: 'utf8' });
+  assert.doesNotMatch(covered.stdout, /코드 검사 없음/);
+});
+
 // 실패 3건이 든 XML 을 쓰고 exit 1 로 끝나는 러너 — 실패가 있으면 러너는 늘 exit 1 이다
 const failing = (base) => target(
   { checks: [{ id: '단위 테스트', cmd: write('src/fail.xml', 'results/junit.xml', 1), kind: 'junit-xml', evidence: 'results' }] },

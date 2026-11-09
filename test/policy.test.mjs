@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { mergeSettings, POLICY, readJson } from '../tools/policy-apply.mjs';
@@ -171,6 +171,18 @@ test('⭐ 정책이 뺀 rm · rmdir 차단을 걷는다 — 남으면 PC 의 전
   const deny = readJson(join(dir, '.claude', 'settings.local.json')).permissions.deny;
   assert.ok(deny.includes('Bash(kill *)'));
   assert.ok(!deny.includes('Bash(rm *)') && !deny.includes('Bash(rmdir *)'));
+});
+
+test('⭐ 키트에서 지운 도구의 allow 줄(policy/removed.json)을 걷는다 — 합집합 병합이라 남는다 · 프로젝트가 더한 allow 는 둔다', () => {
+  const gone = readJson(join(dirname(POLICY), 'removed.json')).allow;
+  assert.ok(gone.length > 0);
+  const dir = target(null, { '.claude/settings.local.json': JSON.stringify({ permissions: { allow: [...gone, 'Bash(npm test)'] } }) });
+  const r = apply(dir, '--local');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /걷음.*permissions\.allow: Bash\(node \.harness\/tools\/state-check\.mjs\)/);
+  const allow = readJson(join(dir, '.claude', 'settings.local.json')).permissions.allow;
+  assert.ok(allow.includes('Bash(npm test)'));
+  for (const g of gone) assert.ok(!allow.includes(g), g);
 });
 
 test('⭐ CLI 공유: settings.json 에는 팀원 PC 용으로 superpowers 만 선언하고 ponytail 선언 · 모드는 걷는다', () => {

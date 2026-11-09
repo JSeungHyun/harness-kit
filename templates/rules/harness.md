@@ -21,7 +21,7 @@
 
 ## ⭐ 관문 — 작업을 끝냈다고 보고하기 직전에 매번 `final-gate` 스킬
 
-계획이 있으면 그 마지막 태스크가 보고를 부르고, 없으면 보고가 곧 관문이다. 범위 검토 · 과설계 리뷰 · 완료 증거 · 기록이 한 세트다. verify 를 돌리고 final-gate 없이 멈추면 Stop 훅이 한 번 되돌려 보낸다.
+계획이 있으면 그 마지막 태스크가 보고를 부르고, 없으면 보고가 곧 관문이다. 범위 검토 · 과설계 리뷰 · 완료 증거 · 기록이 한 세트다. Stop 훅이 이번 턴의 증거 세트를 보고 빠진 것이 있으면 한 번 되돌려 보낸다 — 코드를 바꿨으면 `/ponytail-review` · 바꾼 코드를 덮는 검사(`harness.json` 의 `covers`)가 없으면 `/code-review` · 덮는 검사가 있으면 마지막 코드 변경 뒤의 verify · verify 를 돌렸으면 final-gate.
 
 ## 완료는 증거로 주장한다
 
@@ -41,8 +41,8 @@
 | 무엇 | 어디 |
 |---|---|
 | 사실 · 함정 · 인과 · 기각한 대안 한 줄 · 하다 만 것(`⏸`) | 그래프 — <graph-rules> |
-| 묻지 않고 정한 가정 | `<decisions>` — `node .harness/tools/decision-check.mjs` (14일 묵으면 경고) |
-| 반복 실패 (규칙이 되기 전) | `<lessons>` — `node .harness/tools/lesson-promote.mjs` 가 승격 후보를 낸다 |
+| 묻지 않고 정한 가정 | `<decisions>` — `node .harness/tools/decision-check.mjs` 가 답을 기다리는 1절 목록을 낸다 |
+| 반복 실패 (규칙이 되기 전) | `<lessons>` — 아래 `lesson-append` 로 적는다 |
 | 행동을 바꿔야 하는 것 | 규칙(`.claude/rules/`) · 프로젝트 지도 |
 
 **승격은 한 방향 — 그래프·lessons → 규칙.** 기준: 「다음 세션이 이걸 안 읽으면 같은 실수를 하나」 — 그러면 규칙이다. 그래프에만 적은 행동은 다음 턴에 쓰이지 않는다.
@@ -54,8 +54,6 @@ node .harness/tools/lesson-append.mjs <<'EOF'
 {"symptom":"<무엇이 보였나>","cause":"<근본 원인>","category":"검증 부족","guard":"<막는 규칙·테스트 위치, 없으면 빈 문자열>"}
 EOF
 ```
-
-진행 상태 대장을 쓰는 일이면 `node .harness/tools/state-check.mjs` 가 대장과 원본 해시를 대조한다.
 
 ## 플러그인
 

@@ -18,7 +18,6 @@ const SHIPPED = [
   'templates/map/CLAUDE.local.md',
   'templates/state/decisions.md',
   'templates/state/lessons.md',
-  'templates/state/current.md',
 ];
 
 test('⛔ 배포 문서가 가리키는 도구가 실재한다 — 깨진 참조는 설치된 규칙을 거짓말로 만든다', () => {
@@ -171,4 +170,12 @@ test('⛔ final-gate 의 기록 단계에 「기록의 두 장치」가 있다 �
   const s = repoFile('templates/skills/final-gate/SKILL.md');
   assert.match(s, /남길 게 없으면 그 판단을 한 줄로/);
   assert.match(s, /낡았으면 그 자리에서 고친다.*새 기록 추가로 갈음하지 않는다.*다음 세션의 나는 그 불일치를 사실로 믿는다/);
+});
+
+test('⛔ 설치되는 템플릿 · 정책 · SETUP 이 키트에서 지운 도구를 가리키지 않는다 — 설치본 규칙이 없는 도구를 시킨다', () => {
+  const gone = JSON.parse(repoFile('policy/removed.json')).files.map((f) => f.split('/').pop().replace(/\.mjs$/, ''));
+  for (const rel of ['templates/rules/harness.md', 'templates/rules/graph.md', 'templates/skills/final-gate/SKILL.md', 'templates/state/decisions.md',
+    'templates/state/lessons.md', 'templates/harness.json', 'policy/settings.json', 'SETUP.md']) {
+    for (const g of gone) assert.ok(!repoFile(rel).includes(g), `${rel} → ${g}`);
+  }
 });

@@ -30,7 +30,7 @@ export function checkInstall(dir, profile, mode) {
   const hadAgents = sh('git cat-file -e HEAD:AGENTS.md', dir).code === 0;
 
   // 공통 — 배치 · 설정 · 플러그인 · 장부 · 그래프
-  const tools = ['verify', 'decision-check', 'lesson-append', 'lesson-promote', 'state-check', 'policy-apply', 'install-mode', 'scan-shared',
+  const tools = ['verify', 'decision-check', 'lesson-append', 'policy-apply', 'install-mode', 'scan-shared',
     'graph-find', 'graph-append', 'graph-alias', 'graph-hook'];
   const missing = tools.filter((t) => !has(dir, `.harness/tools/${t}.mjs`));
   row('공통', '.harness/ 도구 · lib · 정책', missing.length ? `없음: ${missing.join(', ')}` : `도구 ${tools.length}개 · lib · policy`,

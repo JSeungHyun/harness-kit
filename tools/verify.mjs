@@ -101,6 +101,8 @@ cli(import.meta.url, async () => {
   if (args.includes('--baseline')) return writeBaselines(cfg);
   const results = await runChecks(cfg);
   if (results.length === 0) throw new Error('선언된 검사가 없다 — .harness/harness.json 의 checks 가 비어 있다');
+  // 검사가 코드를 돌리지 않으면 녹색은 코드 변경의 증거가 아니다 — 관문 훅이 그 턴에 /code-review 를 요구한다
+  if (!cfg.checks.some((c) => c.covers?.length)) console.log('코드 검사 없음 — 코드 변경의 증거는 /code-review');
   for (const r of results) {
     console.log(`${r.ok ? '✅' : '⛔'} ${r.id} — ${r.reason}`);
     if (!r.ok && r.tail?.trim()) {
