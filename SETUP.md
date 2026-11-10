@@ -30,7 +30,7 @@ claude --version                       # 2.1.277 이상
 |---|---|
 | `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 키트를 올리는 것인지 묻는다 — 그렇다면 아래 「갱신」, 아니면 덮어쓰지 않는다 |
 | `⚠️ 확인` 줄의 미커밋 변경 | 로컬 전용이면 진행하고 보고에 적는다 — 설치 전 `git status --porcelain` 출력을 적어 둔다(⑧-a 가 그것과 비교한다) · 공유를 고르면 ⛔ 멈춘다(설치 파일이 작업 중 변경과 한 커밋에 섞인다) · 겹침 줄(`설치가 고치고 git 에서 숨기는 경로에 …`)이 있으면 그 파일을 사용자에게 보여 주고 진행 여부를 묻는다. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 파일(`settings.local.json` 등)이 `git status` 에 안 나와 겹침 줄이 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 해서 위험은 낮다 |
-| `context-graph 있음` | 그 프로젝트의 그래프가 이미 있다 — ⛔ 데이터를 옮기지 않고 **graph 모듈을 설치하지 않는다**(②의 graph.md · 그래프 도구 · ⑦의 그래프 단계 생략). ⑤ 에 `graph` 를 적어 규칙 · final-gate 가 그 프로젝트의 그래프를 가리키게 한다 — 그래프 도구가 두 벌이면 기록이 두 저장소로 갈린다. 보고에 적는다 |
+| `context-graph 있음` | 그 프로젝트의 그래프 기록이 이미 있다 — ⛔ 기록은 옮기지 않는다. 그래프 도구는 키트 판을 그대로 얹고(② — 도구가 두 벌이면 판이 갈라진다) ⑤ 에 `graph` 를 적은 뒤 ⑥ 끝에서 `upgrade --migrate-graph` 로 기록 위치(`graph.store`)를 잇는다. 기록 규칙이 지시 파일 · 스킬에 있으면 graph.md 는 얹지 않는다(⑦의 그래프 단계 생략). 보고에 적는다 |
 
 **프로필과 모드를 사용자에게 한 번에 확인받는다** — `detect` 의 제안값과 그 이유(커밋 수 · 소스 수)를 보여준다.
 
@@ -51,7 +51,7 @@ mkdir -p <대상>/.harness/graph <대상>/.claude/rules <대상>/.claude/skills 
 cp -r <kit>/lib <kit>/tools <kit>/policy <대상>/.harness/
 cp <kit>/templates/harness.json <대상>/.harness/harness.json
 cp <kit>/templates/rules/harness.md <대상>/.claude/rules/harness.md
-cp <kit>/templates/rules/graph.md <대상>/.claude/rules/graph.md          # 기존 context-graph 가 있으면 생략
+cp <kit>/templates/rules/graph.md <대상>/.claude/rules/graph.md          # 기록 규칙이 지시 파일 · 스킬에 있으면(⑤ graph.rules) 생략
 cp -r <kit>/templates/skills/final-gate <대상>/.claude/skills/
 cp <kit>/templates/state/decisions.md <대상>/<장부>/decisions.md
 cp <kit>/templates/state/lessons.md <대상>/<장부>/lessons.md
@@ -59,11 +59,7 @@ cp <kit>/templates/scan.json <대상>/.harness/scan.json                   # 공
 git -C <kit> rev-parse HEAD > <대상>/.harness/kit-commit                 # 얹은 키트 판 — ⑧-f 이식 검사 ⑨ 가 키트의 지금 커밋과 비교한다
 ```
 
-`context-graph 있음` 이면 둘째 줄(`cp -r <kit>/lib <kit>/tools <kit>/policy …`) 대신 그래프 도구 · 그래프 훅 정책을 빼고 복사한다:
-
-```bash
-node -e "for (const d of ['lib','tools','policy']) require('fs').cpSync(process.argv[1]+'/'+d, process.argv[2]+'/.harness/'+d, {recursive:true, filter:(f)=>!/graph-[\w-]+\.(mjs|json)$/.test(f)})" <kit> <대상>
-```
+그래프 도구도 늘 이렇게 복사한다 — `context-graph 있음` 이어도 빼지 않는다(13차 — 빼면 그 설치의 그래프가 키트와 따로 자란다).
 
 대상에 이미 가정 장부 · 교훈 파일이 있으면 템플릿을 복사하지 않고 ⑤에서 그 경로를 적는다(⛔ 옮기지 않는다).
 
@@ -105,7 +101,8 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 ### ⑤ `.harness/harness.json`
 
 `profile` · `mode` 를 ①에서 정한 값으로, `state.decisions` · `state.lessons` 를 `<장부>/…` (또는 대상이 이미 쓰는 장부 경로)로 적는다.
-`context-graph 있음` 이면 `"graph": { "tools": "<그 프로젝트의 그래프 도구 폴더, 예: tools>", "rules": "<기록 규칙이 있는 곳 — 지시 파일의 절 · 스킬 이름>" }` 도 적는다 — ⑥ 의 규칙 자리와 「갱신」이 이 값을 쓴다.
+`graph` 는 선택이다 — `store`(기록 위치, 기본 `.harness/graph/requests.jsonl`) · `names`(식별자로 치지 않을 프로젝트 이름, 기본은 저장소 폴더 이름의 `-` · `_` 앞부분 — 워크트리를 쓰면 적는다) · `rules`(기록 규칙 자리, 기본 `` `.claude/rules/graph.md` ``). 그래프 도구는 늘 `.harness/tools` 한 벌이다.
+`context-graph 있음` 이면 `"graph": { "tools": "<그 프로젝트의 그래프 도구 폴더, 예: tools>", "rules": "<기록 규칙이 있는 곳 — 지시 파일의 절 · 스킬 이름>" }` 로 적고 ⑥ 끝에서 `node <kit>/tools/upgrade.mjs <대상> --migrate-graph` 를 돌린다 — `store` 를 그 기록 경로로 적고 `tools` 를 걷고, 살아있는 기록의 files 에서 옛 도구 경로만 `.harness/tools/` 로 한 번 바꾼다(기록은 옮기지 않는다 · note 는 그대로). 출력의 「키트 밖 그래프 도구를 가리키는 곳」(파일:행 — 그 프로젝트의 지시 파일 · 스킬 · 검사 명령)은 사용자에게 보여 주고 `.harness/tools/graph-*.mjs` 로 고친다 — 남아 있으면 ⑧-f ⑤ ⛔.
 `checks` 에는 **실제로 도는 명령**만, 그리고 결과 XML 을 **매번 새로 쓰는** 명령만 적는다 — verify 는 이번 실행이 쓰지 않은 XML 을 증거로 쓰지 않는다.
 테스트 검사에는 `covers` — **그 테스트가 실제로 돌리는 코드**의 glob 배열(예: `["src/**"]` · 모노레포 `["backend/src/main/**"]`)을 적는다. 타입 검사 · 그래프 무결성 · 다른 언어의 테스트에는 두지 않는다. 관문 훅은 덮이지 않은 코드 변경에 `/code-review` 를 요구하고, `covers` 가 하나도 없으면 verify 첫 줄이 「코드 검사 없음 — 코드 변경의 증거는 /code-review」다.
 
@@ -121,7 +118,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(`npm run typecheck` 등) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
-| 그래프 무결성 (graph 모듈을 얹으면) | `node .harness/tools/graph-find.mjs --check` — 기존 context-graph 면 그 도구(예: `node tools/graph-find.mjs --check`) | `exit-code` |
+| 그래프 무결성 | `node .harness/tools/graph-find.mjs --check` — 기록 위치는 `graph.store` 를 따른다 | `exit-code` |
 
 - Node 는 junit 결과 디렉터리를 만들지 않는다 — 없으면 ENOENT 로 죽는다(실측). `node --test` 에는 디렉터리가 아니라 glob 을 준다
 - ⚠️ Windows 의 Claude Code 는 `NoDefaultCurrentDirectoryInExePath=1` 을 걸어 `cmd` 가 현재 폴더의 실행 파일을 찾지 않는다 — `gradlew` · `gradlew.bat` 은 「내부 또는 외부 명령이 아닙니다」, `.\gradlew` 만 돈다(실측, `./gradlew` 는 `cmd` 에서 늘 실패). 저장소 안 래퍼만 `.\` 를 붙인다 — PATH 의 `mvn` · `npx` 는 상관없다. 모노레포 예: `cd backend && .\gradlew cleanTest test`
@@ -154,7 +151,7 @@ node .harness/tools/policy-apply.mjs --local --with gate-hook  # 로컬 전용 �
 | ponytail 끄기 앞 — 지시 파일이 ponytail 모드를 쓰는 프로젝트가 이 PC 에 있다 | 끄기 전에 그 프로젝트 세션이 자기 사용자에게 묻고 자기 설정(`settings.local.json`)에 `"ponytail@harness-kit": true` 를 넣게 한다 — 안 그러면 그 프로젝트의 모드가 꺼진다 |
 | 위에서 거절 · 비대화형 | 실행하지 않는다. 보고의 「사용자가 결정해야 하는 것」에 남긴다 — ⚠️ 실측한 커밋에 고정되지 않는다. ponytail 플러그인 끄기를 거절했으면 그 PC 의 전역 env(`~/.claude/settings.json`)에 `PONYTAIL_DEFAULT_MODE=off` 를 두게 한다 — 모드가 superpowers 의 설계 · 질문 단계와 충돌한다. 같은 플러그인이 다른 마켓 id 로 켜진 PC 에서 공유 모드를 받으면 `--off superpowers@harness-kit` 으로 이 PC 의 `settings.local.json` 에만 끈다 |
 
-규칙 · final-gate 의 자리를 채운다 — `<decisions>` · `<lessons>` 는 장부 경로, `<graph-tools>` · `<graph-rules>` 는 graph 모듈을 얹었으면 `.harness/tools` · `` `.claude/rules/graph.md` ``, 기존 context-graph 면 ⑤ 의 `graph` 값:
+규칙 · final-gate 의 자리를 채운다 — `<decisions>` · `<lessons>` 는 장부 경로, `<graph-tools>` 는 `.harness/tools`, `<graph-rules>` 는 ⑤ 의 `graph.rules`(없으면 `` `.claude/rules/graph.md` ``):
 
 ```bash
 grep -n '<decisions>\|<lessons>\|<graph-tools>\|<graph-rules>' .claude/rules/harness.md .claude/skills/final-gate/SKILL.md   # 바꾼 뒤 ⛔ 아무것도 나오지 않아야 한다
@@ -265,16 +262,16 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 
 | | 보는 것 |
 |---|---|
-| ① 도구 | `.harness/` 의 키트 도구 · lib · 정책이 키트 판과 같다(줄바꿈 무시) · 키트에서 지운 것 0 |
-| ② 규칙 · ③ 스킬 | `harness.md` · `graph.md` · `final-gate` 가 키트 판(자리 채움)과 같다 — 다르면 다른 줄 요약 |
-| ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 관문 훅만 · 그래프 훅 켬)대로 다시 돌려도 바뀌는 것이 없다 |
-| ⑤ `harness.json` | 형식 · 프로필 · 모드 · 장부 파일 · 자기 그래프 도구 경로 · 빌드 · 테스트 단서가 있으면 `covers` 검사 1개 이상 |
+| ① 도구 | `.harness/` 의 키트 도구(그래프 도구 포함 — 예외 없음) · lib · 정책이 키트 판과 같다(줄바꿈 무시) · 키트에서 지운 것 0 |
+| ② 규칙 · ③ 스킬 | `harness.md` · `graph.md`(기록 규칙 자리가 기본일 때) · `final-gate` 가 키트 판(자리 채움)과 같다 — 다르면 다른 줄 요약 |
+| ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 관문 훅만 · 그래프 훅 켬 — 옛 자기 그래프 훅이면 키트 훅으로 바꿔 끼울 것)대로 다시 돌려도 바뀌는 것이 없다 |
+| ⑤ `harness.json` | 형식 · 프로필 · 모드 · 장부 파일 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구를 가리키는 줄 0) · 빌드 · 테스트 단서가 있으면 `covers` 검사 1개 이상 |
 | ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 · `ponytail-review` 가 고정 커밋에서 받은 그대로 |
 | ⑦ 지시 파일 | Claude 지시 파일이 있고, `AGENTS.md` 가 있으면 import 한다(공유는 커밋되는 `CLAUDE.md` 가) |
 | ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 · 관문 훅이 코드만 바꾼 합성 턴을 되돌리고 다 갖춘 턴은 통과 |
 | ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 |
 
-다를 수 있는 것(그래프 데이터 · 장부 본문 · 기준선 · 검사 명령과 `covers` 값 · 지시 파일 본문 · 자기 그래프 도구 · 프로젝트가 더한 도구)은 보지 않는다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
+다를 수 있는 것(그래프 데이터와 그 위치 · 장부 본문 · 기준선 · 검사 명령과 `covers` 값 · 지시 파일 본문 · 프로젝트가 더한 도구)은 보지 않는다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
 
 ### ⑨ 보고 — 3단
 
@@ -304,7 +301,8 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 node <kit>/tools/upgrade.mjs <대상>
 ```
 
-- `.harness/` 의 도구 · lib · 정책은 키트 것이라 덮어쓰고, 키트 커밋을 `.harness/kit-commit` 에 적는다(⑧-f ⑨). 기록 · 장부 · 기준선 · `harness.json` 은 건드리지 않는다(장부는 아래 지운 템플릿 줄만)
+- `.harness/` 의 도구(그래프 도구 포함) · lib · 정책은 키트 것이라 덮어쓰고, 키트 커밋을 `.harness/kit-commit` 에 적는다(⑧-f ⑨). 기록 · 장부 · 기준선 · `harness.json` 은 건드리지 않는다(장부는 아래 지운 템플릿 줄만 · `--migrate-graph` 는 아래 그래프 이관만)
+- ⛔ `그래프 이관`(exit 1)이면 13차 전 「자기 그래프」 설치다(`harness.json` 의 `graph.tools`) — 키트 그래프 도구는 이미 `.harness/tools` 에 깔렸고 기록 · 규칙 · 옛 도구는 그대로다. 출력의 (a)(b) `--migrate-graph` 줄을 사용자에게 보여 주고 승인받아 돌린다 — `graph.store` 를 기존 기록 경로로 적고 `graph.tools` 를 걷고, 살아있는 기록의 files 칸에서 옛 도구 경로만 `.harness/tools/graph-*.mjs` 로 한 번 바꾸고(note · 대체된 기록은 그대로 · 기록은 옮기지 않는다), 규칙 · final-gate 를 키트 도구로 다시 깐다. (c) 「키트 밖 그래프 도구를 가리키는 곳」(파일:행 — 지시 파일 · 스킬 · 검사 명령)은 그 프로젝트의 파일이라 사용자에게 보여 주고 고친다. 옛 그래프 훅은 「다음」 2 의 정책 줄이 키트 훅으로 바꿔 끼운다. (d) 옛 `graph-*.mjs` 는 참조를 고친 뒤 프로젝트가 지운다 — 키트는 지우지 않는다(프로젝트 고유 도구는 그대로). 참조가 남아 있는 동안 갱신은 exit 1 · ⑧-f ⑤ ⛔ 이다
 - 키트에서 지운 도구 · lib · 템플릿(`<kit>/policy/removed.json`)은 설치본에서 걷는다(`🧹 걷음` 줄). 내용을 쓴 대장은 남기고 `⚠️` 로 알린다. 키트 장부 템플릿에서 지운 줄(`lines`)은 장부에서 그 줄과 같은 줄만 걷는다(`🧹 걷음(키트에서 지운 장부 줄): 파일:행` — 프로젝트가 쓴 줄은 그대로). 지운 도구의 allow 줄은 「다음」의 정책 줄이 걷는다
 - `⚠️ 그래프 기록이 지운 경로를 가리킨다` 줄이 나오면 **같은 턴에** 그 경로를 뺀 기록으로 `supersedes` 한다 — 그대로 두면 `graph-find --check` 가 빨강이고, 그것을 검사로 둔 설치는 verify 가 빨강이 되어 모든 코드 턴이 관문에 막힌다
 - ⛔ `빌드 · 테스트 단서(…)가 보이는데 covers 를 가진 검사가 없다`(exit 1)면 멈춘다 — ⑤ 대로 그 코드를 돌리는 테스트 검사에 `covers` 를 적고 갱신을 다시 돌린다. 이 PC 에서 테스트를 못 돌리면 사용자에게 알리고 보고에 「코드 검사 없음 — 코드 변경은 /code-review」를 남긴다(그동안 관문 훅이 코드 변경마다 `/code-review` 를 요구한다)
@@ -312,6 +310,14 @@ node <kit>/tools/upgrade.mjs <대상>
 - 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. 정책 줄은 옛 정책이 이 프로젝트에 쓴 플러그인 선언 · `PONYTAIL_DEFAULT_MODE` 를 걷고(출력의 `걷음:`), 키트 훅을 새 형식으로 바꿔 끼운다. ⛔ 이전을 먼저 한다 — 선언만 걷히고 PC 에 키트 마켓 플러그인이 없으면 superpowers 가 빠진다
 - 플러그인 판은 세션을 열 때 실린다 — 갱신 뒤 열려 있던 세션은 새로 연다
 - 끝나면 ⑧-a~⑧-d(도구 · 새 세션 규칙 로드 · PC 맞춤 · 플러그인 하나씩)를 다시 하고, 마지막에 ⑧-f 이식 검사(갱신 출력 「다음」의 3) — 보고에 출력 그대로 붙인다. ⛔ exit 0 이 아니면 「갱신 끝 · 이식 성공」이라고 쓰지 않는다
+
+**설치 현황 — 키트를 고친 뒤** — 키트 개선의 끝은 커밋이 아니라 이 PC 의 설치가 모두 같은 판이 된 때다:
+
+```bash
+node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>   # 설치마다 ⑨ 판 · ① 동일만(verify 없이) — 뒤처지거나 다르면 exit 1
+```
+
+⛔ 행의 설치는 그 프로젝트 세션에 위 「갱신」을 맡긴다. 키트 저장소(자기 verify 용 `harness.json` 만 있는 클론)는 표에서 빠진다.
 
 ## PC 맞추기 — 다른 PC 에서 한 번
 
@@ -323,7 +329,7 @@ node <kit>/tools/upgrade.mjs <대상>
    - ponytail 끄기 줄 앞에, 지시 파일이 ponytail 모드를 쓰는 프로젝트가 이 PC 에 있으면 그 프로젝트가 자기 설정에서 켜게 한다(⑥ 표)
    - 전역 `~/.claude/settings.json` 의 `env.PONYTAIL_DEFAULT_MODE` 는 ponytail 플러그인이 꺼지면 아무 일도 하지 않는다 — 남겨도 되고 지워도 된다(사용자가 정한다)
 3. **프로젝트마다** — 키트를 얹은 프로젝트에서 위 「갱신」. 정책 줄이 옛 선언을 걷고 훅을 새 형식으로 바꾼다. 어느 프로젝트를 할지는 사용자가 정한다
-4. **확인** — `node <kit>/tools/plugin-plan.mjs` 가 「옮길 것 없다」, 갱신한 프로젝트마다 `node <kit>/tools/install-check.mjs <대상>` exit 0(⑧-f — 키트 훅 형식 · 플러그인 선언 · PC 가 그 표에 든다)
+4. **확인** — `node <kit>/tools/plugin-plan.mjs` 가 「옮길 것 없다」, 갱신한 프로젝트마다 `node <kit>/tools/install-check.mjs <대상>` exit 0(⑧-f — 키트 훅 형식 · 플러그인 선언 · PC 가 그 표에 든다), 마지막에 `node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>` exit 0(이 PC 설치가 모두 키트 판)
 5. **세션 다시 열기** — 열려 있던 세션은 옛 플러그인 판 · 옛 훅으로 돈다
 
 ## ⛔ 하지 않는 것
@@ -333,7 +339,7 @@ node <kit>/tools/upgrade.mjs <대상>
 | 대상의 기존 파일을 옮기거나 덮어쓰기 · 지시 파일에 절 추가 | 기존 참조가 깨지고, 두 파일이 갈라진다. 규칙은 `.claude/rules/` 에 |
 | 키트 파일(`.claude/rules/harness.md` · `graph.md` · `final-gate`)을 프로젝트에 맞게 고치기 | 갱신이 덮지 못해 설치본이 키트와 갈라진다(⑧-f ② ③ ⛔ · 갱신 exit 1) — 프로젝트 규칙은 `.claude/rules/` 의 별도 파일에 |
 | ⑧-f exit 0 이 아닌데 「이식 성공」 | 이식 성공은 도구의 판정 줄로만 말한다 |
-| 기존 context-graph 의 데이터를 옮기기 | 그 프로젝트의 그래프다 — 전환은 범위 밖 |
+| 그래프 기록을 옮기기 · 그래프 도구를 프로젝트에 따로 두기 | 기록은 제자리에서 `graph.store` 로 잇는다. 도구가 두 벌이면 판이 갈라진다 — 키트 판 한 벌(`.harness/tools`) |
 | 확인 없이 `verify --baseline` | 진짜 실패가 조용해진다 |
 | 사용자가 정하지 않았는데 그래프 20건 전에 훅 | 몇 건이 모든 질의에 걸려 지연만 남는다 |
 | 훅·스크립트로 기록을 자동 추출 | 검증 관문이 없다 — 낡은 정보를 더 빨리 쌓는다 |

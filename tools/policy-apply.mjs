@@ -18,7 +18,8 @@ const PERMS = ['allow', 'deny', 'ask'];
 
 const hookKey = (h) => [h.command, ...(h.args ?? [])].join(' ');
 const commands = (groups = []) => groups.flatMap((g) => (g.hooks ?? []).map(hookKey));
-const kitTool = (key) => key.match(/\.harness\/tools\/[\w-]+\.mjs/)?.[0];
+// 이름이 같은 훅 도구는 같은 것으로 본다 — 옛 자기 그래프의 tools/graph-hook.mjs 도 키트 훅으로 바꿔 끼운다(그래프 도구는 한 벌)
+const kitTool = (key) => key.match(/[\w-]+\.mjs/)?.[0];
 
 export const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 

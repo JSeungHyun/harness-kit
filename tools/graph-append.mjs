@@ -6,7 +6,7 @@
 // date 는 세상 시간(작업이 일어난 때), recorded 는 기록 시간 — 둘 다 오늘이 기본이고, 소급할 때만 date 를 준다.
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { STORE } from './graph-find.mjs';
+import { STORE, offRepo } from './graph-find.mjs';
 
 const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()) : []);
 // 경로에 붙인 `:256` 줄번호는 존재 검사와 역방향 조회를 빗나가게 한다
@@ -30,7 +30,7 @@ export function normalize(rec, today) {
     const arr = strs(terms);
     terms = arr.length ? arr : [...new Set(rec.req.match(/[가-힣]{2,}/g) || [])];
   }
-  return {
+  const out = {
     date: rec.date || today,           // 세상 시간
     recorded: rec.recorded || today,   // 기록 시간 — supersedes 순서는 이쪽으로 판정한다
     req: rec.req.trim(),
@@ -40,7 +40,11 @@ export function normalize(rec, today) {
     // 이전 기록을 무효화하면 그 req 를 적는다 — 문자열 1개 또는 배열
     ...(rec.supersedes ? { supersedes: Array.isArray(rec.supersedes) ? strs(rec.supersedes) : String(rec.supersedes) } : {}),
     ...(rec.note ? { note: rec.note } : {}),
+    ...(typeof rec.scope === 'string' && rec.scope ? { scope: rec.scope } : {}),
   };
+  // 기록하지 않는 길을 먼저 보인다 — 통과하려고 상관없는 파일을 채워 넣으면 검사는 지나도 기록은 나빠진다
+  if (offRepo(out)) throw new Error('이 저장소의 파일 · 테이블을 하나도 가리키지 않는다. 이 저장소의 지식이 아니면 기록하지 않는다(도구 지식이면 보고에 「기록 안 함」 한 줄). 이 저장소가 무엇을 들이고 뺐나의 결정이면 "scope":"meta" 를 넣는다');
+  return out;
 }
 
 // toISOString() 은 UTC 라 자정~오전 작업이 하루 전으로 기록된다 — 로컬 날짜를 쓴다

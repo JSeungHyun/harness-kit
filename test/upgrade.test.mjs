@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, repoFile, put, gitRepo } from './scene.mjs';
@@ -118,29 +118,99 @@ test('⛔ 관문 훅만 건 설치(--only gate-hook)에는 정책 전체를 안�
   assert.match(own.stdout, /policy-apply\.mjs --local --only gate-hook$/m);
 });
 
-test('⭐ 키트 그래프 훅을 건 설치에는 --with graph-hook 도 낸다 — 옛 셸 형식 등록을 새 형식으로 바꾼다 · 그 프로젝트 자신의 그래프 훅은 아니다', () => {
+test('⭐ 그래프 훅을 건 설치에는 --with graph-hook 도 낸다 — 옛 셸 형식 · 옛 자기 그래프 훅(tools/graph-hook.mjs)을 키트 훅으로 바꿔 끼운다', () => {
   const hook = (cmd) => ({ UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd }] }] });
-  const kit = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook('node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"') }));
-  assert.match(kit.stdout, /policy-apply\.mjs --local --with gate-hook --with graph-hook$/m);
-  const own = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook('node "$CLAUDE_PROJECT_DIR/tools/graph-hook.mjs"') }));
-  assert.match(own.stdout, /policy-apply\.mjs --local --with gate-hook$/m);
+  for (const cmd of ['node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"', 'node "$CLAUDE_PROJECT_DIR/tools/graph-hook.mjs"']) {
+    const r = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook(cmd) }));
+    assert.match(r.stdout, /policy-apply\.mjs --local --with gate-hook --with graph-hook$/m, cmd);
+  }
 });
 
-test('⭐ 그래프가 이미 있는 대상 — 키트 그래프 도구를 넣지 않고 규칙이 그 프로젝트의 그래프를 가리킨다', () => {
-  const graph = { tools: 'tools', rules: '`AGENTS.md` 의 그래프 기록 절' };
-  const dir = target({ profile: 'existing', mode: 'local', graph, state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, {
-    '.claude/rules/harness.md': oldRule,
-    '.claude/skills/final-gate/SKILL.md': repoFile('templates/skills/final-gate/SKILL.md').replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons).replaceAll('<graph-tools>', graph.tools).replaceAll('<graph-rules>', graph.rules),
+// 옛 자기 그래프 설치 — 그래프 도구 · 기록이 tools/ 아래, 규칙 · 지시 파일 · 검사 명령이 그 도구를 가리킨다
+const OWN = { tools: 'tools', rules: '`AGENTS.md` 의 그래프 기록 절' };
+const fillWith = (graph) => (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons).replaceAll('<graph-tools>', graph.tools).replaceAll('<graph-rules>', graph.rules);
+const rec = (req, files, extra = {}) => JSON.stringify({ date: '2026-10-01', recorded: '2026-10-01', req, files, ...extra });
+function ownGraph() {
+  const fill = fillWith(OWN);
+  return target({ profile: 'existing', mode: 'local', graph: OWN, state: STATE, checks: [{ id: 'graph-check', cmd: 'node tools/graph-find.mjs --check', kind: 'exit-code' }] }, {
+    '.claude/rules/harness.md': fill(repoFile(RULE)),
+    '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')),
+    'AGENTS.md': '# 지도\n\n- 요구가 오면 `node tools/graph-find.mjs <어근>`\n',
+    'tools/graph-find.mjs': '// 옛 그래프 도구',
+    'tools/graph-hook.mjs': '// 옛 그래프 훅',
+    'tools/trace.mjs': '// 프로젝트 고유 도구',
+    'src/a.mjs': 'export {};\n',
+    'tools/graph/requests.jsonl': [
+      rec('그래프 도구 손봄', ['tools/graph-find.mjs', 'src/a.mjs'], { note: 'tools/graph-find.mjs 의 문턱을 고쳤다' }),
+      rec('옛 훅 조사', ['tools/graph-hook.mjs']),
+      rec('훅 조사', ['tools/graph-hook.mjs'], { supersedes: '옛 훅 조사' }),
+      rec('추적 도구', ['tools/trace.mjs']),
+    ].join('\n') + '\n',
   });
+}
+const graphLines = (dir) => readFileSync(join(dir, 'tools/graph/requests.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('⛔ 옛 자기 그래프(graph.tools ≠ .harness/tools) — 키트 그래프 도구는 그래도 깔고, 이관 안내를 내며 exit 1 · 규칙 · 기록 · 옛 도구는 그대로', () => {
+  const dir = ownGraph();
+  const before = readFileSync(join(dir, 'tools/graph/requests.jsonl'), 'utf8');
   const r = run(dir);
-  assert.equal(r.status, 0, r.stderr);
-  assert.ok(existsSync(join(dir, '.harness/tools/verify.mjs')));
-  assert.deepEqual(readdirSync(join(dir, '.harness/tools')).filter((f) => f.startsWith('graph-')), []);
-  assert.ok(!existsSync(join(dir, '.harness/policy/graph-hook.json')));
-  const rule = read(dir, '.claude/rules/harness.md');
-  assert.match(rule, /node tools\/graph-find\.mjs --check/);
-  assert.match(rule, /`AGENTS\.md` 의 그래프 기록 절/);
-  assert.doesNotMatch(rule, /<graph-|\.harness\/tools\/graph-/);
+  assert.equal(r.status, 1, r.stdout);
+  assert.equal(read(dir, '.harness/tools/graph-find.mjs'), repoFile('tools/graph-find.mjs').replace(/\r\n/g, '\n'));
+  assert.ok(existsSync(join(dir, '.harness/policy/graph-hook.json')));
+  assert.match(r.stdout, /⛔ 그래프 이관/);
+  assert.match(r.stdout, /upgrade\.mjs .* --migrate-graph/);
+  assert.match(r.stdout, /graph\.store.*tools\/graph\/requests\.jsonl/);
+  assert.match(r.stdout, /AGENTS\.md:3/);
+  assert.match(r.stdout, /\.harness\/harness\.json:1/);
+  assert.match(r.stdout, /키트가 지우지 않는다/);
+  assert.match(read(dir, '.claude/rules/harness.md'), /node tools\/graph-find\.mjs --check/);
+  assert.equal(readFileSync(join(dir, 'tools/graph/requests.jsonl'), 'utf8'), before);
+  assert.ok(existsSync(join(dir, 'tools/graph-find.mjs')));
+});
+
+test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.tools 를 걷고 · 살아있는 기록 files 의 옛 도구 경로만 한 번 바꾼다(note · 대체된 기록 · 프로젝트 도구는 그대로) · 규칙이 키트 도구를 가리킨다', () => {
+  const dir = ownGraph();
+  const r = spawnSync(process.execPath, [TOOL, dir, '--migrate-graph'], { encoding: 'utf8' });
+  assert.equal(JSON.parse(read(dir, '.harness/harness.json')).graph.tools, undefined);
+  assert.deepEqual(JSON.parse(read(dir, '.harness/harness.json')).graph, { rules: OWN.rules, store: 'tools/graph/requests.jsonl' });
+  const [a, old, now, trace] = graphLines(dir);
+  assert.deepEqual(a.files, ['.harness/tools/graph-find.mjs', 'src/a.mjs']);
+  assert.equal(a.note, 'tools/graph-find.mjs 의 문턱을 고쳤다');
+  assert.deepEqual(old.files, ['tools/graph-hook.mjs']);
+  assert.deepEqual(now.files, ['.harness/tools/graph-hook.mjs']);
+  assert.deepEqual(trace.files, ['tools/trace.mjs']);
+  assert.match(r.stdout, /기록 2건의 files/);
+  assert.match(read(dir, '.claude/rules/harness.md'), /node \.harness\/tools\/graph-find\.mjs --check/);
+  assert.match(read(dir, '.claude/skills/final-gate/SKILL.md'), /node \.harness\/tools\/graph-find\.mjs --check/);
+  // 참조는 프로젝트가 고친다 — 남아 있는 동안 exit 1
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /AGENTS\.md:3/);
+  assert.ok(existsSync(join(dir, 'tools/graph-find.mjs')));
+  put(dir, 'AGENTS.md', '# 지도\n\n- 요구가 오면 `node .harness/tools/graph-find.mjs <어근>`\n');
+  put(dir, '.harness/harness.json', read(dir, '.harness/harness.json').replace('node tools/graph-find.mjs', 'node .harness/tools/graph-find.mjs'));
+  const done = run(dir);
+  assert.equal(done.status, 0, done.stdout);
+  const chk = spawnSync(process.execPath, [join(dir, '.harness/tools/graph-find.mjs'), '--check'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(chk.status, 0, chk.stdout);
+});
+
+test('⛔ 새 예외를 막는다 — 프로필 전부(신규 · 기존 · 기록 위치를 따로 둔 · 옛 자기 그래프)에서 갱신 뒤 키트가 배포하는 lib · tools · policy 가 하나도 빠짐없이 바이트 같다', () => {
+  const kitFiles = ['lib', 'tools', 'policy'].flatMap((d) => readdirSync(join(KIT, d), { recursive: true }).map((f) => join(d, f))).filter((f) => statSync(join(KIT, f)).isFile());
+  const base = { mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] };
+  for (const [name, harness] of [['신규', { ...base, profile: 'new' }], ['기존', { ...base, profile: 'existing' }],
+    ['기록 위치', { ...base, profile: 'existing', graph: { store: 'data/graph.jsonl' } }], ['옛 자기 그래프', { ...base, profile: 'existing', graph: OWN }]]) {
+    const dir = target(harness);
+    run(dir);
+    const off = kitFiles.filter((f) => !existsSync(join(dir, '.harness', f)) || !readFileSync(join(dir, '.harness', f)).equals(readFileSync(join(KIT, f))));
+    assert.deepEqual(off, [], name);
+  }
+});
+
+test('⭐ graph.store 를 둔 설치 — 지운 경로를 가리키는 기록 검사도 그 기록 위치를 본다', () => {
+  const dir = target({ profile: 'existing', mode: 'local', graph: { store: 'data/graph.jsonl' }, state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, {
+    'data/graph.jsonl': `${rec('대장 점검 도구 사용법', ['.harness/tools/state-check.mjs'])}\n`,
+  });
+  assert.match(run(dir).stdout, /state-check\.mjs ← 대장 점검 도구 사용법/);
 });
 
 test('⛔ 대상에 복사된 사본으로 돌리면 거부한다 — 사본은 자기 위치를 키트로 알아 엉뚱한 경로를 쓴다', () => {

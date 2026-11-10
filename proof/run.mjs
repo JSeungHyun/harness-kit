@@ -186,9 +186,11 @@ function p8() {
   put(dir, 'src/point.mjs', 'export const balance = 0;\n');
   const rec = (r) => sh(tool('graph-append'), dir, JSON.stringify(r));
   rec({ req: '적립금 잔액이 0 으로 보인다', terms: { 적립금: 'point_balance (member 테이블)' }, files: ['src/point.mjs'], note: '탈퇴 회원은 잔액을 0 으로 내려준다 — 버그가 아니다' });
-  rec({ req: '배송 상태 화면', terms: { 배송: 'shipping_status' } });
-  rec({ req: '알림 발송 규칙', terms: { 알림: 'notify_rule' } });
-  rec({ req: '재시도 설계 — 적립금 소멸 알림 문자 발송', terms: { 재시도큐: 'retry_queue' }, note: '⏸ 큐 설계까지 했다 — 재시도 횟수를 받으면 재개' });
+  rec({ req: '배송 상태 화면', terms: { 배송: 'shipping_status' }, tables: ['shipping'] });
+  rec({ req: '알림 발송 규칙', terms: { 알림: 'notify_rule' }, tables: ['notify_rule'] });
+  rec({ req: '재시도 설계 — 적립금 소멸 알림 문자 발송', terms: { 재시도큐: 'retry_queue' }, tables: ['retry_queue'], note: '⏸ 큐 설계까지 했다 — 재시도 횟수를 받으면 재개' });
+  const off = rec({ req: '옆 저장소 결제 모듈 조사', terms: { 결제모듈: '옆 저장소' } });
+  row('P8 그래프', '이 저장소의 파일 · 테이블을 하나도 안 가리키는 기록', `graph-append exit ${off.code} · ${off.out.includes('기록하지 않는다') ? '「기록하지 않는다」 안내' : line1(off.out)}`, off.code === 1);
   const hook = (prompt) => sh(`node "${join(dir, '.harness', 'tools', 'graph-hook.mjs')}"`, LONG_TMP, JSON.stringify({ prompt })).out;
 
   const naive = readFileSync(join(dir, 'src', 'point.mjs'), 'utf8').includes('적립금');

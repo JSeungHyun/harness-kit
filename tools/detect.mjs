@@ -113,7 +113,7 @@ function print(f) {
     `다른 도구 규칙  ${f.otherRules.join(' · ') || '없음'}`,
     `테스트 단서     ${f.tests.join(' · ') || '없음'}`,
     `설치 경로       ${Object.entries(f.ignored).map(([p, i]) => `${p} ${yes(i, '무시됨', '추적 가능')}`).join(' · ')}`,
-    `기존 설치       하네스 ${yes(f.installed, '있음', '없음')} · context-graph ${yes(f.contextGraph, '있음 (tools/graph/requests.jsonl) — 그래프 모듈은 설치하지 않는다', '없음')}`,
+    `기존 설치       하네스 ${yes(f.installed, '있음', '없음')} · context-graph ${yes(f.contextGraph, '있음 (tools/graph/requests.jsonl) — 키트 그래프 모듈을 얹고 graph.store 를 이 경로로 (SETUP ⑤ · 기록은 옮기지 않는다)', '없음')}`,
     `Node            ${f.node}`,
     `제안            프로필 ${f.suggest.profile} (${f.suggest.why}) · 모드 ${f.suggest.mode} (공유는 사용자가 고른다)`,
     ...f.suggest.warn.map((s) => `⚠️ 확인         ${s}`),

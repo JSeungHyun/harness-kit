@@ -1,5 +1,5 @@
 {
-  "_note": "harness-kit 설정. 모든 경로는 대상 저장소 루트 기준. 장부는 공유 모드 docs/harness/, 로컬 전용 모드 .harness/state/ — 대상이 이미 쓰는 장부가 있으면 그 경로. 형식은 SETUP.md ⑤. covers 는 그 검사가 실제로 돌리는 코드 — 관문 훅이 덮이지 않은 코드 변경에 /code-review 를 요구한다.",
+  "_note": "harness-kit 설정. 모든 경로는 대상 저장소 루트 기준. 장부는 공유 모드 docs/harness/, 로컬 전용 모드 .harness/state/ — 대상이 이미 쓰는 장부가 있으면 그 경로. 형식은 SETUP.md ⑤. covers 는 그 검사가 실제로 돌리는 코드 — 관문 훅이 덮이지 않은 코드 변경에 /code-review 를 요구한다. graph 는 선택 — store(기록 위치) · names(식별자에서 뺄 프로젝트 이름) · rules(기록 규칙 자리).",
   "profile": "<new | existing>",
   "mode": "<share | local>",
   "state": {

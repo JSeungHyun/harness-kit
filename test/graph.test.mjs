@@ -1,32 +1,19 @@
-// graph 도구 특성 테스트 — context-graph 원본 동작을 잡는다. 이식 전후 모두 통과해야 한다.
+// graph 도구 특성 테스트 — context-graph 에서 옮긴 동작과 13차 화해 동작을 잡는다. 키트가 정본이다.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, cpSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, cpSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { load, index, check, scoreDetail } from '../tools/graph-find.mjs';
 import { appendRecord } from '../tools/graph-append.mjs';
-import { tmp } from './scene.mjs';
+import { tmp, graphInstall } from './scene.mjs';
 
 const TOOLS = fileURLToPath(new URL('../tools/', import.meta.url));
 const DAY = '2026-09-01';
 
-// 도구를 임시 폴더의 tools/ 로 옮겨 돌린다 — 원본(cwd·도구 기준 tools/graph/)과 이식본(HARNESS_GRAPH_STORE)이 같은 저장소를 본다
-function scene(recs = []) {
-  const dir = tmp('graph-');
-  mkdirSync(join(dir, 'tools'));
-  for (const f of readdirSync(TOOLS).filter((n) => n.startsWith('graph-'))) cpSync(join(TOOLS, f), join(dir, 'tools', f));
-  const store = join(dir, 'tools', 'graph', 'requests.jsonl');
-  mkdirSync(dirname(store), { recursive: true });
-  writeFileSync(store, recs.map((r) => `${JSON.stringify({ date: DAY, recorded: DAY, files: [], ...r })}\n`).join(''));
-  const run = (tool, args = [], input = '') =>
-    spawnSync(process.execPath, [join(dir, 'tools', `${tool}.mjs`), ...args], {
-      cwd: dir, input, encoding: 'utf8', env: { ...process.env, HARNESS_GRAPH_STORE: store },
-    });
-  return { dir, store, run };
-}
+const scene = (recs = []) => graphInstall(undefined, recs);
 const hook = (s, prompt) => s.run('graph-hook', [], JSON.stringify({ prompt })).stdout;
 const cards = (out) => out.split(/\r?\n/).filter((l) => l.startsWith('· ['));
 
@@ -102,9 +89,9 @@ test('⛔ graph-append — note 는 한 줄 · 800자까지다. 넘으면 아무
   const { store } = scene();
   assert.throws(() => appendRecord({ req: 'A', note: '첫 줄\n둘째 줄' }, { store }), /한 줄/);
   assert.throws(() => appendRecord({ req: 'A', note: '가'.repeat(801) }, { store }), /800/);
-  appendRecord({ req: 'B', note: '가'.repeat(800) }, { store });
+  appendRecord({ req: 'B', note: '가'.repeat(800), files: ['src/b.mjs'] }, { store });
   const s = scene([{ req: '옛 기록', note: '가'.repeat(1200) }]);
-  const r = s.run('graph-append', [], [JSON.stringify({ req: 'C', note: '짧다' }), JSON.stringify({ req: 'D', note: '가'.repeat(900) })].join('\n'));
+  const r = s.run('graph-append', [], [JSON.stringify({ req: 'C', note: '짧다', files: ['src/c.mjs'] }), JSON.stringify({ req: 'D', note: '가'.repeat(900), files: ['src/d.mjs'] })].join('\n'));
   assert.equal(r.status, 1);
   assert.match(r.stderr, /800/);
   assert.deepEqual(load(s.store).map((x) => x.req), ['옛 기록']);
@@ -112,7 +99,7 @@ test('⛔ graph-append — note 는 한 줄 · 800자까지다. 넘으면 아무
   assert.equal(s.run('graph-alias', ['적립금', 'point_balance', '--note', '가'.repeat(900)]).status, 1);
   assert.deepEqual(load(s.store).map((x) => x.req), ['옛 기록']);
   // 여러 줄로 편 JSON 한 건(heredoc)은 그대로 받는다
-  const pretty = s.run('graph-append', [], JSON.stringify({ req: 'E', note: '짧다' }, null, 2));
+  const pretty = s.run('graph-append', [], JSON.stringify({ req: 'E', note: '짧다', files: ['src/e.mjs'] }, null, 2));
   assert.equal(pretty.status, 0, pretty.stderr);
   assert.deepEqual(load(s.store).map((x) => x.req), ['옛 기록', 'E']);
 });
@@ -420,4 +407,88 @@ test('⭐ graph-measure — 1위가 고루 퍼지면 상위3 점유 < 50%', () =
   const r = s.run('graph-measure', ['.']);
   assert.match(r.stdout, /확신 8/);
   assert.equal(share(r.stdout), 38);
+});
+
+// ── 13차 화해 — context-graph(원천) 판에만 있던 동작을 키트로 ──
+
+const ask = (s, prompt) => s.run('graph-hook', [], JSON.stringify({ prompt }), tmpdir()).stdout;
+// 이름이 경로에 든 기록 — 이름 토큰이 식별자로 치이면 이름만 든 질의가 이 기록을 확신 1위로 낸다
+const NAMED = [
+  { req: '연혁 사전', terms: { 연혁: '출범 · 개편 이력' }, files: ['docs/shopx/history.md'] },
+  { req: '주문 취소 흐름', terms: { 취소: 'cancel_flow' }, files: ['src/order/cancel.mjs'] },
+];
+
+test('⭐ graph.names — 이름 토큰은 식별자 적중을 만들지 않는다 · 이름만 있는 질의는 훅 확신 카드가 없다', () => {
+  const s = graphInstall({ names: ['shopx'] }, NAMED);
+  assert.equal(ask(s, 'SHOPX 회의록'), '');
+  assert.equal(ask(s, 'shopx'), '');
+  assert.match(ask(s, 'cancel_flow 확인'), /주문 취소 흐름/);
+  // 빈 목록이면 끈다 — 위 침묵이 이름 필터 때문임을 보인다
+  assert.ok(cards(ask(graphInstall({ names: [] }, NAMED), 'SHOPX 회의록')).length >= 1);
+});
+
+test('⭐ graph.names 가 없으면 저장소 폴더 이름의 - · _ 앞부분 — 적으면 그 목록만 쓴다', () => {
+  assert.equal(ask(graphInstall({}, NAMED, 'shopx-web'), 'SHOPX 회의록'), '');
+  assert.equal(ask(graphInstall(undefined, NAMED, 'shopx_admin'), 'SHOPX 회의록'), '');
+  assert.ok(cards(ask(graphInstall({ names: ['brand'] }, NAMED, 'shopx-web'), 'SHOPX 회의록')).length >= 1);
+});
+
+test('graph.names — 자기검색은 그대로다', () => {
+  const recs = [...NAMED, { req: 'SHOPX 주문 화면 개편', terms: { 주문화면: 'order_view' }, files: ['src/shopx/order.mjs'] }];
+  const on = graphInstall({ names: ['shopx'] }, recs).run('graph-measure', ['--self']).stdout;
+  assert.equal(on, graphInstall({ names: [] }, recs).run('graph-measure', ['--self']).stdout);
+  assert.match(on, /자기검색 1위 3\/3/);
+});
+
+test('⭐ graph.store — 도구는 harness.json 의 기록 위치를 따른다(cwd · 환경변수와 무관)', () => {
+  const s = graphInstall({ store: 'data/graph.jsonl' });
+  assert.equal(s.run('graph-alias', ['적립금', 'point_balance'], '', tmpdir()).status, 0);
+  assert.equal(load(join(s.dir, 'data', 'graph.jsonl')).length, 1);
+  assert.ok(!existsSync(join(s.dir, '.harness', 'graph', 'requests.jsonl')));
+  assert.match(s.run('graph-find', ['적립금'], '', tmpdir()).stdout, /용어 학습: 적립금/);
+  assert.match(ask(s, '적립금이 안 보인다'), /적립금 → point_balance/);
+});
+
+test('⛔ graph-append — 파일 · 테이블을 하나도 안 가리키는 기록은 거부한다(참조 머리말 · scope:meta 는 통과) · 문구는 「기록하지 않는다」가 먼저', () => {
+  const s = scene();
+  const r = s.run('graph-append', [], JSON.stringify({ req: '옆 저장소 이식 조사', terms: { 이식: '옆 저장소' } }));
+  assert.equal(r.status, 1);
+  const at = (t) => r.stderr.indexOf(t);
+  assert.ok(at('기록하지 않는다') >= 0 && at('기록하지 않는다') < at('"scope":"meta"'), r.stderr);
+  assert.doesNotMatch(r.stderr, /files 에|파일을 (넣|채)/);
+  assert.deepEqual(load(s.store), []);
+  for (const rec of [{ req: '정본: 반품 절차' }, { req: '용어 사전: 배송' }, { req: '공백 목록: 정산' }, { req: '회의 원문: 반품 기준' }, { req: '정정: 반품 기한' },
+    { req: '반품 도구를 들이지 않기로 했다', scope: 'meta' }, { req: '반품 테이블', tables: ['return_req'] }]) {
+    const w = s.run('graph-append', [], JSON.stringify(rec));
+    assert.equal(w.status, 0, `${rec.req}: ${w.stderr}`);
+  }
+  assert.equal(load(s.store).find((x) => x.scope)?.scope, 'meta');
+  assert.equal(s.run('graph-alias', ['적립금', 'point_balance']).status, 0);
+});
+
+test('⭐ --check — 저장소 밖 주제(파일 · 테이블 · 참조 머리말 · scope:meta 가 모두 없는 살아있는 기록)를 경고한다 · exit 0', () => {
+  const r = scene([
+    { req: '옆 저장소 이식 조사' },
+    { req: '정본: 반품 절차' },
+    { req: '도구 도입 결정', scope: 'meta' },
+    { req: '옛 조사' },
+    { req: '새 조사', supersedes: '옛 조사', tables: ['t'] },
+  ]).run('graph-find', ['--check']);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /── 저장소 밖 주제/);
+  assert.match(r.stdout, /⚠️ 2026-09-01 옆 저장소 이식 조사/);
+  assert.match(r.stdout, /"scope":"meta"/);
+  assert.doesNotMatch(r.stdout, /⚠️ \S+ (정본: 반품 절차|도구 도입 결정|옛 조사)/);
+});
+
+test('훅 카드 종류 「원문」은 저장소 밖 면제 머리말과 같은 조각이다 — 「<출처> 원문」도 원문', () => {
+  assert.match(cards(hook(scene([{ req: '회의 원문으로 확정한 반품 기준', terms: { 반품기준: '7일' } }]), '반품기준'))[0], /^· \[원문 · /);
+});
+
+test('⭐ --check 1위 독점 — 질의는 살아있는 최근 200건만, 경쟁 풀은 살아있는 전체(오래된 광역 기록도 잡는다)', () => {
+  const broad = { req: '용어 사전: 쇼핑몰 전반', terms: Object.fromEntries(W20.map((w) => [w, `${w} 설명`])) };
+  const many = Array.from({ length: 229 }, (_, i) => ({ req: `${W20[i % 20]}${i} 처리`, terms: { [W20[i % 20]]: `t${i}` } }));
+  const r = scene([broad, ...many]).run('graph-find', ['--check']);
+  assert.match(r.stdout, /질의 200 · 상위3 점유/);
+  assert.match(r.stdout, /⚠️ 1위 독점 — \d+\/200 {2}용어 사전: 쇼핑몰 전반/);
 });

@@ -101,6 +101,13 @@ test('⭐ 옛 셸 형식 키트 훅은 새 형식으로 바꿔 끼운다 — 둘
   assert.deepEqual(mergeSettings(out, { hooks: HOOK }), out);
 });
 
+test('⭐ 옛 자기 그래프의 훅(tools/graph-hook.mjs)도 키트 그래프 훅으로 바꿔 끼운다 — 그래프 도구는 한 벌이다(13차)', () => {
+  const own = { type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/tools/graph-hook.mjs"' };
+  const mine = { type: 'command', command: 'node lint.mjs' };
+  const out = mergeSettings({ hooks: { UserPromptSubmit: [{ hooks: [mine, own] }] } }, { hooks: HOOK });
+  assert.deepEqual(out.hooks.UserPromptSubmit, [{ hooks: [mine] }, HOOK.UserPromptSubmit[0]]);
+});
+
 test('훅 정책은 셸 없이 node 를 바로 띄운다(exec 형식) — 이 PC 실측 bash 경유 1.61초 → 1.13초', () => {
   const hook = (name, event) => readJson(fileURLToPath(new URL(`../policy/${name}.json`, import.meta.url))).hooks[event][0].hooks[0];
   for (const [name, event, timeout] of [['graph-hook', 'UserPromptSubmit', 30], ['gate-hook', 'Stop', 10]]) {

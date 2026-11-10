@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // UserPromptSubmit 훅 — 질문마다 graph-find 를 대신 돌려 과거 기록을 상한 걸린 양만 넣는다. 설계안.
 // ⭐ 탐색 1번 단계를 모델의 규율에 맡기지 않는 것이 목적이다. 실패는 조용히 통과 — 프롬프트를 막지 않는다.
-import { load, scoreDetail, sup, tokenizeKo, tokenizeIds } from './graph-find.mjs';
+import { load, scoreDetail, sup, tokenizeKo, tokenizeIds, ORIGIN } from './graph-find.mjs';
 
 const MAX = 2;   // 프롬프트마다 붙는 비용이므로 상위 2건만
 
@@ -84,7 +84,7 @@ function clip(v) {
 const KINDS = [
   ['절차', /^정본:/],
   ['사전', /^용어 사전:|^용어 학습:|^공백 채움:|어휘 다리/],
-  ['원문', /^원문|가이드문서|인수인계|연혁/],
+  ['원문', new RegExp(`^${ORIGIN}|가이드문서|인수인계|연혁`)],
   ['폐기', /기각|철거|폐기|걷어|원복|중단|미실행|제거(했|됨|\b)|삭제했/],
   ['도구', /^그래프|훅|도구|템플릿|미러|측정|스크립트|graph-|tools\//],
   ['조사', /조사|확정|실측|분석|검증|교차검증|진단|점검|감사/],

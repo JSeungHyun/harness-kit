@@ -184,6 +184,55 @@ test('⛔ ⑨ 설치본이 기록한 키트 커밋이 없거나 키트의 지금
   assert.match(check(installed({ files: { '.harness/kit-commit': `${'0'.repeat(40)}\n` } }))['⑨'].observed, /0000000/);
 });
 
+test('⛔ ① 그래프 도구도 키트 판과 비교한다 — 옛 자기 그래프 설치도 예외가 아니다(13차)', () => {
+  const dir = installed();
+  writeFileSync(join(dir, '.harness/harness.json'), JSON.stringify({ profile: 'existing', mode: 'local', graph: { tools: 'tools', rules: '`AGENTS.md`' }, state: STATE, checks: [CHECK] }));
+  writeFileSync(join(dir, '.harness/tools/graph-hook.mjs'), '// 옛 판');
+  const r = check(dir)['①'];
+  assert.equal(r.ok, false);
+  assert.match(r.observed, /graph-hook\.mjs/);
+});
+
+test('⛔ ⑤ 옛 자기 그래프는 이관 미완 · graph.store 가 없으면 · 키트 밖 그래프 도구를 가리키는 참조가 있으면(파일:행)', () => {
+  const legacy = installed();
+  writeFileSync(join(legacy, '.harness/harness.json'), JSON.stringify({ profile: 'existing', mode: 'local', graph: { tools: 'tools', rules: '`AGENTS.md`' }, state: STATE, checks: [CHECK] }));
+  assert.match(check(legacy)['⑤'].observed, /이관 미완.*--migrate-graph/);
+  const store = (s) => { const d = installed(); writeFileSync(join(d, '.harness/harness.json'), JSON.stringify({ profile: 'existing', mode: 'local', graph: { store: s }, state: STATE, checks: [CHECK] })); return d; };
+  const missing = check(store('data/graph.jsonl'))['⑤'];
+  assert.equal(missing.ok, false);
+  assert.match(missing.observed, /graph\.store 없음 \(data\/graph\.jsonl\)/);
+  const present = store('data/graph.jsonl');
+  put(present, 'data/graph.jsonl', '');
+  assert.equal(check(present)['⑤'].ok, true);
+  const refs = check(installed({ files: { 'AGENTS.md': '# 지도\n- `node tools/graph-find.mjs <어근>`\n', 'CLAUDE.local.md': '@AGENTS.md\n' } }))['⑤'];
+  assert.equal(refs.ok, false);
+  assert.match(refs.observed, /AGENTS\.md:2/);
+});
+
+test('⛔ ④ 그래프 훅이 .harness/tools/graph-hook.mjs 가 아니면(옛 자기 그래프 훅) — policy-apply 가 바꿔 끼울 곳으로 잡힌다', () => {
+  const settings = applyPolicy({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/tools/graph-hook.mjs"' }] }] } }, { local: true, extra: ['gate-hook'] }).settings;
+  const r = check(installed({ files: { '.claude/settings.local.json': JSON.stringify(settings) } }))['④'];
+  assert.equal(r.ok, false);
+  assert.match(r.observed, /hooks\.UserPromptSubmit/);
+});
+
+test('⭐ --all <폴더> — 그 아래 설치마다 ⑨ 판 · ① 동일만 표로, 뒤처지거나 다르면 exit 1', () => {
+  const root = tmp('installs-');
+  cpSync(installed(), join(root, 'a'), { recursive: true });
+  cpSync(installed({ files: { '.harness/kit-commit': `${'0'.repeat(40)}\n` } }), join(root, 'b'), { recursive: true });
+  put(root, 'c/readme.md', '키트를 얹지 않은 폴더');
+  const all = () => spawnSync(process.execPath, [TOOL, '--all', root], { encoding: 'utf8' });
+  const r = all();
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /^\| a \| .*\| ✅ \|$/m);
+  assert.match(r.stdout, /^\| b \| .*0000000.*\| ⛔ \|$/m);
+  assert.doesNotMatch(r.stdout, /^\| c \|/m);
+  writeFileSync(join(root, 'b/.harness/kit-commit'), `${HEAD}\n`);
+  const ok = all();
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.match(ok.stdout, /설치 2곳 모두 키트 판/);
+});
+
 test('⛔ CLI — 하나라도 ⛔ 면 exit 1 · 표 끝에 판정 줄 · 대상의 사본으로 돌리면 거부', () => {
   const dir = installed({ files: { '.harness/kit-commit': '' } });
   const r = spawnSync(process.execPath, [TOOL, dir], { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: pc() } });

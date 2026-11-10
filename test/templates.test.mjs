@@ -60,6 +60,11 @@ test('그래프 규칙 — 조회 먼저 · 판단 규칙 상위 5 · 기록 단
   // 형식 판정만으로는 도구 사용법 조사가 통과한다 — 주제 판정이 먼저, 「한 세트」가 그 문을 건너뛰지 않는다
   assert.match(g, /첫째 문 — 이 저장소의 지식인가/);
   assert.match(g, /「파일 목록 보고와 한 세트」가 이 문을 건너뛰게 하지 않는다/);
+  // 첫째 문과 graph-append 의 저장소 밖 거부 문구가 같은 순서 — 기록하지 않는 길이 먼저, 들이고 뺀 결정은 scope:meta(13차)
+  const door = g.split(/\r?\n/).find((l) => l.includes('첫째 문 — 이 저장소의 지식인가'));
+  const refuse = repoFile('tools/graph-append.mjs').split(/\r?\n/).find((l) => l.includes('offRepo(out)'));
+  for (const text of [door, refuse]) assert.ok(text.indexOf('기록하지 않는다') >= 0 && text.indexOf('기록하지 않는다') < text.indexOf('"scope":"meta"'), text);
+  assert.match(door, /상관없는 파일을 넣지 않는다/);
   // 훅 조건 — 건수는 대리 지표, 조건은 상위3 점유 (design §5·§6)
   assert.match(g, /20건 이상 \+ `--check` exit 0 \+ 상위3 점유 < 50%/);
   assert.match(g, /graph-measure\.mjs \. --tickets/);

@@ -101,7 +101,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | 출처 | 가져온 것 |
 |---|---|
 | `agent-harness` | evidence 모듈 — 완료 증거 · 가정 · 교훈 · 설정 병합 + 기준선 · `output-match` · `--local` · `--with` |
-| `context-graph` | graph 모듈 — 채점 · 토크나이저 · 문턱 · 출력을 그대로, 저장 경로만 `.harness/graph/` 로. DB 가드 · SQL 템플릿 검사 · 커밋 색인 · 절 목차는 범용 값이 없어 뺐다 |
+| `context-graph` | graph 모듈 — 채점 · 토크나이저 · 문턱 · 출력을 그대로, 저장 경로만 `.harness/graph/` 로. DB 가드 · SQL 템플릿 검사 · 커밋 색인 · 절 목차는 범용 값이 없어 뺐다. 13차(2026-11-10)부터 그래프 정본은 키트이고 context-graph 는 보관 — 따라가지 않는다(`docs/graph-port.md`) |
 
 ## 개발
 

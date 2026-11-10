@@ -71,6 +71,13 @@ test('⛔ 멈춤 — 이미 설치됨 · 기존 context-graph 감지. 미커밋 
   assert.deepEqual(warn, ['미커밋 변경 1건 — 로컬 전용은 설치 경로가 git 에 안 보여 섞이지 않는다 · 공유를 고르면 ⛔ 커밋하거나 치운 뒤 설치한다']);
 });
 
+test('⭐ 기존 context-graph — 그래프 모듈을 빼지 않고 키트 그래프 도구를 얹되 기록은 제자리(graph.store)라고 안내한다(13차)', () => {
+  const repo = gitRepo({ 'a.txt': 'x', 'tools/graph/requests.jsonl': '{}\n' });
+  const out = spawnSync(process.execPath, [DETECT, repo.dir], { env: repo.env, encoding: 'utf8' }).stdout;
+  assert.match(out, /context-graph 있음 \(tools\/graph\/requests\.jsonl\) — 키트 그래프 모듈을 얹고 graph\.store 를 이 경로로/);
+  assert.doesNotMatch(out, /설치하지 않는다/);
+});
+
 test('⭐ 미커밋 변경이 설치가 고치고 숨기는 경로에 있으면 겹침을 따로 알린다 — CLAUDE.local.md · .claude/ (접힌 미추적 디렉터리 포함)', () => {
   const repo = gitRepo({ 'a.txt': 'x' });
   put(repo.dir, 'CLAUDE.local.md', '# 내 메모\n');

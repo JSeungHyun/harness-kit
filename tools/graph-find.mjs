@@ -5,17 +5,34 @@
 //   node .harness/tools/graph-find.mjs --with <경로조각>  # 파일 → 같이 움직이는 파일 (2홉)
 //   node .harness/tools/graph-find.mjs --open | --check | --promote [정본문서]
 import { existsSync, readFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// 도구 파일 기준 — 훅은 어느 cwd 에서 돌지 보장이 없다. 대상에서는 .harness/graph/requests.jsonl
-export const STORE = process.env.HARNESS_GRAPH_STORE || fileURLToPath(new URL('../graph/requests.jsonl', import.meta.url));
+// 설치에서는 .harness/tools/ 에 있다 — 설정은 ../harness.json, 저장소 루트는 ../../
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const GRAPH = (() => {
+  try { return JSON.parse(readFileSync(new URL('../harness.json', import.meta.url), 'utf8')).graph ?? {}; } catch { return {}; }
+})();
+// 기록 위치는 graph.store(저장소 루트 기준), 없으면 도구 기준 ../graph — cwd 기준이 아니다(훅은 어느 cwd 에서 돌지 보장이 없다)
+export const STORE = process.env.HARNESS_GRAPH_STORE
+  || (GRAPH.store ? resolve(ROOT, GRAPH.store) : fileURLToPath(new URL('../graph/requests.jsonl', import.meta.url)));
 
-export function load(store = STORE) {
-  if (!existsSync(store)) return [];
-  return readFileSync(store, 'utf8').split('\n').filter((l) => l.trim()).flatMap((l) => {
-    try { return [JSON.parse(l)]; } catch { return []; }
+// 깨진 줄(JSON 이 아니거나 req 가 없다)은 어느 도구도 못 읽는다 — 건너뛰고 줄 번호를 --check 에 넘긴다. BOM · NFD(다른 OS 에서 온 파일)는 읽을 때 맞춘다
+export function read(store = STORE) {
+  const recs = [];
+  const broken = [];
+  if (!existsSync(store)) return { recs, broken };
+  readFileSync(store, 'utf8').replace(/^\uFEFF/, '').normalize('NFC').split('\n').forEach((l, i) => {
+    if (!l.trim()) return;
+    try {
+      const r = JSON.parse(l);
+      if (typeof r?.req === 'string' && r.req.trim()) return void recs.push(r);
+    } catch { /* 아래에서 깨진 줄로 */ }
+    broken.push(i + 1);
   });
+  return { recs, broken };
 }
+export const load = (store = STORE) => read(store).recs;
 
 // 질의에서 걷어낼 흔한 말. ⛔ 도메인 명사는 넣지 않는다 — 그것들이 신호다
 export const STOP = new Set(['수정', '변경', '추가', '관련', '기능', '코드', '부분', '처리', '개선',
@@ -55,16 +72,22 @@ export function tokenizeKo(prompt) {
   for (const t of [...ko]) if (t.length >= 3 && !STOP.has(t.slice(0, 2))) ko.add(t.slice(0, 2));
   return ko;
 }
+// 프로젝트 이름은 식별자로 치지 않는다 — 티켓 머리말의 이름이 경로 · 값에 두루 걸려 무관한 정본이 확신 1위가 됐다(원천 실측: 광역 정본 확신 1위 24 → 6 · 자기검색 그대로). 워크트리 폴더(이름-브랜치)는 앞부분만
+const NAMES = new Set((GRAPH.names ?? [basename(ROOT).split(/[-_]/)[0]]).map((n) => String(n).toLowerCase()));
 // 파일명·식별자는 따로 — 대문자 약어는 2자부터, 소문자 섞인 낱말은 5자부터(흔한 영어 낱말이 노이즈가 된다)
 export function tokenizeIds(prompt) {
   return [...new Set([
     ...(prompt.match(/\b[A-Z][A-Z0-9]{1,}\b/g) || []),
     ...(prompt.match(/[A-Za-z_][A-Za-z0-9_.\-]{3,}/g) || []).filter((t) => t.length >= 5),
-  ])];
+  ])].filter((t) => !NAMES.has(t.toLowerCase()));
 }
 
+// 참조 기록의 머리말 — 제목 머리 채점 · 저장소 밖 판정(append 거부 · --check) · 훅 종류 「원문」이 같은 조각을 쓴다. 따로 두면 「원문으로 보이는데 쓰기는 거부」가 생긴다
+export const ORIGIN = '(?:\\S+ )?원문';
+export const TITLE_PREFIX = new RegExp(`^(정본|용어 사전|용어 학습|공백 채움|공백 목록|정정|${ORIGIN})\\s*:\\s*`);
+// 저장소 밖 주제 — 이 저장소의 파일도 테이블도 안 가리키는 기록은 다른 저장소 얘기일 수 있다(원천 실측: 옆 저장소 이식 조사가 5일 살아남았다). 참조 기록 · scope:meta(무엇을 들이고 뺐나)는 정상으로 빈다
+export const offRepo = (r) => r.scope !== 'meta' && !TITLE_PREFIX.test(r.req) && !(r.files || []).length && !(r.tables || []).length;
 // 제목 머리(접두어를 떼고 첫 구분자 앞)를 용어 키처럼 친다. ⛔ 5자 미만 n-gram 은 흔한 조각이 엉뚱한 기록에 걸린다
-const TITLE_PREFIX = /^(정본|용어 사전|용어 학습|공백 채움|공백 목록|정정|원문)\s*:\s*/;
 const TITLE_CACHE = new WeakMap();
 export function titleKeys(rec) {
   let v = TITLE_CACHE.get(rec);
@@ -179,7 +202,7 @@ export function check(recs, { fileExists } = {}) {
   if (fileExists) {
     for (const r of recs) {
       if (superseded.has(r.req)) continue;
-      for (const f of r.files || []) if (!fileExists(f)) gone.push([r, f]);
+      for (const f of r.files || []) if (!fileExists(f.replace(/:\d+(-\d+)?$/, ''))) gone.push([r, f]);
     }
   }
   const noRecorded = recs.filter((r) => !r.recorded);
@@ -205,24 +228,29 @@ export function check(recs, { fileExists } = {}) {
   const unmarked = recs.filter((r) => !superseded.has(r.req) && !(r.note || '').startsWith('⏸') &&
     OPEN_WORD.test([r.req, r.note || '', ...Object.values(Array.isArray(r.terms) ? {} : r.terms || {})].join(' ')));
 
-  return { problems, gone, noRecorded, retro, stale, unmarked, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
+  // 경고만 — 새 기록은 append 가 막는다. 남은 것은 지우거나 scope:meta 를 넣는다
+  const offTopic = recs.filter((r) => !superseded.has(r.req) && offRepo(r));
+
+  return { problems, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
 }
 
 // 정렬: 정확일치 유무 → 점수 → 살아있는 기록 → 최신
 // 정확일치 먼저 — 합만으로 세우면 1위가 정확일치 0 인 비율 39%, 첫 키로 바꾼 뒤 11%(본문 질의 75건). 바꾸려면 다시 잰다
-const rank = (pool, qs) => pool.map((r) => ({ r, ...scoreDetail(r, qs) })).filter((x) => x.s > 0)
+export const rank = (pool, qs) => pool.map((r) => ({ r, ...scoreDetail(r, qs) })).filter((x) => x.s > 0)
   .sort((a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s
     || (a.r.validTo ? 1 : 0) - (b.r.validTo ? 1 : 0)
     || String(b.r.date).localeCompare(String(a.r.date)));
 
 // 1위 독점 — 살아있는 기록마다 그 req 로 묻되 자기는 빼고 1위를 센다. 광역 기록이 다른 질문을 가로채면 훅 카드가 한 장으로 쏠린다(설치 실측: note 1,102자 기록이 상위3 점유 81%)
 // 자기를 넣으면 제목 정확일치로 늘 자기가 1위라 독점이 안 보인다(이 PC 그래프 4곳 174/180 · 10/10 · 29/29 · 11/11)
+// 질의만 최근 200건 — 경쟁 풀은 살아있는 전체라야 오래된 광역 기록의 가로채기가 보인다(원천 실측). 질의까지 전부면 기록 수의 제곱 — 181건에서 --check 0.7 → 3.1초
+const MONOPOLY_QUERIES = 200;
 export function monopoly(recs) {
   const dead = new Set(recs.flatMap(sup));
   const live = recs.filter((r) => !dead.has(r.req));
   const wins = new Map();
   let n = 0;
-  for (const q of live) {
+  for (const q of live.slice(-MONOPOLY_QUERIES)) {
     const qs = [...tokenizeKo(q.req), ...tokenizeIds(q.req)];
     const top = rank(live.filter((r) => r !== q), qs)[0];
     if (!top) continue;
@@ -235,7 +263,8 @@ export function monopoly(recs) {
 
 if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
   let args = process.argv.slice(2);
-  const recs = index(load());
+  const { recs: raw, broken } = read();
+  const recs = index(raw);
 
   if (!recs.length) { console.log('기록이 없다. .harness/tools/graph-append.mjs 로 먼저 쌓는다.'); process.exit(0); }
   if (!args.length) {
@@ -319,8 +348,10 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
 
   // 무결성 검증 — 문자열 참조로 잇는 구조의 유일한 약점을 시끄럽게 만든다
   if (args[0] === '--check') {
-    const { problems, gone, noRecorded, retro, stale, unmarked, dupTerms } = check(recs, { fileExists: (f) => existsSync(f) });
+    const { problems, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms } = check(recs, { fileExists: (f) => existsSync(f) });
     console.log(`기록 ${recs.length}건 · 대체 사슬 ${recs.filter((r) => r.supersedes).length}건\n`);
+    console.log('── 줄 형식 ──');
+    console.log(broken.length ? `  ⛔ 깨진 줄 ${broken.length}개 — 줄 ${broken.join(', ')} (JSON 이 아니거나 req 가 없다 — 어느 도구도 읽지 못한다)\n` : '  이상 없음.\n');
     console.log('── 사슬 무결성 ──');
     if (!problems.length) console.log('  이상 없음.');
     for (const [kind, msg] of problems) console.log(`  ⛔ ${kind}: ${msg}`);
@@ -341,6 +372,13 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
       console.log(`  ⚠️ ${r.date} ${r.req.slice(0, 56)}`);
       console.log(`       ⇒ 아직 하다 만 것이면 note 앞에 ⏸ 를 붙인다 (훅이 순위 밖이어도 붙여 준다). 끝난 것이면 그냥 둔다`);
     }
+    console.log('\n── 저장소 밖 주제 (이 저장소 지식이 맞나) ──');
+    if (!offTopic.length) console.log('  이상 없음 — 전부 이 저장소의 파일·테이블을 가리킨다.');
+    for (const r of offTopic) {
+      console.log(`  ⚠️ ${r.date} ${r.req.slice(0, 56)}`);
+      console.log('       ⇒ 이 저장소의 파일·테이블을 하나도 안 가리킨다. 다른 저장소 얘기면 지운다.');
+      console.log('         들이고 뺀 결정이라 가리킬 것이 없으면 "scope":"meta" 를 넣는다');
+    }
     // 훅을 켜는 조건과 같은 수 — 20건 · 상위3 점유 50%. 신호용이라 exit 에 넣지 않는다
     console.log('\n── 1위 독점 (자기를 뺀 1위 — 한 기록이 다른 질문을 가로채나) ──');
     const m = monopoly(recs);
@@ -355,7 +393,7 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
     console.log('\n── 시간 ──');
     console.log(`  recorded 없음 ${noRecorded.length}건 (구 기록 — 순서는 줄 번호로 판정한다)`);
     console.log(`  소급 기록 ${retro.length}건 (date < recorded — 정상이다, 과거를 나중에 적은 것)`);
-    process.exit(problems.length || gone.length || stale.length ? 1 : 0);
+    process.exit(problems.length || gone.length || stale.length || broken.length ? 1 : 0);
   }
 
   // ⛔ 대체된 기록은 기본 제외(--all 로 포함)
