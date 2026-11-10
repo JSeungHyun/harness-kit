@@ -182,6 +182,22 @@ test('⭐ 지운 템플릿은 손대지 않은 설치본만 걷는다 — 쓴 �
   assert.ok(existsSync(join(used, '.harness/state/current.md')));
 });
 
+test('⭐ 키트 템플릿에서 지운 장부 줄은 설치본 장부에서도 걷는다 — 같은 줄만(줄바꿈 · 앞뒤 공백 무시) · 사용자 줄은 그대로 · 다시 돌려도 같다', () => {
+  const [gone] = JSON.parse(repoFile('policy/removed.json')).lines['templates/state/lessons.md'];
+  const old = execFileSync('git', ['-C', KIT, 'show', `${deleted}^:templates/state/lessons.md`], { encoding: 'utf8' }).replace(/\r\n/g, '\n');
+  const mine = '- 예전엔 `node .harness/tools/lesson-promote.mjs` 로 승격 후보를 봤다';
+  const ledger = `${old.replace(gone, `${gone}  `)}| L1 | 검증 부족 | 증상 | 원인 | 테스트 |\n${mine}\n`.replace(/\n/g, '\r\n');
+  const dir = installed();
+  put(dir, STATE.lessons, ledger);
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /🧹 걷음\(키트에서 지운 장부 줄\): \.harness\/state\/lessons\.md:10/);
+  const after = readFileSync(join(dir, STATE.lessons), 'utf8');
+  assert.equal(after, ledger.replace(`${gone}  \r\n`, ''));
+  assert.doesNotMatch(run(dir).stdout, /장부 줄/);
+  assert.equal(readFileSync(join(dir, STATE.lessons), 'utf8'), after);
+});
+
 test('⛔ 빌드 · 테스트 단서가 보이는데 covers 를 가진 검사가 없으면 갱신 보고를 ⛔ 로 멈춘다(exit 1)', () => {
   const pkg = { 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) };
   const bare = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, pkg);
@@ -207,6 +223,10 @@ test('⛔ 「지운 것」 목록이 키트와 맞는다 — 지운 도구 · �
   const removed = JSON.parse(repoFile('policy/removed.json'));
   for (const f of removed.files) assert.ok(!existsSync(join(KIT, f.replace(/^\.harness\//, ''))), f);
   for (const src of Object.keys(removed.templates)) assert.ok(!existsSync(join(KIT, src)), src);
+  for (const [src, lines] of Object.entries(removed.lines)) {
+    const now = repoFile(src).split(/\r?\n/).map((l) => l.trim());
+    for (const l of lines) assert.ok(!now.includes(l.trim()), `${src}: ${l}`);
+  }
   const allow = JSON.parse(repoFile('policy/settings.json')).permissions.allow;
   for (const a of removed.allow) assert.ok(!allow.includes(a), a);
 });

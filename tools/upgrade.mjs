@@ -130,6 +130,19 @@ export function settingsShape(dir) {
   return { graphHook, only: sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full };
 }
 
+// 키트 템플릿에서 지운 장부 줄 — 장부 본문은 프로젝트 것이라 그 줄과 같은 줄(앞뒤 공백 무시)만 본다. 갱신이 걷고 이식 검사 ① 이 남은 것을 본다
+export function ledgerLeft(dir, raw) {
+  const gone = new Set(Object.values(read(join(KIT, 'policy', 'removed.json')).lines).flat().map((l) => l.trim()));
+  const where = [];
+  const files = Object.values(raw.state ?? {}).filter((at) => existsSync(join(dir, at))).flatMap((at) => {
+    const lines = readFileSync(join(dir, at), 'utf8').split('\n');
+    const kept = [];
+    lines.forEach((l, i) => (gone.has(l.trim()) ? where.push(`${at}:${i + 1}`) : kept.push(l)));
+    return kept.length < lines.length ? [{ at, kept }] : [];
+  });
+  return { where, files };
+}
+
 // 빌드 · 테스트 단서가 있는데 코드를 덮는 검사가 없으면 그 단서 — 그때 verify 녹색은 코드 변경의 증거가 아니다
 export const coversGap = (dir, raw) => ((raw.checks ?? []).some((c) => c.covers?.length) ? [] : testHints(dir));
 
@@ -178,6 +191,9 @@ export function upgrade(dir, { ownRules = false } = {}) {
     else out.push(`⚠️ ${at} — 키트에서 지운 ${src} 의 설치본인데 내용을 썼다 · 남겼다. harness.json 의 state.${key} 는 이제 아무 도구도 읽지 않는다`);
   }
   if (dropped.length) out.push(`🧹 걷음(키트에서 지운 것): ${dropped.join(', ')}`);
+  const ledger = ledgerLeft(dir, raw);
+  for (const f of ledger.files) writeFileSync(join(dir, f.at), f.kept.join('\n'));
+  if (ledger.where.length) out.push(`🧹 걷음(키트에서 지운 장부 줄): ${ledger.where.join(', ')}`);
   // 지운 경로를 살아있는 기록이 가리키면 --check 빨강 → verify 빨강 → 모든 코드 턴이 관문에 막힌다 — 같은 턴에 고치게 목록을 낸다
   const gonePaths = new Set([...removed.files, ...dropped]);
   const recs = load(own ? join(dir, graphOf(raw).tools, 'graph', 'requests.jsonl') : join(dir, '.harness', 'graph', 'requests.jsonl'));

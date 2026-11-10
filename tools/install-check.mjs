@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
-import { KIT, DOCS, nl, assertKit, kitCommit, graphOf, ownGraph, kitFile, filler, docState, summary, settingsShape, coversGap } from './upgrade.mjs';
+import { KIT, DOCS, nl, assertKit, kitCommit, graphOf, ownGraph, kitFile, filler, docState, summary, settingsShape, coversGap, ledgerLeft } from './upgrade.mjs';
 import { applyPolicy, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
 
@@ -61,9 +61,10 @@ export function checkInstall(dir, { plugins } = {}) {
   const missing = files.filter((f) => !existsSync(at(f)));
   const changed = files.filter((f) => existsSync(at(f)) && nl(readFileSync(at(f), 'utf8')) !== nl(readFileSync(join(KIT, f), 'utf8')));
   const left = JSON.parse(readFileSync(join(KIT, 'policy', 'removed.json'), 'utf8')).files.filter((f) => existsSync(join(dir, f)));
-  row('①', '키트 도구 · lib · 정책이 키트 판과 같다 · 키트에서 지운 것 0',
-    [missing.length && `없음 ${list(missing)}`, changed.length && `다름 ${list(changed)}`, left.length && `지운 것 남음 ${list(left)}`].filter(Boolean).join(' · ') || `${files.length}개 같음`,
-    !missing.length && !changed.length && !left.length);
+  const { where: lines } = ledgerLeft(dir, raw);
+  row('①', '키트 도구 · lib · 정책이 키트 판과 같다 · 키트에서 지운 것 0 (장부의 지운 템플릿 줄 포함)',
+    [missing.length && `없음 ${list(missing)}`, changed.length && `다름 ${list(changed)}`, left.length && `지운 것 남음 ${list(left)}`, lines.length && `지운 장부 줄 남음 ${list(lines)} — upgrade 가 걷는다`].filter(Boolean).join(' · ') || `${files.length}개 같음`,
+    !missing.length && !changed.length && !left.length && !lines.length);
 
   // ② ③ 키트 소유 문서 — 장부 경로 · 그래프 자리를 채운 키트 판과 같아야 한다. 프로젝트 규칙은 .claude/rules/ 의 별도 파일에
   const fill = filler(raw);

@@ -75,6 +75,14 @@ test('⛔ ① 키트 도구가 키트 판과 다르거나 지운 도구가 남�
   assert.doesNotMatch(r.observed, /config\.mjs/);
 });
 
+test('⛔ ① 키트 템플릿에서 지운 장부 줄이 장부에 남으면 — 관측에 파일:행', () => {
+  const [gone] = JSON.parse(repoFile('policy/removed.json')).lines['templates/state/lessons.md'];
+  const lessons = fill(repoFile('templates/state/lessons.md')).replace(/\r\n/g, '\n');
+  const r = check(installed({ files: { [STATE.lessons]: `${lessons}${gone}\n` } }))['①'];
+  assert.equal(r.ok, false);
+  assert.match(r.observed, new RegExp(`지운 장부 줄 남음 \\.harness/state/lessons\\.md:${lessons.split('\n').length}`));
+});
+
 test('⛔ ② ③ 프로젝트가 고친 규칙 · 스킬은 ⛔ + 다른 줄 요약 — 옛 키트 판이면 갱신을, 고쳤으면 --own-rules 를 가리킨다', () => {
   const first = execFileSync('git', ['-C', KIT, 'rev-list', '--reverse', 'HEAD', '--', 'templates/rules/harness.md'], { encoding: 'utf8' }).split('\n')[0];
   const old = fill(execFileSync('git', ['-C', KIT, 'show', `${first}:templates/rules/harness.md`], { encoding: 'utf8' }));
