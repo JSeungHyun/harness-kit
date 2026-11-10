@@ -5,8 +5,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { target, put, repoFile, tmp } from './scene.mjs';
-import { checkInstall } from '../tools/install-check.mjs';
+import { target, put, repoFile, tmp, kitRepo } from './scene.mjs';
+import { checkInstall, checkAll } from '../tools/install-check.mjs';
 import { applyPolicy } from '../tools/policy-apply.mjs';
 
 const KIT = fileURLToPath(new URL('..', import.meta.url));
@@ -184,6 +184,39 @@ test('⛔ ⑨ 설치본이 기록한 키트 커밋이 없거나 키트의 지금
   assert.match(check(installed({ files: { '.harness/kit-commit': `${'0'.repeat(40)}\n` } }))['⑨'].observed, /0000000/);
 });
 
+test('⛔ ⑨ 커밋 안 된 키트로 갱신한 설치(kit-commit <sha>-dirty) — 커밋 뒤 다시 갱신', () => {
+  const r = check(installed({ files: { '.harness/kit-commit': `${HEAD}-dirty\n` } }))['⑨'];
+  assert.equal(r.ok, false);
+  assert.match(r.observed, /커밋 안 된 키트로 갱신됨 — 커밋 뒤 다시 갱신/);
+});
+
+test('⛔ 키트 작업 트리에 커밋 안 된 변경이 있으면 단일 · --all 모두 표 위에 ⛔ · 판정 줄 없이 exit 1 — 우회 환경변수면 지금처럼', () => {
+  const kit = kitRepo();
+  const root = tmp('installs-');
+  cpSync(installed({ files: { '.harness/kit-commit': `${kit.sha}\n` } }), join(root, 'a'), { recursive: true });
+  const env = { ...kit.env, CLAUDE_CONFIG_DIR: pc() };
+  const run = (args, e = env) => spawnSync(process.execPath, [join(kit.dir, 'tools', 'install-check.mjs'), ...args], { encoding: 'utf8', env: e });
+  const clean = run(['--all', root]);
+  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+
+  // ① 이 보지 않는 템플릿만 고친다 — 설치는 그대로 키트 판이고, 거부는 키트 상태 때문이다
+  put(kit.dir, 'templates/rules/graph.md', '작업 중\n');
+  const all = run(['--all', root]);
+  assert.equal(all.status, 1, all.stdout + all.stderr);
+  assert.match(all.stdout, /^⛔ 키트 작업 트리에 커밋 안 된 변경 — 판정은 커밋 뒤에.*templates\/rules\/graph\.md/);
+  assert.match(all.stdout, /^\| a \| .*\| ✅ \|$/m);
+  assert.doesNotMatch(all.stdout, /설치 1곳 모두 키트 판/);
+  const one = run([join(root, 'a')]);
+  assert.equal(one.status, 1, one.stdout + one.stderr);
+  assert.match(one.stdout, /^⛔ 키트 작업 트리에 커밋 안 된 변경 — 판정은 커밋 뒤에/);
+  assert.match(one.stdout, /^\| ⑨ \| .*\| ✅ \|$/m);
+  assert.doesNotMatch(one.stdout, /이식 성공|이식 실패/);
+
+  const dev = run(['--all', root], { ...env, HARNESS_KIT_DIRTY_OK: '1' });
+  assert.equal(dev.status, 0, dev.stdout + dev.stderr);
+  assert.doesNotMatch(dev.stdout, /커밋 안 된/);
+});
+
 test('⛔ ① 그래프 도구도 키트 판과 비교한다 — 옛 자기 그래프 설치도 예외가 아니다(13차)', () => {
   const dir = installed();
   writeFileSync(join(dir, '.harness/harness.json'), JSON.stringify({ profile: 'existing', mode: 'local', graph: { tools: 'tools', rules: '`AGENTS.md`' }, state: STATE, checks: [CHECK] }));
@@ -231,6 +264,27 @@ test('⭐ --all <폴더> — 그 아래 설치마다 ⑨ 판 · ① 동일만 �
   const ok = all();
   assert.equal(ok.status, 0, ok.stdout);
   assert.match(ok.stdout, /설치 2곳 모두 키트 판/);
+});
+
+test('--all 제외 목록(키트 저장소 .harness/harness.json installs.skip) — 제외 줄로만 보이고 판정에서 뺀다 · 없는 이름은 ⚠️ · 설정 · 키가 없으면 그대로', () => {
+  const root = tmp('installs-');
+  cpSync(installed(), join(root, 'a'), { recursive: true });
+  cpSync(installed({ files: { '.harness/kit-commit': `${'0'.repeat(40)}\n` } }), join(root, 'b'), { recursive: true });
+  const conf = (body) => { const d = target(body); return join(d, '.harness', 'harness.json'); };
+
+  const r = checkAll(root, conf({ checks: [], installs: { skip: ['b', 'gone'] } }));
+  assert.equal(r.ok, true, r.text);
+  assert.match(r.text, /^\| b \| 제외\(\.harness\/harness\.json installs\.skip\) \|/m);
+  assert.doesNotMatch(r.text, /0000000/);
+  assert.match(r.text, /^⚠️ .*gone/m);
+  assert.doesNotMatch(r.text, /^⚠️ .*\bb\b/m);
+
+  for (const none of [join(tmp('noconf-'), 'harness.json'), conf({ checks: [] })]) {
+    const old = checkAll(root, none);
+    assert.equal(old.ok, false, old.text);
+    assert.match(old.text, /^\| b \| .*0000000.*\| ⛔ \|$/m);
+    assert.doesNotMatch(old.text, /제외|⚠️/);
+  }
 });
 
 test('⛔ CLI — 하나라도 ⛔ 면 exit 1 · 표 끝에 판정 줄 · 대상의 사본으로 돌리면 거부', () => {

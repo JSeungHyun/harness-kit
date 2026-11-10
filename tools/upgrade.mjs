@@ -34,6 +34,12 @@ export function kitCommit() {
   try { return kitGit('rev-parse', 'HEAD').trim(); } catch { return null; }
 }
 
+// 키트 작업 트리의 커밋 안 된 변경(갱신이 얹는 것) — 있으면 설치본이 미커밋 판을 커밋 이름으로 받는다. git 저장소가 아니면 없다
+export function kitDirty() {
+  try { return kitGit('status', '--porcelain', '--', 'lib', 'tools', 'policy', 'templates').split('\n').filter(Boolean).map((l) => l.slice(3)); } catch { return []; }
+}
+export const list = (a) => `${a.slice(0, 4).map((p) => p.replace(/\\/g, '/')).join(', ')}${a.length > 4 ? ` 외 ${a.length - 4}` : ''}`;
+
 // harness.json graph — 프로젝트별 값은 기록 위치(store) · 기록 규칙 자리(rules) · 이름(names)뿐이고 도구는 늘 .harness/tools 한 벌이다.
 // tools 가 다른 값이면 13차 전 「자기 그래프」 설치 — --migrate-graph 로 옮긴다. 그 기록은 <tools>/graph/requests.jsonl 에 있다
 export const graphOf = (raw) => {
@@ -190,6 +196,9 @@ function migrateGraph(dir, raw) {
 
 export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   assertKit('upgrade');
+  // 시험 · 개발용 우회는 HARNESS_KIT_DIRTY_OK 하나 — 그때 판 이름에 -dirty 를 붙여 이식 검사 ⑨ 가 ⛔ 로 본다
+  const dirty = kitDirty();
+  if (dirty.length && !process.env.HARNESS_KIT_DIRTY_OK) return { text: `⛔ 키트에 커밋 안 된 변경 — 커밋한 뒤 갱신한다(설치본에 미커밋 판이 커밋 이름으로 적힌다): ${list(dirty)}`, stop: true };
   loadConfig(dir);
   let raw = JSON.parse(readFileSync(join(dir, CONFIG), 'utf8'));
   const fill = filler(raw);
@@ -201,8 +210,9 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
   // 이식 검사 ⑨ 가 이 커밋을 키트의 지금 커밋과 비교한다
   const commit = kitCommit();
-  if (commit) writeFileSync(join(dir, '.harness', 'kit-commit'), `${commit}\n`);
-  out.push(`✅ .harness/{lib,tools,policy} — 키트의 지금 것으로${commit ? ` (키트 ${commit.slice(0, 7)} — .harness/kit-commit)` : ''}`);
+  const mark = dirty.length ? '-dirty' : '';
+  if (commit) writeFileSync(join(dir, '.harness', 'kit-commit'), `${commit}${mark}\n`);
+  out.push(`✅ .harness/{lib,tools,policy} — 키트의 지금 것으로${commit ? ` (키트 ${commit.slice(0, 7)}${mark} — .harness/kit-commit)` : ''}`);
   if (own && migrate) {
     const m = migrateGraph(dir, raw);
     raw = m.conf;

@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync, cpSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { target, repoFile, put, gitRepo } from './scene.mjs';
+import { target, repoFile, put, gitRepo, kitRepo, tmp } from './scene.mjs';
 
 const KIT = fileURLToPath(new URL('..', import.meta.url));
 const TOOL = join(KIT, 'tools', 'upgrade.mjs');
@@ -93,10 +93,38 @@ test('⛔ --own-rules 가 만든 파일도 로컬 전용이면 git 에서 숨긴
   assert.equal(git('status', '--porcelain'), '');
 });
 
-test('⭐ 갱신이 키트 커밋을 설치본에 기록한다 — 이식 검사 ⑨ 가 키트의 지금 커밋과 비교한다', () => {
-  const dir = installed();
-  run(dir);
-  assert.equal(read(dir, '.harness/kit-commit').trim(), execFileSync('git', ['-C', KIT, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
+test('⭐ 갱신이 키트 커밋을 설치본에 기록한다(이식 검사 ⑨ 가 비교) — ⛔ 키트에 커밋 안 된 변경이 있으면 아무것도 얹지 않고 exit 1 · 우회 환경변수면 <sha>-dirty · git 저장소가 아닌 키트는 그대로 진행', () => {
+  const kit = kitRepo();
+  const up = (dir, from = kit.dir, env = kit.env) => spawnSync(process.execPath, [join(from, 'tools', 'upgrade.mjs'), dir], { encoding: 'utf8', env });
+  const current = () => installed(fill(repoFile(RULE)));
+
+  const clean = current();
+  const ok = up(clean);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.equal(read(clean, '.harness/kit-commit'), `${kit.sha}\n`);
+
+  put(kit.dir, 'tools/verify.mjs', `${readFileSync(join(kit.dir, 'tools/verify.mjs'), 'utf8')}// 작업 중\n`);
+  put(kit.dir, 'templates/draft.md', '초안\n');
+  const dir = current();
+  const r = up(dir);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /^⛔ 키트에 커밋 안 된 변경 — 커밋한 뒤 갱신한다/m);
+  assert.match(r.stdout, /tools\/verify\.mjs/);
+  assert.match(r.stdout, /templates\/draft\.md/);
+  assert.equal(read(dir, '.harness/lib/evidence.mjs'), '// 옛 판정');
+  assert.ok(!existsSync(join(dir, '.harness/kit-commit')));
+
+  const dev = up(dir, kit.dir, { ...kit.env, HARNESS_KIT_DIRTY_OK: '1' });
+  assert.equal(dev.status, 0, dev.stdout + dev.stderr);
+  assert.equal(read(dir, '.harness/kit-commit'), `${kit.sha}-dirty\n`);
+
+  // 압축으로 받은 키트 — 이력이 없어 커밋도 변경도 모른다
+  const zip = join(tmp('zip-'), 'kit');
+  for (const d of ['lib', 'tools', 'policy', 'templates']) cpSync(join(kit.dir, d), join(zip, d), { recursive: true });
+  const plain = current();
+  const z = up(plain, zip, { ...kit.env, GIT_CEILING_DIRECTORIES: dirname(zip) });
+  assert.equal(z.status, 0, z.stdout + z.stderr);
+  assert.ok(!existsSync(join(plain, '.harness/kit-commit')));
 });
 
 test('⭐ 설정은 쓰지 않는다 — 옛 플러그인 정리 · 정책 반영 명령을 낸다', () => {

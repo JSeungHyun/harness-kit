@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// 테스트는 작업 중인(커밋 안 된) 이 레포를 키트로 쓴다 — 갱신 · 이식 검사의 「더러운 키트」 거부를 끈다. 거부 자체는 kitRepo 로 시험한다
+process.env.HARNESS_KIT_DIRTY_OK = '1';
+
 // 이 테스트 파일이 만든 임시 폴더 — 파일이 끝나면 지운다. 안 지우면 npm test 한 번에 ~150개씩 쌓인다
 const made = [];
 after(() => {
@@ -46,6 +49,16 @@ export function gitRepo(files = {}, { commits = 1, globalIgnore } = {}) {
     git('commit', '-q', '--allow-empty', '-m', `커밋 ${i + 1}`);
   }
   return { dir, env, git };
+}
+
+// 합성 키트 — 이 키트의 배포 파일을 커밋한 임시 저장소. env 에는 더러운 키트 우회가 없다
+export function kitRepo() {
+  const repo = gitRepo();
+  for (const d of ['lib', 'tools', 'policy', 'templates', '.claude-plugin']) cpSync(fileURLToPath(new URL(`../${d}`, import.meta.url)), join(repo.dir, d), { recursive: true });
+  repo.git('add', '-A');
+  repo.git('commit', '-q', '-m', '키트');
+  delete repo.env.HARNESS_KIT_DIRTY_OK;
+  return { ...repo, sha: repo.git('rev-parse', 'HEAD').trim() };
 }
 
 // 설치된 그래프 — .harness/tools 에 키트 그래프 도구 · .harness/harness.json 의 graph 설정 · 기록은 graph.store(없으면 .harness/graph).

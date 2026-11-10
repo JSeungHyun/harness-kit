@@ -10,12 +10,11 @@ import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
-import { KIT, DOCS, nl, assertKit, kitCommit, graphOf, ownGraph, filler, docState, summary, settingsShape, coversGap, ledgerLeft, graphRefs } from './upgrade.mjs';
+import { KIT, DOCS, nl, list, assertKit, kitCommit, kitDirty, graphOf, ownGraph, filler, docState, summary, settingsShape, coversGap, ledgerLeft, graphRefs } from './upgrade.mjs';
 import { applyPolicy, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
 
 const slash = (p) => p.replace(/\\/g, '/');
-const list = (a) => `${a.slice(0, 4).map(slash).join(', ')}${a.length > 4 ? ` 외 ${a.length - 4}` : ''}`;
 const keys = (a, b) => [...new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])];
 // 바뀔 곳 — 권한 · 훅은 한 단계 내려가 이름을 댄다
 const differ = (a, b) => keys(a, b).filter((k) => !isDeepStrictEqual(a?.[k], b?.[k]))
@@ -64,16 +63,38 @@ function sameFiles(dir, raw) {
 function sameCommit(dir) {
   const kit = kitCommit();
   const mine = existsSync(join(dir, '.harness', 'kit-commit')) ? readFileSync(join(dir, '.harness', 'kit-commit'), 'utf8').trim() : '';
-  return { observed: `설치본 ${mine.slice(0, 7) || '기록 없음'} · 키트 ${kit?.slice(0, 7) ?? '모름(git 저장소가 아니다)'}`, ok: Boolean(kit) && mine === kit };
+  const at = mine.endsWith('-dirty') ? `${mine.slice(0, 7)}-dirty(커밋 안 된 키트로 갱신됨 — 커밋 뒤 다시 갱신)` : mine.slice(0, 7) || '기록 없음';
+  return { observed: `설치본 ${at} · 키트 ${kit?.slice(0, 7) ?? '모름(git 저장소가 아니다)'}`, ok: Boolean(kit) && mine === kit };
+}
+
+// 키트가 더러우면 ① 은 작업 트리와 · ⑨ 는 HEAD 와 비교해 멀쩡한 설치가 ⛔, 미커밋 판을 받은 설치가 ✅ 로 보인다 — 표는 내되 판정 줄은 내지 않는다
+function dirtyKit() {
+  const d = process.env.HARNESS_KIT_DIRTY_OK ? [] : kitDirty();
+  return d.length ? `⛔ 키트 작업 트리에 커밋 안 된 변경 — 판정은 커밋 뒤에 (${list(d)}) · 아래 표는 참고만` : '';
 }
 
 // 이 PC 설치 현황 — 폴더 아래 설치마다 ⑨ · ① 만(verify · 훅 합성 없이). 키트 개선의 끝은 커밋이 아니라 이 표가 모두 ✅ 인 때다
-export function checkAll(root) {
+// installs.skip — 키트 저장소 로컬 설정에만 두는 키(설치 대상 harness.json 엔 없다): 사용자가 갱신하지 않기로 한 설치 폴더 이름
+export function checkAll(root, config = join(KIT, CONFIG)) {
   assertKit('install-check');
-  return readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(root, e.name))
+  const skip = readJson(config).installs?.skip ?? [];
+  const names = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
     // 키트 저장소(이 레포 · 다른 클론)는 자기 verify 용 harness.json 만 있다 — 설치가 아니다
-    .filter((d) => existsSync(join(d, CONFIG)) && !existsSync(join(d, 'templates', 'rules', 'harness.md')))
-    .map((d) => ({ name: basename(d), ver: sameCommit(d), files: sameFiles(d, readJson(join(d, CONFIG))) }));
+    .filter((n) => existsSync(join(root, n, CONFIG)) && !existsSync(join(root, n, 'templates', 'rules', 'harness.md')));
+  const all = names.filter((n) => !skip.includes(n)).map((n) => ({ name: n, ver: sameCommit(join(root, n)), files: sameFiles(join(root, n), readJson(join(root, n, CONFIG))) }));
+  const cell = (s) => s.replace(/\|/g, '\\|');
+  const bad = all.filter((a) => !a.ver.ok || !a.files.ok).map((a) => a.name);
+  const gone = skip.filter((n) => !names.includes(n));
+  const dirty = dirtyKit();
+  return {
+    ok: all.length > 0 && !bad.length && !dirty,
+    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 맞나 |', '|---|---|---|---|',
+      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | — |`),
+      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.ver.ok && a.files.ok ? '✅' : '⛔'} |`),
+      ...(gone.length ? ['', `⚠️ installs.skip 에 있는데 이 폴더에 설치가 없다: ${gone.join(' · ')} — 목록이 낡았다`] : []),
+      ...(dirty ? [] : ['', !all.length ? '⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
+        : `✅ 설치 ${all.length}곳 모두 키트 판 (${kitCommit()?.slice(0, 7)})`])].join('\n'),
+  };
 }
 
 export function checkInstall(dir, { plugins } = {}) {
@@ -175,22 +196,21 @@ export function checkInstall(dir, { plugins } = {}) {
 cli(import.meta.url, () => {
   const args = process.argv.slice(2);
   if (args.includes('--all')) {
-    const all = checkAll(args[args.indexOf('--all') + 1] ?? process.cwd());
-    const cell = (s) => s.replace(/\|/g, '\\|');
-    console.log('| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 맞나 |\n|---|---|---|---|');
-    for (const a of all) console.log(`| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.ver.ok && a.files.ok ? '✅' : '⛔'} |`);
-    const bad = all.filter((a) => !a.ver.ok || !a.files.ok).map((a) => a.name);
-    console.log(!all.length ? '\n⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `\n⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
-      : `\n✅ 설치 ${all.length}곳 모두 키트 판 (${kitCommit()?.slice(0, 7)})`);
-    process.exit(all.length && !bad.length ? 0 : 1);
+    const { text, ok } = checkAll(args[args.indexOf('--all') + 1] ?? process.cwd());
+    console.log(text);
+    process.exit(ok ? 0 : 1);
   }
   const rows = checkInstall(args.find((a) => !a.startsWith('--')) ?? process.cwd());
-  if (args.includes('--json')) console.log(JSON.stringify(rows, null, 2));
-  else {
+  const dirty = dirtyKit();
+  if (args.includes('--json')) {
+    if (dirty) console.error(dirty);
+    console.log(JSON.stringify(rows, null, 2));
+  } else {
+    if (dirty) console.log(`${dirty}\n`);
     console.log('| | 기대 | 관측 | 맞나 |\n|---|---|---|---|');
     for (const r of rows) console.log(`| ${r.n} | ${r.what} | ${r.observed.replace(/\|/g, '\\|')} | ${r.ok ? '✅' : '⛔'} |`);
     const bad = rows.filter((r) => !r.ok).map((r) => r.n);
-    console.log(bad.length ? `\n⛔ 이식 실패 — ⛔ ${bad.length}개 (${bad.join(' ')}) · 「이식 성공」이라고 쓰지 않는다` : `\n✅ 이식 성공 — ${rows.length}/${rows.length}`);
+    if (!dirty) console.log(bad.length ? `\n⛔ 이식 실패 — ⛔ ${bad.length}개 (${bad.join(' ')}) · 「이식 성공」이라고 쓰지 않는다` : `\n✅ 이식 성공 — ${rows.length}/${rows.length}`);
   }
-  process.exit(rows.every((r) => r.ok) ? 0 : 1);
+  process.exit(rows.every((r) => r.ok) && !dirty ? 0 : 1);
 });
