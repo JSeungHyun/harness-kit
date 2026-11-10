@@ -184,3 +184,17 @@ test('⛔ 설치되는 템플릿 · 정책 · SETUP 이 키트에서 지운 도�
     for (const g of gone) assert.ok(!repoFile(rel).includes(g), `${rel} → ${g}`);
   }
 });
+
+test('⛔ 키트 소유 · 프로젝트 설정 · 프로젝트 데이터는 lib/parts.mjs 한 곳 — SETUP · 이식 검사 · 구조 문서가 「다를 수 있는 것」을 따로 적지 않고, 갱신 경로 상수를 도구가 다시 정의하지 않는다(14차)', () => {
+  assert.match(repoFile('SETUP.md'), /<kit>\/lib\/parts\.mjs/);
+  for (const rel of ['SETUP.md', 'tools/install-check.mjs', 'docs/structure.md']) assert.doesNotMatch(repoFile(rel), /다를 수 있는 것/, rel);
+  for (const rel of ['tools/upgrade.mjs', 'tools/install-check.mjs']) assert.doesNotMatch(repoFile(rel), /(SHIPPED|DOCS) = \[/, rel);
+});
+
+test('⭐ SETUP 의 「테스트 없음」 선언은 검사의 "tests": "none" + why 하나 — ⑤ 「테스트 러너가 아직 없다」 행 · 갱신의 covers 멈춤 줄이 그것을 가리킨다', () => {
+  const setup = repoFile('SETUP.md');
+  const row = setup.split(/\r?\n/).find((l) => l.startsWith('| 테스트 러너가 아직 없다')) ?? '';
+  assert.match(row, /"tests": "none"/);
+  const stop = setup.split(/\r?\n/).find((l) => l.includes('covers 를 가진 검사가 없다`')) ?? '';
+  assert.match(stop, /"tests": "none"/);
+});

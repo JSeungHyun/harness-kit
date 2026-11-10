@@ -20,7 +20,7 @@ const CURRENT = execFileSync('git', ['-C', KIT, 'show', `${deleted}^:templates/s
 const oldRule = fill(execFileSync('git', ['-C', KIT, 'show', `${first}:${RULE}`], { encoding: 'utf8' }));
 
 function installed(rule = oldRule, settings = { enabledPlugins: { 'ponytail@ponytail': true, 'superpowers@claude-plugins-official': false } }) {
-  return target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r' }] }, {
+  return target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] }, {
     '.claude/rules/harness.md': rule,
     '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')),
     '.claude/settings.local.json': JSON.stringify(settings),
@@ -160,7 +160,7 @@ const fillWith = (graph) => (s) => s.replaceAll('<decisions>', STATE.decisions).
 const rec = (req, files, extra = {}) => JSON.stringify({ date: '2026-10-01', recorded: '2026-10-01', req, files, ...extra });
 function ownGraph() {
   const fill = fillWith(OWN);
-  return target({ profile: 'existing', mode: 'local', graph: OWN, state: STATE, checks: [{ id: 'graph-check', cmd: 'node tools/graph-find.mjs --check', kind: 'exit-code' }] }, {
+  return target({ profile: 'existing', mode: 'local', graph: OWN, state: STATE, checks: [{ id: 'graph-check', cmd: 'node tools/graph-find.mjs --check', kind: 'exit-code', recipe: 'graph-check' }] }, {
     '.claude/rules/harness.md': fill(repoFile(RULE)),
     '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')),
     'AGENTS.md': '# 지도\n\n- 요구가 오면 `node tools/graph-find.mjs <어근>`\n',
@@ -302,7 +302,7 @@ test('⛔ 빌드 · 테스트 단서가 보이는데 covers 를 가진 검사가
   const r = run(bare);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /⛔ .*package\.json test.*covers/);
-  const covered = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'] }] }, pkg);
+  const covered = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'], recipe: 'node-npm-test' }] }, pkg);
   assert.equal(run(covered).status, 0);
 });
 
@@ -327,4 +327,36 @@ test('⛔ 「지운 것」 목록이 키트와 맞는다 — 지운 도구 · �
   }
   const allow = JSON.parse(repoFile('policy/settings.json')).permissions.allow;
   for (const a of removed.allow) assert.ok(!allow.includes(a), a);
+});
+
+test('⛔ 검사에 처방 id 도 why 도 없거나 목록에 없는 처방이면 — 도구 · 규칙은 얹고 끝에 ⛔ exit 1 · 적을 줄 · detect 처방 후보 · harness.json 은 키트가 쓰지 않는다', () => {
+  const pkg = { 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) };
+  const conf = (checks) => ({ profile: 'existing', mode: 'local', state: STATE, checks });
+  const dir = target(conf([{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'] }, { id: 'u', cmd: 'npm test', kind: 'exit-code', recipe: 'no-such' }]), pkg);
+  const before = read(dir, '.harness/harness.json');
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.ok(existsSync(join(dir, '.harness/tools/verify.mjs')));
+  assert.match(r.stdout, /^⛔ 처방 · why 없는 검사 t — 그 검사에 "recipe": "<처방 id>" 또는 "why": "<처방에서 벗어난 이유>" 를 적는다$/m);
+  assert.match(r.stdout, /^⛔ 목록에 없는 처방 u\(no-such\)/m);
+  assert.match(r.stdout, /처방 후보: node-npm-test — .*\(검증됨\)/);
+  assert.equal(read(dir, '.harness/harness.json'), before);
+  assert.equal(run(target(conf([{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'], why: '이 프로젝트의 테스트 묶음' }]), pkg)).status, 0);
+});
+
+test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why)이면 covers 단서 ⛔ 를 내지 않는다 · 선언 뒤 테스트 소스가 생기면 ⚠️', () => {
+  const pom = { 'pom.xml': '<project/>' };
+  const conf = (extra) => ({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 'compile', cmd: 'javac', kind: 'exit-code', recipe: 'java-javac-compile', ...extra }] });
+  const bare = run(target(conf({}), pom));
+  assert.equal(bare.status, 1);
+  assert.match(bare.stdout, /⛔ 빌드 · 테스트 단서\(pom\.xml\).*"tests": "none"/);
+  const dir = target(conf({ tests: 'none', why: '테스트 소스 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다' }), pom);
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stdout);
+  assert.doesNotMatch(r.stdout, /covers 를 가진 검사가 없다|테스트가 생겼다/);
+  put(dir, 'src/test/java/AppTest.java', 'class AppTest {}\n');
+  const grown = run(dir);
+  assert.equal(grown.status, 0, grown.stdout);
+  assert.match(grown.stdout, /^⚠️ 테스트가 생겼다 — junit 검사와 covers 를 더할 때 \(src\/test\)$/m);
+  assert.equal(run(target(conf({ tests: 'none' }), pom)).status, 1);
 });

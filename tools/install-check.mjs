@@ -2,15 +2,16 @@
 // 이식 동일성 — 설치본이 키트와 같은지 ①~⑨ 체크리스트로 판정한다. 설계안.
 //   node <kit>/tools/install-check.mjs <대상> [--json]
 //   node <kit>/tools/install-check.mjs --all <폴더>   # 그 아래 설치마다 ⑨ 판 · ① 동일만 — 키트를 고친 뒤 이 PC 설치가 모두 같은 판인가
-// 다를 수 있는 것(그래프 데이터와 그 위치 · 장부 본문 · 기준선 · 검사 명령과 covers 값 · 지시 파일 본문 · 프로젝트가 더한 도구)은 보지 않는다.
+// 키트 소유 · 프로젝트 설정 · 프로젝트 데이터의 자리는 lib/parts.mjs 한 곳 — 설정 · 데이터는 판정 줄 아래 「프로젝트 맞춤」에 보이고 판정하지 않는다.
 // ⛔ 하나라도 ⛔ 면 exit 1 — 「이식 성공」은 이 도구의 판정 줄로만 쓴다(설치 세션의 글이 아니라).
-import { existsSync, readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
-import { KIT, DOCS, SHIPPED, nl, list, assertKit, kitCommit, kitDirty, shippedSame, graphOf, ownGraph, filler, docState, summary, settingsShape, coversGap, ledgerLeft, graphRefs } from './upgrade.mjs';
+import { KIT, DOCS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
+import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, ledgerLeft, graphRefs } from './upgrade.mjs';
 import { applyPolicy, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
 
@@ -46,8 +47,7 @@ function gateProbe(dir) {
 
 // ① 키트 도구 · lib · 정책 — 갱신이 복사하는 것 그대로(그래프 도구 포함 — 예외 없음) · 프로젝트가 더한 도구는 보지 않는다
 function sameFiles(dir, raw) {
-  const files = ['lib', 'tools', 'policy'].flatMap((d) => readdirSync(join(KIT, d), { recursive: true }).map((f) => join(d, f)))
-    .filter((f) => statSync(join(KIT, f)).isFile());
+  const files = kitFiles();
   const at = (f) => join(dir, '.harness', f);
   const missing = files.filter((f) => !existsSync(at(f)));
   const changed = files.filter((f) => existsSync(at(f)) && nl(readFileSync(at(f), 'utf8')) !== nl(readFileSync(join(KIT, f), 'utf8')));
@@ -153,8 +153,9 @@ export function checkInstall(dir, { plugins } = {}) {
   const refs = graphRefs(dir);
   if (refs.length) probs.push(`키트 밖 그래프 도구를 가리키는 곳 ${list(refs)} — .harness/tools/graph-*.mjs 로 고친다`);
   const gap = coversGap(dir, raw);
-  if (gap.length) probs.push(`빌드 · 테스트 단서(${gap.join(' · ')})가 있는데 covers 를 가진 검사가 없다 (SETUP ⑤)`);
-  row('⑤', 'harness.json — 형식 · 프로필 · 모드 · 장부 · 그래프(이관 · 기록 위치 · 키트 밖 도구 참조) · 단서가 있으면 covers 검사',
+  if (gap.length) probs.push(`빌드 · 테스트 단서(${gap.join(' · ')})가 있는데 covers 를 가진 검사도 「테스트 없음」 선언도 없다 (SETUP ⑤)`);
+  probs.push(...recipeGap(raw));
+  row('⑤', 'harness.json — 형식 · 프로필 · 모드 · 장부 · 그래프(이관 · 기록 위치 · 키트 밖 도구 참조) · 단서가 있으면 covers 검사 또는 「테스트 없음」 선언 · 검사마다 처방 또는 why',
     probs.join(' · ') || `검사 ${raw.checks?.length ?? 0} (covers ${(raw.checks ?? []).filter((c) => c.covers?.length).length}) · ${raw.profile} · ${raw.mode}`, !probs.length);
 
   // ⑥ PC — 대상 밖이다. plugin-plan 의 판정을 그대로 쓴다
@@ -194,6 +195,27 @@ export function checkInstall(dir, { plugins } = {}) {
   return rows;
 }
 
+// 프로젝트 맞춤 — lib/parts.mjs 의 프로젝트 설정 · 데이터. 판정하지 않지만 숨기지 않는다(같은 벗어남이 여러 설치에서 반복되면 처방 후보)
+export function custom(dir) {
+  const raw = readJson(join(dir, CONFIG));
+  const g = graphOf(raw);
+  const count = (rel) => (existsSync(join(dir, rel)) ? readFileSync(join(dir, rel), 'utf8').split('\n').filter((l) => l.trim()).length : 0);
+  const cell = (s) => String(s).replace(/\|/g, '\\|');
+  const short = (s) => (s.length > 50 ? `${s.slice(0, 50)}…` : s);
+  const from = (c) => [c.recipe && `처방 ${c.recipe}`, c.why?.trim() && `why: ${c.why.trim()}`].filter(Boolean).join(' · ') || '없음';
+  const rules = existsSync(join(dir, '.claude', 'rules')) ? readdirSync(join(dir, '.claude', 'rules')).filter((f) => /^project-.+\.md$/.test(f)).map((f) => `.claude/rules/${f}`) : [];
+  const names = raw.graph?.names ? raw.graph.names.join(' · ') || '끔' : '기본(저장소 폴더 이름)';
+  const grown = grownTests(dir, raw);
+  return ['## 프로젝트 맞춤 — 판정 아님 · 키트와 달라도 되는 자리(lib/parts.mjs)', `> ${PARTS.config}`, `> ${PARTS.data}`, '',
+    '| 검사 | kind | 명령 | covers | 처방 · 이유 |', '|---|---|---|---|---|',
+    ...(raw.checks ?? []).map((c) => `| ${cell(c.id)} | ${c.kind} | ${cell(short(c.cmd ?? ''))} | ${c.covers?.length ?? 0} | ${cell(from(c))} |`), '',
+    ...(raw.checks ?? []).filter((c) => c.tests === 'none').map((c) => `테스트 없음 — 코드 변경마다 /code-review (${c.id}: ${c.why?.trim() ?? ''})`),
+    ...(grown ? [grown] : []),
+    `그래프 — graph.names ${names} · graph.store ${g.store} · 기록 ${count(g.store)}건`,
+    `프로젝트 규칙 ${rules.join(' · ') || '없음'}`,
+    `장부 ${Object.values(raw.state ?? {}).map((at) => `${at} ${count(at)}줄`).join(' · ') || '없음'}`].join('\n');
+}
+
 cli(import.meta.url, () => {
   const args = process.argv.slice(2);
   if (args.includes('--all')) {
@@ -201,7 +223,8 @@ cli(import.meta.url, () => {
     console.log(text);
     process.exit(ok ? 0 : 1);
   }
-  const rows = checkInstall(args.find((a) => !a.startsWith('--')) ?? process.cwd());
+  const dir = args.find((a) => !a.startsWith('--')) ?? process.cwd();
+  const rows = checkInstall(dir);
   const dirty = dirtyKit();
   if (args.includes('--json')) {
     if (dirty) console.error(dirty);
@@ -212,6 +235,7 @@ cli(import.meta.url, () => {
     for (const r of rows) console.log(`| ${r.n} | ${r.what} | ${r.observed.replace(/\|/g, '\\|')} | ${r.ok ? '✅' : '⛔'} |`);
     const bad = rows.filter((r) => !r.ok).map((r) => r.n);
     if (!dirty) console.log(bad.length ? `\n⛔ 이식 실패 — ⛔ ${bad.length}개 (${bad.join(' ')}) · 「이식 성공」이라고 쓰지 않는다` : `\n✅ 이식 성공 — ${rows.length}/${rows.length}`);
+    console.log(`\n${custom(dir)}`);
   }
   process.exit(rows.every((r) => r.ok) && !dirty ? 0 : 1);
 });

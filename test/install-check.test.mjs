@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, writeFileSync } from 'node:fs';
+import { cpSync, writeFileSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, put, repoFile, tmp, kitRepo } from './scene.mjs';
-import { checkInstall, checkAll } from '../tools/install-check.mjs';
+import { checkInstall, checkAll, custom } from '../tools/install-check.mjs';
+import { partOf } from '../lib/parts.mjs';
 import { applyPolicy } from '../tools/policy-apply.mjs';
 
 const KIT = fileURLToPath(new URL('..', import.meta.url));
@@ -16,7 +17,7 @@ const pin = (name) => JSON.parse(repoFile('.claude-plugin/marketplace.json')).pl
 const STATE = { decisions: '.harness/state/decisions.md', lessons: '.harness/state/lessons.md' };
 const fill = (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons)
   .replaceAll('<graph-tools>', '.harness/tools').replaceAll('<graph-rules>', '`.claude/rules/graph.md`');
-const CHECK = { id: 't', cmd: 'node -e "0"', kind: 'exit-code', covers: ['src/**'] };
+const CHECK = { id: 't', cmd: 'node -e "0"', kind: 'exit-code', covers: ['src/**'], why: '시험용 명령 — 처방 밖' };
 
 // ⑥ 은 PC 상태라 대상 밖이다 — 가짜 사용자 폴더에 고정 커밋에서 받은 리뷰 스킬을 둔다
 function pc(skill = '---\nname: ponytail-review\n---\n리뷰\n', sha = pin('ponytail').source.sha) {
@@ -315,7 +316,83 @@ test('⛔ CLI — 하나라도 ⛔ 면 exit 1 · 표 끝에 판정 줄 · 대상
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stdout, /^\| ⑨ \|.*\| ⛔ \|$/m);
   assert.match(r.stdout, /^⛔ 이식 실패 — /m);
+  assert.match(r.stdout, /^## 프로젝트 맞춤 — 판정 아님/m);
   const copy = spawnSync(process.execPath, [join(dir, '.harness', 'tools', 'install-check.mjs'), dir], { encoding: 'utf8' });
   assert.equal(copy.status, 1);
   assert.match(copy.stderr, /키트 저장소의/);
+});
+
+test('⛔ ⑤ 검사마다 처방 id 또는 why — 없거나 처방 id 가 목록에 없으면 ⛔ + 검사 id · why 만 · 처방만이면 ✅', () => {
+  const plain = { id: 'g', cmd: 'node -e "0"', kind: 'exit-code' };
+  const five = (...checks) => check(installed({ checks: [CHECK, ...checks] }))['⑤'];
+  const none = five(plain, { ...plain, id: 'h', why: '  ' });
+  assert.equal(none.ok, false);
+  assert.match(none.observed, /처방 · why 없는 검사 g, h/);
+  assert.match(none.observed, /"recipe": "<처방 id>".*"why"/);
+  const unknown = five({ ...plain, recipe: 'no-such' });
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.observed, /목록에 없는 처방 g\(no-such\)/);
+  assert.equal(five({ ...plain, recipe: 'graph-check' }).ok, true);
+  assert.equal(five({ ...plain, why: '이 프로젝트는 컨테이너 안에서만 빌드된다' }).ok, true);
+});
+
+test('⭐ 표 아래 「프로젝트 맞춤」 절 — 판정 아님 · 검사마다 id · kind · 명령 앞부분 · covers 개수 · 처방 또는 why · graph.names · graph.store · 프로젝트 규칙 · 기록 건수 · 장부 줄 수', () => {
+  const rec = (req) => JSON.stringify({ date: '2026-10-01', recorded: '2026-10-01', req, files: [] });
+  const dir = installed({
+    checks: [{ id: 'graph-check', cmd: 'node .harness/tools/graph-find.mjs --check', kind: 'exit-code', recipe: 'graph-check' }, CHECK],
+    files: { '.harness/graph/requests.jsonl': `${rec('주문 취소')}\n${rec('주문 조회')}\n`, '.claude/rules/project-harness.md': '# 이 프로젝트의 규칙\n' },
+  });
+  const raw = JSON.parse(readFileSync(join(dir, '.harness/harness.json'), 'utf8'));
+  writeFileSync(join(dir, '.harness/harness.json'), JSON.stringify({ ...raw, graph: { names: ['shop'] } }));
+  assert.deepEqual(bad(check(dir)), []);
+  const text = custom(dir);
+  assert.match(text, /^## 프로젝트 맞춤 — 판정 아님/m);
+  assert.match(text, /^\| graph-check \| exit-code \| node \.harness\/tools\/graph-find\.mjs --check \| 0 \| 처방 graph-check \|$/m);
+  assert.match(text, /^\| t \| exit-code \| node -e "0" \| 1 \| why: 시험용 명령 — 처방 밖 \|$/m);
+  assert.match(text, /graph\.names shop · graph\.store \.harness\/graph\/requests\.jsonl · 기록 2건/);
+  assert.match(text, /프로젝트 규칙 \.claude\/rules\/project-harness\.md/);
+  assert.match(text, /장부 \.harness\/state\/decisions\.md \d+줄 · \.harness\/state\/lessons\.md \d+줄/);
+  assert.doesNotMatch(text, /^테스트 없음 — /m);
+});
+
+test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why) — 단서가 있어도 ⑤ ✅ · 맞춤 절에 늘 「테스트 없음 — 코드 변경마다 /code-review」 · 선언 없으면 지금처럼 ⛔ · why 없는 선언은 ⛔ · 테스트 소스가 생기면 ⚠️', () => {
+  const pom = { 'pom.xml': '<project/>' };
+  const compile = { id: 'compile', cmd: 'node -e "0"', kind: 'exit-code', recipe: 'java-javac-compile' };
+  const bare = check(installed({ checks: [compile], files: pom }))['⑤'];
+  assert.equal(bare.ok, false);
+  assert.match(bare.observed, /covers/);
+  const noWhy = check(installed({ checks: [{ ...compile, tests: 'none' }], files: pom }))['⑤'];
+  assert.equal(noWhy.ok, false);
+  assert.match(noWhy.observed, /「테스트 없음」 선언에 why 없음 compile/);
+
+  const dir = installed({ checks: [{ ...compile, tests: 'none', why: '테스트 소스 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다' }], files: pom });
+  assert.deepEqual(bad(check(dir)), []);
+  assert.match(custom(dir), /^테스트 없음 — 코드 변경마다 \/code-review \(compile: 테스트 소스 없음/m);
+  assert.doesNotMatch(custom(dir), /테스트가 생겼다/);
+  put(dir, 'src/test/java/AppTest.java', 'class AppTest {}\n');
+  assert.equal(check(dir)['⑤'].ok, true);
+  assert.match(custom(dir), /^⚠️ 테스트가 생겼다 — junit 검사와 covers 를 더할 때 \(src\/test\)/m);
+});
+
+test('⛔ 상수 밖 자리에 프로젝트 차이를 만들면 이식 검사가 잡는다 — 설치본의 모든 파일이 lib/parts.mjs 세 갈래 중 하나이고, 키트 소유는 비교 자리마다 한 줄만 달라도 ⛔', () => {
+  const dir = installed();
+  const raw = JSON.parse(readFileSync(join(dir, '.harness/harness.json'), 'utf8'));
+  const files = readdirSync(dir, { recursive: true }).map((f) => f.split('\\').join('/')).filter((f) => statSync(join(dir, f)).isFile());
+  assert.deepEqual(files.filter((f) => !partOf(f, raw)), [], '갈래가 없는 설치 파일');
+  // 공유 모드만 얹는 민감 정보 패턴(SETUP ③ 에서 프로젝트에 맞춘다)
+  const share = installed({ mode: 'share', files: { '.harness/scan.json': repoFile('templates/scan.json') } });
+  const shared = readdirSync(share, { recursive: true }).map((f) => f.split('\\').join('/')).filter((f) => statSync(join(share, f)).isFile());
+  assert.deepEqual(shared.filter((f) => !partOf(f, raw)), [], '갈래가 없는 공유 설치 파일');
+  assert.equal(partOf('.harness/scan.json', raw), 'config');
+  const kit = files.filter((f) => partOf(f, raw) === 'kit');
+  assert.ok(kit.includes('.harness/policy/recipes.json') && kit.includes('.harness/kit-commit') && kit.includes('.claude/skills/final-gate/SKILL.md'), kit.join(' '));
+  // .harness 의 lib · tools · policy 는 같은 목록(kitFiles)을 한 번에 비교한다 — 폴더마다 하나 · 새로 든 처방 목록 · 나머지는 하나씩
+  const one = [...new Set([...new Map(kit.map((f) => [/^\.harness\/(lib|tools|policy)\//.test(f) ? f.split('/')[1] : f, f])).values(), '.harness/policy/recipes.json'])];
+  for (const f of one) {
+    const before = readFileSync(join(dir, f));
+    writeFileSync(join(dir, f), Buffer.concat([before, Buffer.from('\n프로젝트 차이\n')]));
+    assert.notDeepEqual(bad(check(dir)), [], f);
+    writeFileSync(join(dir, f), before);
+  }
+  assert.deepEqual(bad(check(dir)), []);
 });

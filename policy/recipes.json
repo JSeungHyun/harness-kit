@@ -1,0 +1,56 @@
+[
+  {
+    "id": "graph-check",
+    "label": "그래프 기록 무결성",
+    "when": {},
+    "checks": [{ "id": "graph-check", "cmd": "node .harness/tools/graph-find.mjs --check", "kind": "exit-code" }],
+    "edit": [],
+    "status": "검증됨",
+    "basis": "그래프를 쓰는 모든 설치 · 2026-11 — 기록 위치는 graph.store 를 따른다"
+  },
+  {
+    "id": "node-npm-test",
+    "label": "npm test — package.json 의 test 스크립트",
+    "when": { "files": ["package.json"], "script": "test" },
+    "checks": [{ "id": "npm-test", "cmd": "npm test", "kind": "exit-code", "coversHint": "테스트가 import · readFileSync 하는 파일만" }],
+    "edit": [],
+    "status": "검증됨",
+    "basis": "기존 이식 · Java 웹 + JS 테스트 · 2026-11 — junit 리포터가 없어 exit-code"
+  },
+  {
+    "id": "java-javac-compile",
+    "label": "Java 소스 전체 javac 컴파일 — 단위 테스트가 없을 때",
+    "when": { "files": ["build.xml"] },
+    "checks": [{ "id": "compile", "cmd": "node -e \"require('fs').mkdirSync('target/harness-classes',{recursive:true})\" && dir /s /b <소스 폴더>\\*.java > target\\harness-srcs.txt && javac -nowarn -encoding UTF-8 -d target\\harness-classes -cp \"<클래스패스>\" @target\\harness-srcs.txt", "kind": "exit-code" }],
+    "edit": [],
+    "status": "검증됨",
+    "basis": "기존 이식 · Java 8 · ant · 단위 테스트 없음 · Windows cmd · 2026-11 — 타입 검사라 covers 없음(매퍼 XML · JSP 오류는 못 잡는다)"
+  },
+  {
+    "id": "maven-test",
+    "label": "Maven 테스트",
+    "when": { "files": ["pom.xml"] },
+    "checks": [{ "id": "mvn-test", "cmd": "mvn test", "kind": "junit-xml", "evidence": "target/surefire-reports", "coversHint": "src/main/** — 테스트가 돌리는 코드" }],
+    "edit": [],
+    "status": "후보",
+    "basis": "SETUP ⑤ 표 — 실제 설치에서 잰 적 없음"
+  },
+  {
+    "id": "node-tsc",
+    "label": "TypeScript 타입 검사 — package.json 의 typecheck 스크립트",
+    "when": { "files": ["tsconfig.json"], "script": "typecheck" },
+    "checks": [{ "id": "typecheck", "cmd": "npm run typecheck", "kind": "exit-code" }],
+    "edit": [],
+    "status": "후보",
+    "basis": "SETUP ⑤ 표 — 타입 검사라 covers 없음 · 실제 설치에서 잰 적 없음"
+  },
+  {
+    "id": "python-pytest",
+    "label": "pytest",
+    "when": { "files": ["pytest.ini", "conftest.py", "pyproject.toml"] },
+    "checks": [{ "id": "pytest", "cmd": "pytest --junitxml=test-results/junit.xml", "kind": "junit-xml", "evidence": "test-results" }],
+    "edit": [],
+    "status": "후보",
+    "basis": "SETUP ⑤ 표 — 실제 설치에서 잰 적 없음"
+  }
+]

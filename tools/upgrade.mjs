@@ -8,19 +8,12 @@
 import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadConfig, cli, CONFIG } from '../lib/config.mjs';
+import { KIT, SHIPPED, COPIED, DOCS, graphOf } from '../lib/parts.mjs';
 import { load, sup } from './graph-find.mjs';
-import { testHints } from './detect.mjs';
+import { testHints, testSources, RECIPES, recipeHints, recipeLine } from './detect.mjs';
 
-export const KIT = fileURLToPath(new URL('..', import.meta.url));
 const KIT_PATH = KIT.replace(/\\/g, '/').replace(/\/$/, '');
-// [키트 템플릿, 설치 위치, 프로젝트 규칙 파일 이름]
-export const DOCS = [
-  ['templates/rules/harness.md', '.claude/rules/harness.md', 'harness'],
-  ['templates/rules/graph.md', '.claude/rules/graph.md', 'graph'],
-  ['templates/skills/final-gate/SKILL.md', '.claude/skills/final-gate/SKILL.md', 'final-gate'],
-];
 export const nl = (s) => s.replace(/\r\n/g, '\n');
 const read = (p) => (existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : {});
 const kitGit = (...a) => execFileSync('git', ['-C', KIT, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -34,9 +27,6 @@ export function kitCommit() {
   try { return kitGit('rev-parse', 'HEAD').trim(); } catch { return null; }
 }
 
-// 갱신이 설치본에 얹는 키트 경로 — 이 밖(문서 · 테스트)만 바뀐 커밋은 설치본에 차이가 없다
-export const SHIPPED = ['lib', 'tools', 'policy', 'templates'];
-
 // 키트 작업 트리의 커밋 안 된 변경(갱신이 얹는 것) — 있으면 설치본이 미커밋 판을 커밋 이름으로 받는다. git 저장소가 아니면 없다
 export function kitDirty() {
   try { return kitGit('status', '--porcelain', '--', ...SHIPPED).split('\n').filter(Boolean).map((l) => l.slice(3)); } catch { return []; }
@@ -49,12 +39,6 @@ export function shippedSame(sha) {
 }
 export const list = (a) => `${a.slice(0, 4).map((p) => p.replace(/\\/g, '/')).join(', ')}${a.length > 4 ? ` 외 ${a.length - 4}` : ''}`;
 
-// harness.json graph — 프로젝트별 값은 기록 위치(store) · 기록 규칙 자리(rules) · 이름(names)뿐이고 도구는 늘 .harness/tools 한 벌이다.
-// tools 가 다른 값이면 13차 전 「자기 그래프」 설치 — --migrate-graph 로 옮긴다. 그 기록은 <tools>/graph/requests.jsonl 에 있다
-export const graphOf = (raw) => {
-  const g = { tools: '.harness/tools', rules: '`.claude/rules/graph.md`', ...raw.graph };
-  return { store: g.tools === '.harness/tools' ? '.harness/graph/requests.jsonl' : `${g.tools}/graph/requests.jsonl`, ...g };
-};
 export const ownGraph = (raw) => graphOf(raw).tools !== '.harness/tools';
 export function filler(raw) {
   const g = graphOf(raw);
@@ -163,8 +147,26 @@ export function ledgerLeft(dir, raw) {
   return { where, files };
 }
 
-// 빌드 · 테스트 단서가 있는데 코드를 덮는 검사가 없으면 그 단서 — 그때 verify 녹색은 코드 변경의 증거가 아니다
-export const coversGap = (dir, raw) => ((raw.checks ?? []).some((c) => c.covers?.length) ? [] : testHints(dir));
+// 빌드 · 테스트 단서가 있는데 코드를 덮는 검사가 없으면 그 단서 — 그때 verify 녹색은 코드 변경의 증거가 아니다. 「테스트 없음」 선언(tests: none)이면 그 자리는 /code-review 다
+export const coversGap = (dir, raw) => ((raw.checks ?? []).some((c) => c.covers?.length || c.tests === 'none') ? [] : testHints(dir));
+
+// 검사마다 처방 id 또는 처방에서 벗어난 이유 — 맞춤의 출처가 남아야 같은 벗어남이 여러 설치에서 반복되는지 본다. 「테스트 없음」은 why 가 그 이유다
+export function recipeGap(raw) {
+  const why = (c) => typeof c.why === 'string' && c.why.trim();
+  const checks = raw.checks ?? [];
+  const none = checks.filter((c) => !c.recipe && !why(c) && c.tests !== 'none').map((c) => c.id);
+  const unknown = checks.filter((c) => c.recipe && !RECIPES.some((r) => r.id === c.recipe)).map((c) => `${c.id}(${c.recipe})`);
+  const noWhy = checks.filter((c) => c.tests === 'none' && !why(c)).map((c) => c.id);
+  return [none.length && `처방 · why 없는 검사 ${none.join(', ')} — 그 검사에 "recipe": "<처방 id>" 또는 "why": "<처방에서 벗어난 이유>" 를 적는다`,
+    unknown.length && `목록에 없는 처방 ${unknown.join(', ')} — <kit>/policy/recipes.json 의 id 로 고치거나 why 로 바꾼다`,
+    noWhy.length && `「테스트 없음」 선언에 why 없음 ${noWhy.join(', ')} — "why": "<테스트가 없는 이유>"`].filter(Boolean);
+}
+
+// 「테스트 없음」을 선언했는데 테스트 소스가 생겼다 — 판정은 아니지만 늘 보인다
+export function grownTests(dir, raw) {
+  const at = (raw.checks ?? []).some((c) => c.tests === 'none') ? testSources(dir) : [];
+  return at.length ? `⚠️ 테스트가 생겼다 — junit 검사와 covers 를 더할 때 (${at.join(' · ')})` : '';
+}
 
 // 키트 밖 그래프 도구(<폴더>/graph-*.mjs, .harness/tools 가 아닌 것)를 가리키는 줄 — 지시 파일 · 프로젝트 규칙 · 스킬 · harness.json.
 // 키트 문서는 ② ③ 이 보고, 설정의 훅은 정책 줄이 바꿔 끼운다. 남아 있으면 모델이 옛 도구를 불러 판이 다시 갈라진다
@@ -216,7 +218,7 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   let stop = false;
 
   // 그래프 도구도 모든 설치에 — 프로젝트별 값은 harness.json graph 의 기록 위치 · 규칙 자리뿐이다
-  for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
+  for (const d of COPIED) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
   // 이식 검사 ⑨ 가 이 커밋을 키트의 지금 커밋과 비교한다
   const commit = kitCommit();
   const mark = dirty.length ? '-dirty' : '';
@@ -300,7 +302,16 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   if (hints.length) {
     stop = true;
     out.push('', `⛔ 빌드 · 테스트 단서(${hints.join(' · ')})가 보이는데 covers 를 가진 검사가 없다 — 관문 훅이 코드 변경마다 /code-review 를 요구하고 verify 는 「코드 검사 없음」을 낸다. `
-      + '그 코드를 돌리는 검사를 harness.json 에 더하고 covers 에 그 코드의 glob 을 적은 뒤(SETUP ⑤) 갱신을 다시 돌린다. 이 PC 에서 테스트를 못 돌리면 사용자에게 알리고 보고에 「코드 검사 없음 — 코드 변경은 /code-review」를 남긴다');
+      + '그 코드를 돌리는 검사를 harness.json 에 더하고 covers 에 그 코드의 glob 을 적은 뒤(SETUP ⑤) 갱신을 다시 돌린다. 테스트 소스가 없거나 이 PC 에서 못 돌리면(테스트 명령을 지어내지 않는다) 실제로 도는 검사 하나에 "tests": "none" 과 "why": "<이유>" 를 적는다 — 이식 검사 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다');
+  }
+  const grown = grownTests(dir, raw);
+  if (grown) out.push('', grown);
+
+  // harness.json 은 프로젝트 설정이라 키트가 쓰지 않는다 — 그 프로젝트 세션이 적도록 줄과 처방 후보를 낸다
+  const gap = recipeGap(raw);
+  if (gap.length) {
+    stop = true;
+    out.push('', ...gap.map((g) => `⛔ ${g}`), `   harness.json 은 프로젝트 설정 — 키트가 쓰지 않는다. detect 가 고른 ${recipeHints(dir).map(recipeLine).join(' · ')}`);
   }
   return { text: out.join('\n'), stop };
 }

@@ -5,9 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { cli } from '../lib/config.mjs';
+import { INSTRUCTIONS } from '../lib/parts.mjs';
 
 const SOURCE = /\.(c?[jt]sx?|m[jt]s|vue|svelte|java|kts?|scala|groovy|py|rb|go|rs|[ch]|cc|cpp|hpp|cs|php|swift|dart|sql|jsp|sh)$/i;
-const INSTRUCTIONS = ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md'];
 const OTHER_RULES = ['.cursor/rules', '.cursorrules', '.github/copilot-instructions.md'];
 export const INSTALL_PROBES = ['.claude/rules/harness.md', '.harness/harness.json', 'AGENTS.md', 'CLAUDE.md'];
 const INSTALLED = ['.harness', '.claude/rules/harness.md', '.claude/skills/final-gate'];
@@ -26,14 +26,29 @@ const dirtyPaths = (dirty) => dirty.flatMap((l) => l.slice(3).split(' -> ')).map
 // 로컬 전용 설치가 작업 중 변경과 겹치는 유일한 자리 — 설치가 고치고 git 에서 숨기는 경로
 const rewritten = (p) => p === 'CLAUDE.local.md' || p.startsWith('.claude/');
 
-// 루트와 하위 폴더 한 단계 — backend/ · frontend/ 로 나눈 저장소는 루트에 단서가 없다. typecheck 는 테스트 러너가 생기기 전의 exit-code 검사 후보다
+// 루트와 하위 폴더 한 단계 — backend/ · frontend/ 로 나눈 저장소는 루트에 단서가 없다
+const places = (dir) => ['', ...readdirSync(dir, { withFileTypes: true })
+  .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+  .map((e) => e.name)
+  .sort()];
+const scripts = (dir, sub) => { try { return JSON.parse(readFileSync(join(dir, sub, 'package.json'), 'utf8')).scripts ?? {}; } catch { return {}; } };
+
+// typecheck 는 테스트 러너가 생기기 전의 exit-code 검사 후보다
 export function testHints(dir) {
-  const subs = readdirSync(dir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
-    .map((e) => e.name)
-    .sort();
-  return ['', ...subs].flatMap((sub) => hintsIn(dir, sub));
+  return places(dir).flatMap((sub) => hintsIn(dir, sub));
 }
+
+// 스택별 처방 목록(키트 소유) — 단서가 맞는 처방이 후보다. 「후보」 상태는 자동 적용하지 않는다
+export const RECIPES = JSON.parse(readFileSync(new URL('../policy/recipes.json', import.meta.url), 'utf8'));
+export function recipeHints(dir) {
+  const at = places(dir);
+  const fits = (w) => !w.files || at.some((sub) => w.files.some((f) => existsSync(join(dir, sub, f))) && (!w.script || scripts(dir, sub)[w.script]));
+  return RECIPES.filter((r) => fits(r.when)).map(({ id, label, status }) => ({ id, label, status }));
+}
+// 테스트 소스 자리 — 「테스트 없음」을 선언한 뒤 생기면 junit 검사와 covers 를 더할 때다
+export const testSources = (dir) => [...new Set(places(dir).flatMap((sub) => ['src/test', 'test', 'tests'].map((f) => (sub ? `${sub}/${f}` : f))))]
+  .filter((p) => existsSync(join(dir, p)));
+export const recipeLine = (r) => `처방 후보: ${r.id} — ${r.label} (${r.status})`;
 
 function hintsIn(dir, sub) {
   const rel = (f) => (sub ? `${sub}/${f}` : f);
@@ -95,6 +110,7 @@ export function detect(target) {
     instructions,
     otherRules: OTHER_RULES.filter((f) => existsSync(join(dir, f))),
     tests: testHints(dir),
+    recipes: recipeHints(dir),
     ignored: Object.fromEntries(INSTALL_PROBES.map((p) => [p, isGit && git(dir, 'check-ignore', '-q', p).ok])),
     installed: INSTALLED.some((p) => existsSync(join(dir, p))),
     contextGraph: existsSync(join(dir, 'tools', 'graph', 'requests.jsonl')),
@@ -112,6 +128,7 @@ function print(f) {
     `지시 파일       ${inst}`,
     `다른 도구 규칙  ${f.otherRules.join(' · ') || '없음'}`,
     `테스트 단서     ${f.tests.join(' · ') || '없음'}`,
+    ...f.recipes.map(recipeLine),
     `설치 경로       ${Object.entries(f.ignored).map(([p, i]) => `${p} ${yes(i, '무시됨', '추적 가능')}`).join(' · ')}`,
     `기존 설치       하네스 ${yes(f.installed, '있음', '없음')} · context-graph ${yes(f.contextGraph, '있음 (tools/graph/requests.jsonl) — 키트 그래프 모듈을 얹고 graph.store 를 이 경로로 (SETUP ⑤ · 기록은 옮기지 않는다)', '없음')}`,
     `Node            ${f.node}`,

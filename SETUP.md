@@ -106,25 +106,27 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 `checks` 에는 **실제로 도는 명령**만, 그리고 결과 XML 을 **매번 새로 쓰는** 명령만 적는다 — verify 는 이번 실행이 쓰지 않은 XML 을 증거로 쓰지 않는다.
 테스트 검사에는 `covers` — **그 테스트가 실제로 돌리는 코드**의 glob 배열(예: `["src/**"]` · 모노레포 `["backend/src/main/**"]`)을 적는다. 타입 검사 · 그래프 무결성 · 다른 언어의 테스트에는 두지 않는다. 관문 훅은 덮이지 않은 코드 변경에 `/code-review` 를 요구하고, `covers` 가 하나도 없으면 verify 첫 줄이 「코드 검사 없음 — 코드 변경의 증거는 /code-review」다.
 
+**처방 목록** — 스택별 검사는 `<kit>/policy/recipes.json`(키트 소유 — 단서 · 명령 · kind · covers 힌트 · 수정 직후 검사 · 근거)에 있고, `detect` 의 「처방 후보: <id> — <이름> (검증됨|후보)」 줄이 이 대상에 맞는 처방이다. 「검증됨」은 실제 설치에서 쓰는 처방, 「후보」는 잰 적 없는 처방이라 사용자에게 보여 주고 고른다(자동 적용 안 함). 처방의 `<…>` 는 대상에 맞춰 채운다. **검사마다 출처를 적는다** — 처방대로면 `"recipe": "<처방 id>"`, 처방에서 벗어났거나 처방이 없으면 `"why": "<이유>"`(둘 다 써도 된다). 없거나 목록에 없는 처방 id 면 갱신 exit 1 · ⑧-f ⑤ ⛔ — 같은 벗어남이 여러 설치에서 반복되면 처방 목록에 올릴 후보다. 아래 표에서 처방이 있는 스택은 처방 id 만 적는다(명령은 목록에만).
+
 | 스택 | `cmd` | `kind` · `evidence` |
 |---|---|---|
 | Node (`node:test`) | `package.json` 의 `test` 가 junit 을 디렉터리에 쓰고 그 디렉터리를 먼저 만들면 `npm test`. 아니면 `node -e "require('fs').mkdirSync('test-results',{recursive:true})" && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=test-results/junit.xml "test/*.test.mjs"` | `junit-xml` · `test-results` |
 | Node (vitest) | `npx vitest run --reporter=default --reporter=junit --outputFile.junit=test-results/junit.xml` — 리포터는 `package.json` 이 아니라 명령에 붙인다(추적 파일을 고치지 않는다). 결과 디렉터리는 vitest 가 만들고 매번 새로 쓴다 | `junit-xml` · `test-results` |
 | Gradle | `./gradlew cleanTest test` (Windows `cmd`: `.\gradlew cleanTest test` — JSON 에서는 `".\\gradlew cleanTest test"`) | `junit-xml` · `build/test-results/test` |
-| Maven | `mvn test` · 래퍼면 `./mvnw test` (Windows `cmd`: `.\mvnw test`) | `junit-xml` · `target/surefire-reports` |
-| pytest | `pytest --junitxml=test-results/junit.xml` | `junit-xml` · `test-results` |
-| Node (Jest) · junit 리포터가 없다 | `npm test` — ⛔ 리포터를 넣으려고 의존성을 더하지 않는다 | `exit-code` — Jest 는 테스트가 0개면 스스로 실패한다(`--passWithNoTests` 가 없을 때) |
+| Maven | 처방 `maven-test` · 래퍼면 `./mvnw test` (Windows `cmd`: `.\mvnw test`) | 처방대로 |
+| pytest | 처방 `python-pytest` | 처방대로 |
+| Node (Jest) · junit 리포터가 없다 · 다른 언어 저장소에 JS 테스트만 있다 | 처방 `node-npm-test` — ⛔ 리포터를 넣으려고 의존성을 더하지 않는다 | 처방대로 — Jest 는 테스트가 0개면 스스로 실패한다(`--passWithNoTests` 가 없을 때) · `covers` 는 테스트가 import · 읽는 파일만 |
 | 결과 XML 을 낼 수 없다 | 테스트 명령 | `exit-code` — ⚠️ 테스트 0개를 못 잡는다고 사용자에게 알린다 |
-| 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(`npm run typecheck` 등) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
+| 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(처방 `node-tsc`) · 전체 소스 컴파일(처방 `java-javac-compile`) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — 그 검사 하나에 「테스트 없음」을 선언한다: `"tests": "none"` + `"why": "<이유 — 예: 테스트 소스 없음, 첫 테스트 때 junit 검사와 covers 를 더한다>"`(선언 키는 이것 하나 · why 없으면 ⑧-f ⑤ ⛔). 그러면 빌드 · 테스트 단서가 있어도 갱신 · ⑧-f ⑤ 가 covers 로 멈추지 않고, ⑧-f 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다. 선언 뒤 테스트 소스(`src/test` · `test` · `tests`)가 생기면 ⚠️ 「테스트가 생겼다」 — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
-| 그래프 무결성 | `node .harness/tools/graph-find.mjs --check` — 기록 위치는 `graph.store` 를 따른다 | `exit-code` |
+| 그래프 무결성 | 처방 `graph-check` — 기록 위치는 `graph.store` 를 따른다 | 처방대로 |
 
 - Node 는 junit 결과 디렉터리를 만들지 않는다 — 없으면 ENOENT 로 죽는다(실측). `node --test` 에는 디렉터리가 아니라 glob 을 준다
 - ⚠️ Windows 의 Claude Code 는 `NoDefaultCurrentDirectoryInExePath=1` 을 걸어 `cmd` 가 현재 폴더의 실행 파일을 찾지 않는다 — `gradlew` · `gradlew.bat` 은 「내부 또는 외부 명령이 아닙니다」, `.\gradlew` 만 돈다(실측, `./gradlew` 는 `cmd` 에서 늘 실패). 저장소 안 래퍼만 `.\` 를 붙인다 — PATH 의 `mvn` · `npx` 는 상관없다. 모노레포 예: `cd backend && .\gradlew cleanTest test`
 - 명령은 플랫폼 기본 셸(`sh` / Windows `cmd`)로 돈다. 팀이 OS 를 섞어 쓰면 양쪽에서 같은 명령(`npm test` 등)을 고른다
 - 지시 파일 · README 에 빌드·테스트 명령이 적혀 있으면 그것을 쓴다
-- 후보는 `detect` 의 「테스트 단서」 줄이다 — 루트와 하위 폴더 한 단계(`backend/` · `frontend/` 등)의 `package.json` `test` · `typecheck`, `gradlew` · `pom.xml` · pytest
+- 후보는 `detect` 의 「처방 후보」 줄과 「테스트 단서」 줄이다 — 루트와 하위 폴더 한 단계(`backend/` · `frontend/` 등)의 `package.json` `test` · `typecheck`, `gradlew` · `pom.xml` · pytest
 
 ### ⑥ 설정 · 플러그인 · 규칙 자리
 
@@ -265,13 +267,13 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 | ① 도구 | `.harness/` 의 키트 도구(그래프 도구 포함 — 예외 없음) · lib · 정책이 키트 판과 같다(줄바꿈 무시) · 키트에서 지운 것 0 |
 | ② 규칙 · ③ 스킬 | `harness.md` · `graph.md`(기록 규칙 자리가 기본일 때) · `final-gate` 가 키트 판(자리 채움)과 같다 — 다르면 다른 줄 요약 |
 | ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 관문 훅만 · 그래프 훅 켬 — 옛 자기 그래프 훅이면 키트 훅으로 바꿔 끼울 것)대로 다시 돌려도 바뀌는 것이 없다 |
-| ⑤ `harness.json` | 형식 · 프로필 · 모드 · 장부 파일 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구를 가리키는 줄 0) · 빌드 · 테스트 단서가 있으면 `covers` 검사 1개 이상 |
+| ⑤ `harness.json` | 형식 · 프로필 · 모드 · 장부 파일 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구를 가리키는 줄 0) · 빌드 · 테스트 단서가 있으면 `covers` 검사 1개 이상 또는 「테스트 없음」 선언 · 검사마다 `recipe`(목록에 있는 처방 id) 또는 `why` |
 | ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 · `ponytail-review` 가 고정 커밋에서 받은 그대로 |
 | ⑦ 지시 파일 | Claude 지시 파일이 있고, `AGENTS.md` 가 있으면 import 한다(공유는 커밋되는 `CLAUDE.md` 가) |
 | ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 · 관문 훅이 코드만 바꾼 합성 턴을 되돌리고 다 갖춘 턴은 통과 |
 | ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 — 또는 그 뒤 키트가 설치본에 얹는 것(`lib` · `tools` · `policy` · `templates`)이 그대로(문서만 바뀐 커밋은 다시 갱신하지 않는다 · 키트가 모르는 커밋 · `-dirty` 는 ⛔) |
 
-다를 수 있는 것(그래프 데이터와 그 위치 · 장부 본문 · 기준선 · 검사 명령과 `covers` 값 · 지시 파일 본문 · 프로젝트가 더한 도구)은 보지 않는다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
+설치본의 자리는 세 갈래고 정본은 `<kit>/lib/parts.mjs` 한 곳이다 — **키트 소유**(키트 판과 같아야 한다 — ① ② ③ ⑨) · **프로젝트 설정**(`harness.json` 의 검사 · 처방 · why · covers · 테스트 없음 · `graph.names` · `graph.store` · 지시 파일 본문 · `.claude/rules/project-*.md` — 모양과 출처만 ⑤) · **프로젝트 데이터**(그래프 기록 · 장부 본문 · 기준선 — 멀쩡한가만 ⑧). 프로젝트가 `.harness/` 에 더한 도구는 키트 소유가 아니라 보지 않는다. 판정 줄 아래 「프로젝트 맞춤」 절이 설정 · 데이터를 보인다(검사마다 kind · 명령 앞부분 · covers 개수 · 처방 또는 why · 「테스트 없음」 · graph.names · graph.store · 기록 건수 · 프로젝트 규칙 · 장부 줄 수) — 판정은 아니지만 보고에 같이 붙인다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
 
 ### ⑨ 보고 — 3단
 
@@ -305,7 +307,8 @@ node <kit>/tools/upgrade.mjs <대상>
 - ⛔ `그래프 이관`(exit 1)이면 13차 전 「자기 그래프」 설치다(`harness.json` 의 `graph.tools`) — 키트 그래프 도구는 이미 `.harness/tools` 에 깔렸고 기록 · 규칙 · 옛 도구는 그대로다. 출력의 (a)(b) `--migrate-graph` 줄을 사용자에게 보여 주고 승인받아 돌린다 — `graph.store` 를 기존 기록 경로로 적고 `graph.tools` 를 걷고, 살아있는 기록의 files 칸에서 옛 도구 경로만 `.harness/tools/graph-*.mjs` 로 한 번 바꾸고(note · 대체된 기록은 그대로 · 기록은 옮기지 않는다), 규칙 · final-gate 를 키트 도구로 다시 깐다. (c) 「키트 밖 그래프 도구를 가리키는 곳」(파일:행 — 지시 파일 · 스킬 · 검사 명령)은 그 프로젝트의 파일이라 사용자에게 보여 주고 고친다. 옛 그래프 훅은 「다음」 2 의 정책 줄이 키트 훅으로 바꿔 끼운다. (d) 옛 `graph-*.mjs` 는 참조를 고친 뒤 프로젝트가 지운다 — 키트는 지우지 않는다(프로젝트 고유 도구는 그대로). 참조가 남아 있는 동안 갱신은 exit 1 · ⑧-f ⑤ ⛔ 이다
 - 키트에서 지운 도구 · lib · 템플릿(`<kit>/policy/removed.json`)은 설치본에서 걷는다(`🧹 걷음` 줄). 내용을 쓴 대장은 남기고 `⚠️` 로 알린다. 키트 장부 템플릿에서 지운 줄(`lines`)은 장부에서 그 줄과 같은 줄만 걷는다(`🧹 걷음(키트에서 지운 장부 줄): 파일:행` — 프로젝트가 쓴 줄은 그대로). 지운 도구의 allow 줄은 「다음」의 정책 줄이 걷는다
 - `⚠️ 그래프 기록이 지운 경로를 가리킨다` 줄이 나오면 **같은 턴에** 그 경로를 뺀 기록으로 `supersedes` 한다 — 그대로 두면 `graph-find --check` 가 빨강이고, 그것을 검사로 둔 설치는 verify 가 빨강이 되어 모든 코드 턴이 관문에 막힌다
-- ⛔ `빌드 · 테스트 단서(…)가 보이는데 covers 를 가진 검사가 없다`(exit 1)면 멈춘다 — ⑤ 대로 그 코드를 돌리는 테스트 검사에 `covers` 를 적고 갱신을 다시 돌린다. 이 PC 에서 테스트를 못 돌리면 사용자에게 알리고 보고에 「코드 검사 없음 — 코드 변경은 /code-review」를 남긴다(그동안 관문 훅이 코드 변경마다 `/code-review` 를 요구한다)
+- ⛔ `빌드 · 테스트 단서(…)가 보이는데 covers 를 가진 검사가 없다`(exit 1)면 멈춘다 — ⑤ 대로 그 코드를 돌리는 테스트 검사에 `covers` 를 적고 갱신을 다시 돌린다. 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌리면(⛔ 테스트 명령을 지어내지 않는다) 실제로 도는 검사 하나에 `"tests": "none"` + `"why": "<이유>"` 를 적어 「테스트 없음」을 선언한다(⑤ 「테스트 러너가 아직 없다」 행) — 멈춤이 풀리고, 이식 검사 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다(관문 훅은 그대로 코드 변경마다 `/code-review` 를 요구한다). 테스트 소스가 생기면 `⚠️ 테스트가 생겼다` — junit 검사와 `covers` 를 더할 때다
+- ⛔ `처방 · why 없는 검사 …` · `목록에 없는 처방 …` · `「테스트 없음」 선언에 why 없음 …`(exit 1)이면 도구 · 규칙은 이미 얹혔다 — `harness.json` 은 프로젝트 설정이라 키트가 쓰지 않는다. 그 프로젝트 세션이 출력의 「처방 후보」를 보고 검사마다 `"recipe": "<처방 id>"` 또는 `"why": "<처방에서 벗어난 이유>"` 를 적고(⑤ 「처방 목록」) 갱신을 다시 돌린다
 - 규칙 · final-gate 스킬은 설치본이 키트 이력의 한 버전(장부 경로를 채운 것)과 같을 때만 바꾼다. `⛔ … 프로젝트가 고쳤다 +n −m` 이면(exit 1) 키트 파일을 손으로 병합하지 않는다 — 다른 줄을 사용자에게 보여 주고 그 줄 끝의 `node <kit>/tools/upgrade.mjs <대상> --own-rules` 를 돌린다. 고친 줄은 `.claude/rules/project-<이름>.md` 로 옮겨지고(더한 줄은 그 절 제목 아래 · 뺀 키트 줄은 「따르지 않는 키트 줄」 · 「키트 판과 어긋나면 이 파일이 이긴다」) 키트 파일은 키트 판으로 다시 깔린다. 만들어진 파일을 사용자에게 보여 준다 — 로컬 전용이면 그 파일도 `.git/info/exclude` 에 들어간다
 - 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. 정책 줄은 옛 정책이 이 프로젝트에 쓴 플러그인 선언 · `PONYTAIL_DEFAULT_MODE` 를 걷고(출력의 `걷음:`), 키트 훅을 새 형식으로 바꿔 끼운다. ⛔ 이전을 먼저 한다 — 선언만 걷히고 PC 에 키트 마켓 플러그인이 없으면 superpowers 가 빠진다
 - 플러그인 판은 세션을 열 때 실린다 — 갱신 뒤 열려 있던 세션은 새로 연다
