@@ -269,7 +269,7 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 | ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 · `ponytail-review` 가 고정 커밋에서 받은 그대로 |
 | ⑦ 지시 파일 | Claude 지시 파일이 있고, `AGENTS.md` 가 있으면 import 한다(공유는 커밋되는 `CLAUDE.md` 가) |
 | ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 · 관문 훅이 코드만 바꾼 합성 턴을 되돌리고 다 갖춘 턴은 통과 |
-| ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 |
+| ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 — 또는 그 뒤 키트가 설치본에 얹는 것(`lib` · `tools` · `policy` · `templates`)이 그대로(문서만 바뀐 커밋은 다시 갱신하지 않는다 · 키트가 모르는 커밋 · `-dirty` 는 ⛔) |
 
 다를 수 있는 것(그래프 데이터와 그 위치 · 장부 본문 · 기준선 · 검사 명령과 `covers` 값 · 지시 파일 본문 · 프로젝트가 더한 도구)은 보지 않는다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
 

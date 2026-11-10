@@ -10,7 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
-import { KIT, DOCS, nl, list, assertKit, kitCommit, kitDirty, graphOf, ownGraph, filler, docState, summary, settingsShape, coversGap, ledgerLeft, graphRefs } from './upgrade.mjs';
+import { KIT, DOCS, SHIPPED, nl, list, assertKit, kitCommit, kitDirty, shippedSame, graphOf, ownGraph, filler, docState, summary, settingsShape, coversGap, ledgerLeft, graphRefs } from './upgrade.mjs';
 import { applyPolicy, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
 
@@ -59,12 +59,13 @@ function sameFiles(dir, raw) {
   };
 }
 
-// ⑨ 판 — 갱신이 기록한 키트 커밋
+// ⑨ 판 — 갱신이 기록한 키트 커밋. 그 뒤 키트가 문서만 바꿨으면 설치본에 갈 것이 없어 같은 판이다
 function sameCommit(dir) {
   const kit = kitCommit();
   const mine = existsSync(join(dir, '.harness', 'kit-commit')) ? readFileSync(join(dir, '.harness', 'kit-commit'), 'utf8').trim() : '';
   const at = mine.endsWith('-dirty') ? `${mine.slice(0, 7)}-dirty(커밋 안 된 키트로 갱신됨 — 커밋 뒤 다시 갱신)` : mine.slice(0, 7) || '기록 없음';
-  return { observed: `설치본 ${at} · 키트 ${kit?.slice(0, 7) ?? '모름(git 저장소가 아니다)'}`, ok: Boolean(kit) && mine === kit };
+  const ok = shippedSame(mine);
+  return { observed: `설치본 ${at} · 키트 ${kit?.slice(0, 7) ?? '모름(git 저장소가 아니다)'}${ok && mine !== kit ? ' (그 뒤 문서만 바뀜)' : ''}`, ok };
 }
 
 // 키트가 더러우면 ① 은 작업 트리와 · ⑨ 는 HEAD 와 비교해 멀쩡한 설치가 ⛔, 미커밋 판을 받은 설치가 ✅ 로 보인다 — 표는 내되 판정 줄은 내지 않는다
@@ -189,7 +190,7 @@ export function checkInstall(dir, { plugins } = {}) {
     (v.code === 0 || firstTest) && g.code === 0 && gate.blocks && gate.passes);
 
   const ver = sameCommit(dir);
-  row('⑨', '판 — 설치본이 기록한 키트 커밋(.harness/kit-commit) = 키트의 지금 커밋', ver.observed, ver.ok);
+  row('⑨', `판 — 설치본이 기록한 키트 커밋(.harness/kit-commit) = 키트의 지금 커밋 · 또는 그 뒤 ${SHIPPED.join(' · ')} 그대로`, ver.observed, ver.ok);
   return rows;
 }
 

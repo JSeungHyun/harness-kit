@@ -190,6 +190,28 @@ test('⛔ ⑨ 커밋 안 된 키트로 갱신한 설치(kit-commit <sha>-dirty) 
   assert.match(r.observed, /커밋 안 된 키트로 갱신됨 — 커밋 뒤 다시 갱신/);
 });
 
+test('⭐ ⑨ 설치본 커밋 뒤 키트가 내보내지 않는 것(문서)만 바꿨으면 ✅ — 내보내는 경로가 바뀌었거나 키트가 모르는 커밋이면 ⛔ · --all 도 같은 판정', () => {
+  const kit = kitRepo();
+  const root = tmp('installs-');
+  const dir = join(root, 'a');
+  cpSync(installed({ files: { '.harness/kit-commit': `${kit.sha}\n` } }), dir, { recursive: true });
+  const env = { ...kit.env, CLAUDE_CONFIG_DIR: pc() };
+  const run = (args) => spawnSync(process.execPath, [join(kit.dir, 'tools', 'install-check.mjs'), ...args], { encoding: 'utf8', env }).stdout;
+  const nine = () => run([dir]).match(/^\| ⑨ \| .*$/m)?.[0] ?? '';
+  const commit = (rel) => { put(kit.dir, rel, `${rel}\n`); kit.git('add', '-A'); kit.git('commit', '-q', '-m', rel); return kit.git('rev-parse', 'HEAD').trim(); };
+
+  const docs = commit('docs/plan.md');
+  assert.match(nine(), new RegExp(`설치본 ${kit.sha.slice(0, 7)} · 키트 ${docs.slice(0, 7)} \\(그 뒤 문서만 바뀜\\) \\| ✅ \\|$`));
+  assert.match(run(['--all', root]), /^\| a \| .*그 뒤 문서만 바뀜.*\| ✅ \|$/m);
+
+  writeFileSync(join(dir, '.harness/kit-commit'), `${'f'.repeat(40)}\n`);
+  assert.match(nine(), /\| ⛔ \|$/);
+
+  writeFileSync(join(dir, '.harness/kit-commit'), `${kit.sha}\n`);
+  commit('tools/new-tool.mjs');
+  assert.match(nine(), /\| ⛔ \|$/);
+});
+
 test('⛔ 키트 작업 트리에 커밋 안 된 변경이 있으면 단일 · --all 모두 표 위에 ⛔ · 판정 줄 없이 exit 1 — 우회 환경변수면 지금처럼', () => {
   const kit = kitRepo();
   const root = tmp('installs-');

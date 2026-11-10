@@ -34,9 +34,18 @@ export function kitCommit() {
   try { return kitGit('rev-parse', 'HEAD').trim(); } catch { return null; }
 }
 
+// 갱신이 설치본에 얹는 키트 경로 — 이 밖(문서 · 테스트)만 바뀐 커밋은 설치본에 차이가 없다
+export const SHIPPED = ['lib', 'tools', 'policy', 'templates'];
+
 // 키트 작업 트리의 커밋 안 된 변경(갱신이 얹는 것) — 있으면 설치본이 미커밋 판을 커밋 이름으로 받는다. git 저장소가 아니면 없다
 export function kitDirty() {
-  try { return kitGit('status', '--porcelain', '--', 'lib', 'tools', 'policy', 'templates').split('\n').filter(Boolean).map((l) => l.slice(3)); } catch { return []; }
+  try { return kitGit('status', '--porcelain', '--', ...SHIPPED).split('\n').filter(Boolean).map((l) => l.slice(3)); } catch { return []; }
+}
+
+// sha 뒤 키트 HEAD 까지 SHIPPED 가 그대로인가 — 키트가 모르는 커밋 · sha 모양이 아닌 값(-dirty 등)이면 아니다
+export function shippedSame(sha) {
+  if (!/^[0-9a-f]{40}$/.test(sha)) return false;
+  try { kitGit('diff', '--quiet', sha, 'HEAD', '--', ...SHIPPED); return true; } catch { return false; }
 }
 export const list = (a) => `${a.slice(0, 4).map((p) => p.replace(/\\/g, '/')).join(', ')}${a.length > 4 ? ` 외 ${a.length - 4}` : ''}`;
 
