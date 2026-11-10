@@ -25,7 +25,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 1. `node tools/plugin-plan.mjs --upstream` — 고정 커밋과 각 플러그인 저장소의 최신 커밋을 비교하고, 새 버전과 바뀐 것 링크를 낸다
 2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `ponytail-review` 스킬 한 파일 · final-gate 가 부르는 스킬 이름)이 그대로인가, 이득이 있나. 사전 시험은 `--plugin-dir` 로 새 판을 싣고 `--settings` 로 설치본을 끈 세션
 3. 올리면 `marketplace.json` 의 `sha` · `version` 을 바꾸고 `node proof/run.mjs --claude` → 커밋 · push
-4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update … --scope user` 명령을 낸다(ponytail 고정을 올렸으면 `node tools/plugin-plan.mjs --review-skill` 로 리뷰 스킬을 새 커밋 것으로 덮어쓴다) — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
+4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update … --scope user` 명령을 낸다(ponytail 고정을 올렸으면 리뷰 스킬을 새 커밋 것으로 받는 `--review-skill` 도 — 받은 커밋 · 내용 해시를 스킬 옆 `.pinned.json` 에 적어 비교한다) — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
 
 ### 이미 얹은 프로젝트를 새 버전으로 — 다른 PC 포함
 
@@ -36,7 +36,8 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 ```
 
 - `tools/plugin-plan.mjs` 가 그 PC 의 플러그인을 읽어 키트 마켓에 맞출 명령을 낸다. 세션이 사용자에게 묻고 실행한다 — PC 마다 한 번이고, 다음 프로젝트부터는 「옮길 것 없다」
-- `tools/upgrade.mjs` 가 도구 · 정책 · 손대지 않은 규칙을 올리고, 설정에 넣을 명령(권한 · 관문 훅 — 옛 플러그인 선언은 걷는다)을 낸다. 프로젝트가 고친 규칙은 덮어쓰지 않는다
+- `tools/upgrade.mjs` 가 도구 · 정책 · 손대지 않은 규칙을 올리고, 설정에 넣을 명령(권한 · 관문 훅 — 옛 플러그인 선언은 걷는다)을 낸다. 프로젝트가 키트 규칙을 고쳤으면 ⛔ 로 멈추고, `--own-rules` 가 고친 줄을 `.claude/rules/project-<이름>.md` 로 옮긴 뒤 키트 판을 다시 깐다 — 키트 파일은 키트 판 그대로 둔다
+- 끝에 `tools/install-check.mjs` 가 키트와 같은지 ①~⑨ 표로 판정한다 — 그래프 데이터 · 장부 본문 · 검사 명령 같은 프로젝트 고유 내용만 다를 수 있고, 하나라도 ⛔ 면 exit 1 이라 「이식 성공」이 아니다
 - 키트가 플러그인 구성을 바꿨으면 그 PC 에서 먼저 SETUP 「PC 맞추기」를 한 번 한다 — 그 PC 의 Claude Code 에게 `<이 레포 경로>/SETUP.md 의 「PC 맞추기」를 따라 이 PC 를 맞춰줘`
 
 ## 두 모듈
@@ -45,7 +46,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 |---|---|---|
 | **evidence** | 완료를 거짓 보고한다 · 묻지 않고 넘어간 가정이 묵는다 · 같은 실패를 반복한다 | `verify` · `gate-hook` · `decision-check` · `lesson-append` · `policy-apply` |
 | **graph** | 같은 것을 두 번 조사한다 · 사용자의 말과 코드의 이름 사이 다리가 없다 | `graph-find` · `graph-append` · `graph-alias` · `graph-hook` · `graph-view` · `graph-measure` |
-| 설치 | — | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` |
+| 설치 | 설치 · 갱신이 키트와 달라진 채 「끝」으로 보고된다 | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` · `install-check` |
 
 자동 로드되는 층은 `.claude/rules/harness.md` · `.claude/rules/graph.md` 둘뿐이다. 관문은 `final-gate` 스킬 — **작업을 끝냈다고 보고하기 직전에 매번** 돈다(계획 유무와 무관).
 
@@ -91,6 +92,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | graph 운영 데이터 (이슈 8건) | 그래프 · 훅이 있으면 도구 호출 −91% · 정답 8/8 vs 4/8 | 표본 8건 · 라벨을 기록에서 뽑았다 |
 | 실제 설치 3곳 (6세션) | 코드를 바꾼 턴 7개 중 5개에 verify 가 돌았다 — 나머지 2개는 검사 밖 시안 파일. final-gate 스킬은 코드 변경 뒤 0/7 | 표본 작음 · 대조군 없음 |
 | 실제 설치 2곳 — 관문 훅 뒤 | 파일을 바꾼 작업 12개 중 10개가 final-gate 를 거쳤다(스스로 7 · 훅이 되돌린 뒤 3) — 되돌림 문구를 고친 뒤 8/8 · 헛울림 1 | 한 PC · 한 사용자 · 원인 분리 안 함 |
+| 실제 설치 4곳 사본 — 이식 동일성 | 「갱신 끝」으로 보고됐던 설치가 이식 검사 ⛔ 7~8/9 → 갱신 뒤 1~3/9. 남은 것은 `covers`(사람이 정함) · PC 리뷰 스킬 기록(사용자 승인) · 사본 탓 1 | 사본 · 한 PC |
 
 ## 출처
 

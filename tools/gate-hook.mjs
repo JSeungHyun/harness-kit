@@ -3,7 +3,7 @@
 // 실측(설치 3곳 6세션): 코드를 바꾼 턴에 verify 5/5 · final-gate 0/7 — 빠지는 것은 모델의 기억에 맡긴 단계다(plan 11차).
 // verify 는 「끝내려 한다」는 신호로만 쓴다 — 훅에서 다시 돌리지 않는다(중앙 50초). 실패는 조용히 통과 — 종료를 막지 않는다.
 import { readFileSync } from 'node:fs';
-import { relative, resolve, isAbsolute, posix } from 'node:path';
+import { relative, resolve, isAbsolute, posix, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 설치 위치(<대상>/.harness/tools/) 기준 — 훅의 cwd 는 세션이 옮긴 하위 폴더일 수 있다
@@ -25,17 +25,30 @@ function codeFile(u) {
   return isAbsolute(rel) || rel.split('/')[0] === '..' || NOT_CODE.test(rel) ? null : rel;
 }
 
+const toolUses = (o) => (o.type === 'assistant' && Array.isArray(o.message?.content) ? o.message.content.filter((c) => c.type === 'tool_use') : []);
+const parse = (l) => { try { return JSON.parse(l); } catch { return {}; } };
+
+// 서브에이전트의 파일 변경은 메인 기록에 없다 — <메인 기록 이름>/subagents/agent-<id>.jsonl 에서 그 Agent 호출 자리에 끼운다
+function subagentEdits(transcript, agentId) {
+  try {
+    const lines = readFileSync(join(transcript.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`), 'utf8').split(/\r?\n/);
+    return lines.flatMap((l) => toolUses(parse(l)).filter((u) => u.name in EDITS));
+  } catch { return []; }
+}
+
 // 사람이 친 줄에서 끝까지가 이번 턴이다. 판정은 tool_use 만 본다 — 도구 결과 줄에는 파일 내용이 실려 오탐한다
-function turn(lines) {
+function turn(lines, transcript) {
   const uses = [];
+  const agents = {};
   for (let i = lines.length - 1; i >= 0; i--) {
-    let o;
-    try { o = JSON.parse(lines[i]); } catch { continue; }
+    const o = parse(lines[i]);
     // origin 이 없는 기록(-p · 2.1.292 이하)은 문자열 내용인 user 줄이 사람 입력이다
     if (o.type === 'user' && !o.isMeta && (o.origin ? o.origin.kind === 'human' : typeof o.message?.content === 'string')) {
-      return { said: JSON.stringify(o.message?.content ?? ''), uses: uses.reverse() };
+      return { said: JSON.stringify(o.message?.content ?? ''), uses: uses.reverse().flatMap((u) => [u, ...(agents[u.id] ? subagentEdits(transcript, agents[u.id]) : [])]) };
     }
-    if (o.type === 'assistant' && Array.isArray(o.message?.content)) uses.push(...o.message.content.filter((c) => c.type === 'tool_use').reverse());
+    // Agent 결과 줄의 toolUseResult.agentId 가 서브에이전트 기록 이름이다(실측 133건 모두 파일이 있었다)
+    if (o.type === 'user' && o.toolUseResult?.agentId) for (const c of o.message?.content ?? []) if (c.tool_use_id) agents[c.tool_use_id] = o.toolUseResult.agentId;
+    uses.push(...toolUses(o).reverse());
   }
   return null;
 }
@@ -67,7 +80,7 @@ process.stdin.on('end', () => {
     // 되돌린 뒤의 멈춤 · 결과를 기다리는 진행 보고에는 울리지 않는다. 셸은 백그라운드 verify 만 기다림이다 — 상주 개발 서버도 shell 이라 그것만 떠 있으면 예외가 아니다(2.1.319 덤프: type shell · subagent)
     const waiting = (input.background_tasks ?? []).some((t) => t.type !== 'shell' || /verify\.mjs/.test(t.command ?? ''));
     if (!input.stop_hook_active && !waiting) {
-      const t = turn(readFileSync(input.transcript_path, 'utf8').split(/\r?\n/));
+      const t = turn(readFileSync(input.transcript_path, 'utf8').split(/\r?\n/), input.transcript_path);
       const covers = (JSON.parse(readFileSync(CONFIG, 'utf8')).checks ?? []).flatMap((c) => c.covers ?? []);
       const miss = t ? missing(t, covers) : [];
       if (miss.length) console.log(JSON.stringify({ decision: 'block', reason: `[관문] 이번 턴에 빠진 것: ${miss.join(' · ')}\n${GUIDE}` }));

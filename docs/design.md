@@ -29,7 +29,7 @@
 |---|---|---|
 | **evidence** | 완료를 거짓 보고한다 · 묻지 않고 넘어간 가정이 묵는다 · 같은 실패를 반복한다 | `verify` · `gate-hook` · `decision-check` · `lesson-append` · `policy-apply` |
 | **graph** | 같은 것을 두 번 조사한다 · 사용자의 말과 코드의 이름 사이 다리가 없다 | `graph-find` · `graph-append` · `graph-alias` · `graph-hook` · `graph-view` · `graph-measure` |
-| 설치 | — | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` |
+| 설치 | 설치 · 갱신이 키트와 달라진 채 「끝」으로 보고된다 | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` · `install-check` |
 
 graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특정 DB · 특정 프로젝트의 운영 정책), `commit-index`(실행 5회)·`spec-toc`(7회) — 운영 세션 48회 실측으로 범용 값이 없다.
 
@@ -89,7 +89,7 @@ graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특
 - 그래서 verify 를 「끝내려 한다」는 신호로만 쓰고, 이번 턴에 final-gate 가 없으면 한 번 되돌린다. 되돌린 뒤(`stop_hook_active`)는 통과. 되돌리는 시점이 보고 뒤라 「빠진 단계만 채운다」고 시킨다
 - ⭐ 11차(2026-11-09) — 한 턴의 **증거 세트**를 본다. 코드를 바꿨으면(Edit · Write · NotebookEdit — 문서 · `.harness/` · `.claude/` · 프로젝트 밖 제외) `ponytail-review`(사용자 결정 11-09), 바꾼 코드가 검사의 `covers` 에 안 들면 `code-review`, 들면 마지막 코드 변경 뒤의 verify(과설계 리뷰로 걷어낸 뒤 회귀 — 셋째 적용에서 떼어 낸 조각 파일의 인코딩 선언 누락으로 화면 글자가 깨졌다), verify 를 돌렸으면 final-gate. 빠진 것만 이유 첫 줄에 나열한다. 근거: 모델의 기억에 맡긴 단계는 실제 설치에서 모두 샜다(`/code-review` 누락 · 백그라운드 예외 — plan 11차)
 - 백그라운드 예외는 **결과를 기다리는 작업만** — Stop 입력 `background_tasks` 원소의 `type` 으로 가른다(2.1.319 덤프: `{type:"shell", command}` · `{type:"subagent", agent_type}`). `shell` 은 `command` 가 verify 일 때만 예외다 — 상주 개발 서버도 `shell` 이라 하루 멈춤 10번에 0번 울렸다(다른 PC 설치 보고). 셸 명령으로 「상주」를 가를 필드는 없다(둘 다 `status: running`)
-- ⚠️ 서브에이전트가 바꾼 파일은 메인 기록에 없어 코드 변경으로 보지 못한다
+- ⭐12차 서브에이전트가 바꾼 파일도 본다 — 메인 기록에는 없어 superpowers 서브에이전트 주도 개발이면 증거 세트가 비었다. 이번 턴 Agent 결과 줄의 `toolUseResult.agentId` 로 `<메인 기록 이름>/subagents/agent-<id>.jsonl` 을 찾아 Edit · Write · NotebookEdit 을 그 호출 자리에 합친다(이 PC 기록의 Agent 결과 133건 모두 그 파일이 있었다 — 동기 · 백그라운드 · 포크 · 팀원). 못 찾으면 메인 기록만 본다(실패는 통과). 한계: 한 단계만 · Bash 로 쓴 파일은 못 본다(plan 12차 보류)
 - 기각: 훅에서 verify 를 돌리기(중앙 50초) · 「verify 없이 멈췄나」(서브에이전트 진행 보고 22번에 울린다) · 「보고에 증거 원문이 있나」(재생 14턴 중 8번 — 승인 대기 3번 포함, 출력 형식을 바꿔 인용한 보고도 걸린다)
 - ⚠️ 재생하면 verify 를 돌린 사람 턴 14개 중 11개에 울린다 — 대부분은 내용을 이미 한 턴이다. 합성 세션(sonnet 10회)은 훅 없이도 10/10 스킬을 불러 효과를 가르지 못했다. 실제 설치 2곳(2026-11-05)에서는 verify 단위 20개 중 6번 울렸고, 파일을 바꾼 작업 12개 중 10개가 관문을 거쳤다 — 되돌림 문구를 고친 뒤로는 8/8(`docs/proof.md` 「관문 훅 효과」)
 
@@ -192,7 +192,11 @@ graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특
 
 **신규 — 처음부터 쌓는 법**: 소급 없음. 브레인스토밍 스펙이 있으면 현업 용어 → 계획한 식별자를 alias 로 적되 note 에 「설계 용어 — 구현 후 재확인」. 첫 테스트 전에는 verify 가 「실행된 테스트가 0개」로 실패하는 것이 정상이다 — 보고에 그렇게 적는다.
 
-**갱신** (`tools/upgrade.mjs`, 2026-10-22) — 키트를 여러 PC · 프로젝트에 얹어 쓰므로 새 버전을 올리는 길을 둔다. 도구 · lib · 정책은 키트 것이라 덮어쓴다. 규칙 · 스킬은 설치본이 키트 git 이력의 한 버전(장부 경로를 채운 것)과 같을 때만 바꾸고, 다르면 프로젝트가 고친 것으로 보고 알리기만 한다. 실측에서 설치 3곳의 규칙은 모두 첫 커밋 템플릿에 경로를 채운 것과 같았다. 설정은 쓰지 않고 명령을 낸다(`policy-apply --with gate-hook --off <옛 id>`). 관문 훅만 건 설치(대상 설정에 관문 훅이 있고 ponytail env · 같은 이름 플러그인이 없다)에는 `--only gate-hook` 을 낸다 — `--with` 를 내면 받지 않은 권한 · ponytail 끄기 · 플러그인이 들어간다(2026-10-30 사전 시험에서 발견). `--off` 는 같은 플러그인의 다른 마켓 id 도 받는다 — 옛 id 의 로컬 설치 기록이 없으면 `uninstall --scope local` 이 실패하기 때문이다. 갱신 출력의 첫 줄이 `plugin-plan` 이다 — 이전이 정책 반영보다 먼저다. 거꾸로면 옛 id 는 꺼지고 새 플러그인은 없어 superpowers · ponytail 이 둘 다 빠진다.
+**갱신** (`tools/upgrade.mjs`, 2026-10-22) — 키트를 여러 PC · 프로젝트에 얹어 쓰므로 새 버전을 올리는 길을 둔다. 도구 · lib · 정책은 키트 것이라 덮어쓴다. 규칙 · 스킬은 설치본이 키트 git 이력의 한 버전(장부 경로를 채운 것)과 같을 때만 바꾸고, 다르면 프로젝트가 고친 것으로 보고 ⛔ 로 멈춘다(아래 12차 — 전에는 알리기만 했다). 실측에서 설치 3곳의 규칙은 모두 첫 커밋 템플릿에 경로를 채운 것과 같았다. 설정은 쓰지 않고 명령을 낸다(`policy-apply --with gate-hook --off <옛 id>`). 관문 훅만 건 설치(대상 설정에 관문 훅이 있고 ponytail env · 같은 이름 플러그인이 없다)에는 `--only gate-hook` 을 낸다 — `--with` 를 내면 받지 않은 권한 · ponytail 끄기 · 플러그인이 들어간다(2026-10-30 사전 시험에서 발견). `--off` 는 같은 플러그인의 다른 마켓 id 도 받는다 — 옛 id 의 로컬 설치 기록이 없으면 `uninstall --scope local` 이 실패하기 때문이다. 갱신 출력의 첫 줄이 `plugin-plan` 이다 — 이전이 정책 반영보다 먼저다. 거꾸로면 옛 id 는 꺼지고 새 플러그인은 없어 superpowers · ponytail 이 둘 다 빠진다.
+
+⭐12차(2026-11-09) **프로젝트가 고친 키트 규칙 · 스킬은 병합 안내가 아니라 ⛔ 다** — 「병합 안내」를 받은 설치본마다 키트와 다른 채로 「갱신 끝」이 보고됐다. 이제 `upgrade` 는 가장 가까운 키트 판과의 다른 줄(줄 단위 LCS — 더한 줄 · 뺀 키트 줄)을 요약하고 exit 1 이다. `--own-rules` 가 더한 줄을 `.claude/rules/project-<이름>.md` 의 그 절 제목 아래로, 뺀 키트 줄을 「따르지 않는 키트 줄」로 옮기고(「키트 판과 어긋나면 이 파일이 이긴다」) 키트 판을 다시 깐다. 로컬 전용이면 그 파일을 `.git/info/exclude` 에 더한다(install-mode 블록은 한 번만 쓰여 새 파일을 모른다). 자동이 아니라 명령으로 낸 것은 프로젝트의 규칙을 옮기는 일이라 사람이 다른 줄을 보고 돌리게 하려는 것이다. 갱신은 키트 커밋을 `.harness/kit-commit` 에 적는다.
+
+**이식 동일성** ⭐12차 (`tools/install-check.mjs`, 사용자: 「달라지는 건 그래프 내용뿐이고 나머지 키트 구현은 동일한지 체크리스트로 — 다 만족돼야 이식 성공」) — 「이식 성공」을 설치 세션의 글이 아니라 도구의 exit 로 판정한다(§8 「규칙에는 확인 장치」). ① 키트 도구 · lib · 정책 파일이 키트 판과 같다(줄바꿈 정규화) · 지운 것 0 ② 규칙 ③ final-gate 가 자리를 채운 키트 판과 같다 — 다르면 옛 판(갱신)인지 프로젝트가 고쳤는지(`--own-rules`)와 다른 줄 요약 ④ `policy-apply` 를 그 설치 모양(정책 전체 · `--only gate-hook` · 그래프 훅 켬 — `upgrade` 와 같은 판정)대로 다시 돌려도 바뀌는 것이 없다 — 기대값을 따로 적지 않고 병합 함수를 그대로 쓴다 ⑤ `harness.json` 형식 · 장부 파일 · 자기 그래프 경로 · 빌드 · 테스트 단서가 있으면 `covers` 검사 ⑥ PC — `plugin-plan` 이 낼 명령이 없다(리뷰 스킬은 `--review-skill` 이 옆에 적은 받은 커밋 · 내용 해시로 「고정 커밋 그대로」를 본다 — 전에는 있기만 하면 맞다고 봐서 고정을 올려도 옛 스킬이 남았다) ⑦ Claude 지시 파일이 있고 `AGENTS.md` 가 있으면 import(공유는 커밋되는 쪽) ⑧ verify exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 · 관문 훅이 코드만 바꾼 합성 턴을 되돌리고 다 갖춘 턴은 통과 ⑨ `.harness/kit-commit` = 키트의 지금 커밋. **보지 않는 것** — 그래프 데이터 · 장부 본문 · 기준선 · 검사 명령과 `covers` 값 · 지시 파일 본문 · 자기 그래프 도구 · 프로젝트가 더한 도구. SETUP ⑧-f 와 갱신의 끝이 이 표를 보고에 붙이고, exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다. `proof/check-install.mjs`(SETUP 종단 실측)는 이 도구를 부르고 합성 대상 전용 기대만 더한다.
 
 **기존 context-graph 설치가 있으면** — ⛔ 데이터를 옮기지 않는다. 감지해서 보고하고, 그래프 모듈은 설치하지 않는다(기존 도구가 그 프로젝트의 그래프다). 전환은 범위 밖.
 - 2026-10-22, 원천 프로젝트에 증거 모듈만 얹으며 고쳤다. 전에는 graph.md 만 빼고 그래프 도구를 `.harness/tools/` 로 복사했다. 규칙 · final-gate 가 가리키는 `.harness/tools/graph-find.mjs` 는 빈 `.harness/graph/` 를 봐서 거짓 「이상 없음」이 나오고, 기록이 두 저장소로 갈렸다. 이제 그래프 도구 · 그래프 훅 정책은 복사하지 않는다(설치 · 갱신 모두). `harness.json` 의 `graph`(`tools` · `rules`)가 규칙 · final-gate 의 `<graph-tools>` · `<graph-rules>` 를 채운다
@@ -240,7 +244,7 @@ graph 에서 **뺀 것**: `db-guard`·`sql-template-check`·DB 코멘트 절(특
 1. **단위** — 두 모듈의 도구 전부 `node:test`. graph 도구는 옮기기 **전에** 원본 동작으로 특성 테스트를 쓰고, 옮긴 뒤 같은 테스트가 통과해야 한다
 2. **결정론 실측** (`node proof/run.mjs`) — 하네스 없이 vs 있을 때: 거짓 완료(테스트 0개 · 직전 XML · 기준선 안/밖 실패), 장부, 설정 병합(공유/로컬 · 훅), 그래프(append→find · 훅 침묵·탈출구 · ⏸), 설치 모드(모의 전역 gitignore 를 공유가 이기는가 · 로컬이 숨기는가), 판별(신규·기존 합성 저장소)
 3. **새 세션 실측** (`--claude`) — 규칙 2개가 로드되는가(양성 2 · 음성 1), ponytail 이 꺼졌는가
-4. ⭐ **SETUP 종단 실측** (`node proof/setup-e2e.mjs`) — 새 Claude 세션이 SETUP 을 처음부터 끝까지 따르는가. 신규·기존 합성 대상 각각에 설치시키고 `proof/check-install.mjs` 가 결과를 프로필별 기대와 대조한다. 실측이 사용자 전역 상태에 남긴 것(프로젝트 범위 플러그인 기록)은 되돌린다
+4. ⭐ **SETUP 종단 실측** (`node proof/setup-e2e.mjs`) — 새 Claude 세션이 SETUP 을 처음부터 끝까지 따르는가. 신규·기존 합성 대상 각각에 설치시키고 `proof/check-install.mjs` 가 이식 동일성(`tools/install-check.mjs` ①~⑨)에 프로필별 기대를 더해 대조한다. 실측이 사용자 전역 상태에 남긴 것(프로젝트 범위 플러그인 기록)은 되돌린다
 
 ## 10. ⛔ 도입하지 말아야 할 때
 

@@ -16,11 +16,16 @@ const gate = (id) => use(id, 'Skill', { skill: 'final-gate' });
 const review = (id, skill = 'ponytail-review') => use(id, 'Skill', { skill });
 const edit = (id, file_path = 'src/a.mjs', name = 'Edit') => use(id, name, { file_path });
 
-function stop(lines, extra = {}, checks = COVERED) {
+// Agent 호출의 결과 줄 — 실측 기록(2.1.31x)의 toolUseResult.agentId 모양 그대로
+const agentDone = (id, agentId) => ({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: '끝' }] }, toolUseResult: { status: 'completed', agentId } });
+
+// subs: { agentId: [기록 줄] } — 서브에이전트 기록은 <메인 기록 이름>/subagents/agent-<id>.jsonl 에 있다(메모리 실측)
+function stop(lines, extra = {}, checks = COVERED, subs = {}) {
   const dir = tmp('gate-');
   put(dir, '.harness/tools/gate-hook.mjs', repoFile('tools/gate-hook.mjs'));
   put(dir, '.harness/harness.json', JSON.stringify({ checks }));
   put(dir, 't.jsonl', lines.map((l) => JSON.stringify(l)).join('\n'));
+  for (const [id, sub] of Object.entries(subs)) put(dir, `t/subagents/agent-${id}.jsonl`, sub.map((l) => JSON.stringify(l)).join('\n'));
   const input = JSON.stringify({ transcript_path: `${dir}/t.jsonl`, stop_hook_active: false, background_tasks: [], ...extra });
   return spawnSync(process.execPath, [join(dir, '.harness', 'tools', 'gate-hook.mjs')], { input, encoding: 'utf8' });
 }
@@ -121,6 +126,23 @@ test('⭐ 상주 프로세스(개발 서버)만 떠 있는 멈춤은 예외가 �
   assert.equal(blocked(stop([human('고쳐줘'), verify('v1')], { background_tasks: [server] })), true);
   // 결과를 기다리는 작업이 같이 돌면 예외다
   assert.equal(blocked(stop([human('고쳐줘'), verify('v1')], { background_tasks: [server, agentTask] })), false);
+});
+
+test('⭐ 서브에이전트가 바꾼 코드도 증거 세트에 든다 — 이번 턴 Agent 호출의 기록에서 Edit · Write · NotebookEdit 을 합친다(12차)', () => {
+  const sub = { x1: [edit('s1', 'src/b.mjs'), edit('s2', 'docs/b.md', 'Write')] };
+  const call = [use('a1', 'Agent', { prompt: '구현' }), agentDone('a1', 'x1')];
+  assert.deepEqual(missing(stop([human('구현해줘'), ...call, gate('g1'), verify('v1')], {}, COVERED, sub)), ['/ponytail-review']);
+  assert.equal(blocked(stop([human('구현해줘'), ...call, gate('g1'), review('p1'), verify('v1')], {}, COVERED, sub)), false);
+  // 서브에이전트의 변경은 그 Agent 호출 자리에서 일어났다 — 그 앞의 verify 는 마지막 변경 뒤가 아니다
+  assert.deepEqual(missing(stop([human('구현해줘'), verify('v0'), ...call, gate('g1'), review('p1')], {}, COVERED, sub)), ['verify']);
+});
+
+test('서브에이전트 기록을 못 찾으면 조용히 메인 기록만 본다 — 지난 턴의 Agent 는 보지 않는다', () => {
+  const r = stop([human('구현해줘'), use('a1', 'Agent', { prompt: '구현' }), agentDone('a1', 'x9'), gate('g1'), verify('v1')]);
+  assert.equal(r.status, 0);
+  assert.equal(blocked(r), false);
+  const sub = { x1: [edit('s1', 'src/b.mjs')] };
+  assert.equal(blocked(stop([human('구현해줘'), use('a1', 'Agent', { prompt: '구현' }), agentDone('a1', 'x1'), human('고마워')], {}, COVERED, sub)), false);
 });
 
 test('깨진 입력은 조용히 통과한다 — 종료를 막지 않는다', () => {

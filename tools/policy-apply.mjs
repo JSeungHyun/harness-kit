@@ -75,6 +75,25 @@ export function mergeSettings(settings, policy) {
   return out;
 }
 
+// 정책 조합 — CLI 와 이식 검사(install-check ④ 「다시 돌려도 바뀌는 것 없음」)가 같은 결과를 본다
+export function applyPolicy(settings, { local = false, extra = [], only = false } = {}) {
+  let merged = settings;
+  const gone = [];
+  // --only: 기본 정책(권한 · 플러그인)을 빼고 그 정책만 — 기존 체계를 지켜야 하는 대상
+  for (const p of [...(only ? [] : [POLICY]), ...extra.map(policyFile)]) {
+    if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
+    const policy = readJson(p);
+    // 로컬 설치는 플러그인을 PC(사용자 범위)에서만 켠다 — 프로젝트에 선언하면 프로젝트마다 관리해야 한다
+    if (p === POLICY && local) delete policy.enabledPlugins;
+    merged = mergeSettings(merged, policy);
+    if (p !== POLICY) continue;
+    const r = dropOld(merged, policy.enabledPlugins);
+    merged = r.settings;
+    gone.push(...r.gone);
+  }
+  return { settings: merged, gone };
+}
+
 export const settingsPath = (root, local = false) => join(root, '.claude', local ? 'settings.local.json' : 'settings.json');
 
 export function readJson(path) {
@@ -119,20 +138,8 @@ cli(import.meta.url, () => {
   const root = rest.find((a) => a !== '--local') ?? process.cwd();
   const path = settingsPath(root, local);
   const personal = settingsPath(root, true);
-  let merged = readJson(path);
-  const notes = [];
-  // --only: 기본 정책(권한 · 플러그인)을 빼고 그 정책만 — 기존 체계를 지켜야 하는 대상
-  for (const p of [...(only ? [] : [POLICY]), ...extra.map(policyFile)]) {
-    if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
-    const policy = readJson(p);
-    // 로컬 설치는 플러그인을 PC(사용자 범위)에서만 켠다 — 프로젝트에 선언하면 프로젝트마다 관리해야 한다
-    if (p === POLICY && local) delete policy.enabledPlugins;
-    merged = mergeSettings(merged, policy);
-    if (p !== POLICY) continue;
-    const { settings, gone } = dropOld(merged, policy.enabledPlugins);
-    merged = settings;
-    if (gone.length) notes.push(`걷음(옛 정책이 쓴 것 — 플러그인 · rm 은 PC 에서 정한다 · 키트에서 지운 도구의 allow): ${gone.join(', ')}`);
-  }
+  const { settings: merged, gone } = applyPolicy(readJson(path), { local, extra, only });
+  const notes = gone.length ? [`걷음(옛 정책이 쓴 것 — 플러그인 · rm 은 PC 에서 정한다 · 키트에서 지운 도구의 allow): ${gone.join(', ')}`] : [];
   // --local 이면 두 경로가 같아 한 번만 쓴다. 읽기는 모두 쓰기 앞에 — 어느 파일이 깨졌어도 반쯤 쓰지 않는다
   const out = new Map([[path, merged]]);
   if (off.size) {

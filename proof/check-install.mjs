@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// SETUP 종단 실측의 판정 — 설치된 대상을 프로필·모드별 기대와 대조해 표를 낸다. 설계안.
+// SETUP 종단 실측의 판정 — 이식 동일성(키트 도구 tools/install-check.mjs ①~⑨)에 합성 대상 전용 기대(지시한 프로필 · 모드 · 소급 · 기준선)를 더해 표를 낸다. 설계안.
 //   node proof/check-install.mjs <대상> <new|existing> <local|share> [--json]
 // ⛔ 세션의 자기 보고가 아니라 대상의 파일·git·도구 출력으로만 판정한다. 하나라도 어긋나면 exit 1.
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { cli } from '../lib/config.mjs';
+import { checkInstall as sameAsKit } from '../tools/install-check.mjs';
 
 const sh = (cmd, cwd) => {
   const r = spawnSync(cmd, { cwd, shell: true, encoding: 'utf8', input: '', maxBuffer: 1 << 26 });
@@ -15,7 +16,6 @@ const has = (dir, rel) => existsSync(join(dir, rel));
 const text = (dir, rel) => (has(dir, rel) ? readFileSync(join(dir, rel), 'utf8') : '');
 const jsonOf = (dir, rel) => { try { return JSON.parse(text(dir, rel) || '{}'); } catch { return null; } };
 const ignored = (dir, rel) => sh(`git check-ignore -q "${rel}"`, dir).code === 0;
-const nameOf = (id) => id.split('@')[0];
 const imports = (s) => /^\s*@(\.\/)?AGENTS\.md\b/m.test(s);
 const PLACEHOLDER = /<[^>\n!]{1,40}>/;
 
@@ -29,37 +29,14 @@ export function checkInstall(dir, profile, mode) {
   const ledger = local ? '.harness/state' : 'docs/harness';
   const hadAgents = sh('git cat-file -e HEAD:AGENTS.md', dir).code === 0;
 
-  // 공통 — 배치 · 설정 · 플러그인 · 장부 · 그래프
-  const tools = ['verify', 'decision-check', 'lesson-append', 'policy-apply', 'install-mode', 'scan-shared',
-    'graph-find', 'graph-append', 'graph-alias', 'graph-hook'];
-  const missing = tools.filter((t) => !has(dir, `.harness/tools/${t}.mjs`));
-  row('공통', '.harness/ 도구 · lib · 정책', missing.length ? `없음: ${missing.join(', ')}` : `도구 ${tools.length}개 · lib · policy`,
-    !missing.length && has(dir, '.harness/lib/config.mjs') && has(dir, '.harness/policy/settings.json'));
-  row('공통', '규칙 2개 · final-gate 스킬', ['.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/final-gate/SKILL.md'].map((p) => `${p.split('/').pop()} ${has(dir, p) ? '있음' : '없음'}`).join(' · '),
-    has(dir, '.claude/rules/harness.md') && has(dir, '.claude/rules/graph.md') && has(dir, '.claude/skills/final-gate/SKILL.md'));
-  const left = (text(dir, '.claude/rules/harness.md').match(/<decisions>|<lessons>|<graph-tools>|<graph-rules>/g) ?? []).length;
-  row('공통', '규칙 자리표시가 남지 않음', `남은 자리 ${left}`, has(dir, '.claude/rules/harness.md') && left === 0);
-  row('공통', 'harness.json 검사 1개 이상 · 프로필 · 모드', `검사 ${cfg.checks?.length ?? 0} · profile ${cfg.profile} · mode ${cfg.mode}`,
-    cfg.checks?.length >= 1 && cfg.profile === profile && cfg.mode === mode);
-  const gate = JSON.stringify(settings.hooks?.Stop ?? []).includes('gate-hook.mjs');
-  // 플러그인은 PC 에서 켠다 — 로컬은 선언 없음, 공유는 팀원 PC 용 superpowers 만. ponytail 은 리뷰 스킬이라 선언 · 모드가 없다
-  const declared = Object.keys(settings.enabledPlugins ?? {}).filter((id) => settings.enabledPlugins[id]);
-  row('공통', `정책 반영 (${settingsRel})`, `플러그인 선언 ${declared.join(', ') || '없음'} · ponytail 모드 ${settings.env?.PONYTAIL_DEFAULT_MODE ?? '없음'} · 관문 훅 ${gate ? '있음' : '없음'}`,
-    declared.join() === (local ? '' : 'superpowers@harness-kit') && !settings.env?.PONYTAIL_DEFAULT_MODE && gate);
-  const list = sh('claude plugin list --json', dir).out;
-  let ids = {};
-  try {
-    const arr = JSON.parse(list.slice(list.indexOf('['), list.lastIndexOf(']') + 1));
-    for (const n of ['superpowers', 'ponytail']) ids[n] = new Set(arr.filter((p) => p.enabled && nameOf(p.id) === n).map((p) => p.id)).size;
-  } catch { ids = null; }
-  row('공통', '플러그인 id 하나씩 (ponytail 은 리뷰 스킬만이면 0)', ids ? `superpowers ${ids.superpowers} · ponytail ${ids.ponytail}` : '목록을 읽지 못함', ids && ids.superpowers === 1 && ids.ponytail <= 1);
+  // 키트와 같은가는 키트 도구가 판정한다 — 여기는 합성 대상에 지시한 값과 SETUP 이 만든 것만
+  for (const r of sameAsKit(dir)) row('이식', `${r.n} ${r.what}`, r.observed, r.ok);
+  row('공통', '프로필 · 모드가 지시대로', `profile ${cfg.profile} · mode ${cfg.mode}`, cfg.profile === profile && cfg.mode === mode);
   row('공통', `장부 위치 (${ledger})`, `decisions ${cfg.state?.decisions} · lessons ${cfg.state?.lessons}`,
     cfg.state?.decisions === `${ledger}/decisions.md` && cfg.state?.lessons === `${ledger}/lessons.md` && has(dir, `${ledger}/decisions.md`) && has(dir, `${ledger}/lessons.md`));
   const records = text(dir, '.harness/graph/requests.jsonl').split(/\r?\n/).filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
   const hook = settings.hooks?.UserPromptSubmit ?? jsonOf(dir, '.claude/settings.json')?.hooks?.UserPromptSubmit ?? jsonOf(dir, '.claude/settings.local.json')?.hooks?.UserPromptSubmit;
   row('공통', '그래프 훅 없음 (20건 미만)', `기록 ${records.length} · 훅 ${hook ? '있음' : '없음'}`, !hook && records.length < 20);
-  const chk = sh('node .harness/tools/graph-find.mjs --check', dir);
-  row('공통', 'graph-find --check', `exit ${chk.code}`, chk.code === 0);
 
   // 모드 — git 이 무엇을 보나 · 지시 파일
   if (local) {

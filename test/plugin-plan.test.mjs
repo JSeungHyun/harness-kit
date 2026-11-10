@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { plan } from '../tools/plugin-plan.mjs';
+import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { plan, reviewSkillPinned } from '../tools/plugin-plan.mjs';
+import { tmp, put, repoFile } from './scene.mjs';
 
 // 정책이 켜는 것(superpowers)과 사용자 범위에서 꺼 두는 것(ponytail — 리뷰 스킬만 쓴다)
 const IDS = ['superpowers@harness-kit'];
@@ -39,6 +43,27 @@ test('⭐ 다른 마켓으로 쓰던 사용자 범위 플러그인 — 키트 �
 test('이미 맞췄으면 할 일이 없다 — 리뷰 스킬 있음 · ponytail 은 꺼져 있거나 없다 · 다른 프로젝트의 local 기록은 보지 않는다', () => {
   assert.deepEqual(plan([p('superpowers@harness-kit'), p('ponytail@harness-kit', 'user', false), p('ponytail@ponytail', 'local')], IDS, 'C:/kit', {}, OFF, true), []);
   assert.deepEqual(plan([p('superpowers@harness-kit')], IDS, 'C:/kit', {}, OFF, true), []);
+});
+
+test('⭐ 리뷰 스킬은 고정 커밋에서 받은 그대로일 때만 맞다 — 받은 커밋 · 내용 해시를 옆 파일에 적는다(키트가 ponytail 고정을 올리면 다시 받는다)', () => {
+  const sha = JSON.parse(repoFile('.claude-plugin/marketplace.json')).plugins.find((x) => x.name === 'ponytail').source.sha;
+  const body = '---\nname: ponytail-review\n---\n리뷰\n';
+  const pinned = (commit) => JSON.stringify({ sha: commit, sha256: createHash('sha256').update(body).digest('hex') });
+  const keep = process.env.CLAUDE_CONFIG_DIR;
+  try {
+    const dir = tmp('claudecfg-');
+    process.env.CLAUDE_CONFIG_DIR = dir;
+    assert.equal(reviewSkillPinned(), false);
+    put(dir, 'skills/ponytail-review/SKILL.md', body);
+    assert.equal(reviewSkillPinned(), false, '옆 파일이 없는 옛 설치는 어느 커밋 것인지 모른다');
+    put(dir, 'skills/ponytail-review/.pinned.json', pinned(sha));
+    assert.equal(reviewSkillPinned(), true);
+    put(dir, 'skills/ponytail-review/.pinned.json', pinned('0'.repeat(40)));
+    assert.equal(reviewSkillPinned(), false, '고정이 바뀌었다');
+    put(dir, 'skills/ponytail-review/.pinned.json', pinned(sha));
+    writeFileSync(join(dir, 'skills/ponytail-review/SKILL.md'), `${body}고친 줄\n`);
+    assert.equal(reviewSkillPinned(), false, '받은 뒤 고쳤다');
+  } finally { if (keep === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = keep; }
 });
 
 test('설치는 됐는데 꺼져 있으면 켠다 · 아무것도 없으면 superpowers 설치와 리뷰 스킬만', () => {
