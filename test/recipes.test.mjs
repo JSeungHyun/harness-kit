@@ -37,7 +37,7 @@ test('⛔ 처방 형식 — id 하나씩 · 단서 · 검사(kind · junit 은 e
 
 test('처음 처방 — 실제 설치에서 쓰는 것만 검증됨 · 나머지는 후보(자동 적용 안 함) · 수정 직후 검사는 측정 뒤에', () => {
   assert.deepEqual(Object.fromEntries(RECIPES.map((r) => [r.id, r.status])), {
-    'graph-check': '검증됨', 'node-npm-test': '검증됨', 'java-javac-compile': '검증됨', 'maven-test': '후보', 'node-tsc': '후보', 'python-pytest': '후보',
+    'graph-check': '검증됨', 'node-npm-test': '검증됨', 'java-javac-compile': '검증됨', 'mybatis-xml': '후보', 'maven-test': '후보', 'node-tsc': '후보', 'python-pytest': '후보',
   });
   for (const r of RECIPES) assert.deepEqual(r.edit, [], r.id);
 });

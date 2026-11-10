@@ -38,7 +38,9 @@ function gateProbe(dir) {
       return /"decision":"block"/.test(r.out);
     };
     const edit = use('Edit', { file_path: 'src/install-check-probe.mjs' });
-    const done = [edit, skill('ponytail-review'), skill('code-review'), use('Bash', { command: 'node .harness/tools/verify.mjs' }), skill('final-gate')];
+    // 그래프 기록이 있는 설치는 「기록 안 함」 한 줄까지가 다 갖춘 턴이다
+    const done = [edit, skill('ponytail-review'), skill('code-review'), use('Bash', { command: 'node .harness/tools/verify.mjs' }), skill('final-gate'),
+      { type: 'assistant', message: { content: [{ type: 'text', text: '그래프: 기록 안 함 — 이식 검사 합성 턴' }] } }];
     return { blocks: blocks([edit], 1), passes: !blocks(done, 2) };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -133,12 +135,12 @@ export function checkInstall(dir, { plugins } = {}) {
   const local = raw.mode !== 'share';
   const file = settingsPath(dir, local);
   const now = readJson(file);
-  const { graphHook, only } = settingsShape(dir);
-  const { settings: want } = applyPolicy(now, { local, only, extra: ['gate-hook', ...(graphHook ? ['graph-hook'] : [])] });
+  const { graphHook, readHook, only } = settingsShape(dir);
+  const { settings: want } = applyPolicy(now, { local, only, extra: ['gate-hook', ...(graphHook ? ['graph-hook'] : []), ...(readHook ? ['graph-read-hook'] : [])] });
   const diff = differ(now, want);
-  row('④', '정책 — policy-apply 를 다시 돌려도 바뀌는 것 없음 (권한 · 관문 훅 exec 형식 · 켠 설치만 그래프 훅)',
+  row('④', '정책 — policy-apply 를 다시 돌려도 바뀌는 것 없음 (권한 · 관문 훅 exec 형식 · 켠 설치만 그래프 훅 · 파일 기록 훅)',
     diff.length ? `${slash(relative(dir, file))} 에서 바뀔 곳: ${diff.join(', ')} — upgrade 가 낸 policy-apply 줄을 돌린다`
-      : `${slash(relative(dir, file))} 그대로${only ? ' · 관문 훅만(--only gate-hook)' : ''}${graphHook ? ' · 그래프 훅 켬' : ''}`,
+      : `${slash(relative(dir, file))} 그대로${only ? ' · 관문 훅만(--only gate-hook)' : ''}${graphHook ? ' · 그래프 훅 켬' : ''}${readHook ? ' · 파일 기록 훅 켬' : ''}`,
     !diff.length);
 
   // ⑤ harness.json — 값은 프로젝트 것이고 형식 · 있어야 할 것만 본다
@@ -206,6 +208,7 @@ export function custom(dir) {
   const rules = existsSync(join(dir, '.claude', 'rules')) ? readdirSync(join(dir, '.claude', 'rules')).filter((f) => /^project-.+\.md$/.test(f)).map((f) => `.claude/rules/${f}`) : [];
   const names = raw.graph?.names ? raw.graph.names.join(' · ') || '끔' : '기본(저장소 폴더 이름)';
   const grown = grownTests(dir, raw);
+  const ledgers = Object.values(raw.state ?? {}).map((at) => `${at} ${count(at)}줄`).join(' · ');
   return ['## 프로젝트 맞춤 — 판정 아님 · 키트와 달라도 되는 자리(lib/parts.mjs)', `> ${PARTS.config}`, `> ${PARTS.data}`, '',
     '| 검사 | kind | 명령 | covers | 처방 · 이유 |', '|---|---|---|---|---|',
     ...(raw.checks ?? []).map((c) => `| ${cell(c.id)} | ${c.kind} | ${cell(short(c.cmd ?? ''))} | ${c.covers?.length ?? 0} | ${cell(from(c))} |`), '',
@@ -213,7 +216,7 @@ export function custom(dir) {
     ...(grown ? [grown] : []),
     `그래프 — graph.names ${names} · graph.store ${g.store} · 기록 ${count(g.store)}건`,
     `프로젝트 규칙 ${rules.join(' · ') || '없음'}`,
-    `장부 ${Object.values(raw.state ?? {}).map((at) => `${at} ${count(at)}줄`).join(' · ') || '없음'}`].join('\n');
+    `장부 ${ledgers ? `${ledgers} (빈 줄 뺀 수)` : '없음'}`].join('\n');
 }
 
 cli(import.meta.url, () => {

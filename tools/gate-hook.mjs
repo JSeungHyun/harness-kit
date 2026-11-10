@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Stop 훅 — 한 턴의 증거 세트(과설계 리뷰 · 덮지 않는 코드의 code-review · 마지막 변경 뒤 verify · final-gate)에서 빠진 것이 있으면 한 번 되돌려 보낸다. 설계안.
+// Stop 훅 — 한 턴의 증거 세트(과설계 리뷰 · 덮지 않는 코드의 code-review · 마지막 변경 뒤 verify · final-gate · 그래프 기록 또는 건너뛴 이유)에서 빠진 것이 있으면 한 번 되돌려 보낸다. 설계안.
 // 실측(설치 3곳 6세션): 코드를 바꾼 턴에 verify 5/5 · final-gate 0/7 — 빠지는 것은 모델의 기억에 맡긴 단계다(plan 11차).
 // verify 는 「끝내려 한다」는 신호로만 쓴다 — 훅에서 다시 돌리지 않는다(중앙 50초). 실패는 조용히 통과 — 종료를 막지 않는다.
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { relative, resolve, isAbsolute, posix, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,13 +16,15 @@ const GUIDE = '작업을 끝냈다고 보고했으면 지금 final-gate 스킬�
 const EDITS = { Edit: 'file_path', Write: 'file_path', NotebookEdit: 'notebook_path' };
 // 문서 · 하네스 기록 · 설정은 코드가 아니다
 const NOT_CODE = /^\.(harness|claude)\/|\.(md|mdx|txt|rst|adoc)$/i;
+// 「검증 뒤 쓰기」는 기계가 못 본다 — 기록했나 · 안 했으면 그 판단을 밝혔나만 본다(14차 G3)
+const MARK = /^[\s>*-]*그래프: 기록 안 함\s*[—–-]\s*\S/m;
 
-function codeFile(u) {
+function codeFile(u, store) {
   const p = u.input?.[EDITS[u.name]];
   if (!p) return null;
   const rel = relative(ROOT, resolve(ROOT, p)).replace(/\\/g, '/');
-  // 프로젝트 밖(스크래치 스크립트 등)은 이 프로젝트의 코드가 아니다
-  return isAbsolute(rel) || rel.split('/')[0] === '..' || NOT_CODE.test(rel) ? null : rel;
+  // 프로젝트 밖(스크래치 스크립트 등)은 이 프로젝트의 코드가 아니다 · 그래프 기록은 위치를 따로 둬도 데이터다
+  return isAbsolute(rel) || rel.split('/')[0] === '..' || NOT_CODE.test(rel) || rel === store ? null : rel;
 }
 
 const toolUses = (o) => (o.type === 'assistant' && Array.isArray(o.message?.content) ? o.message.content.filter((c) => c.type === 'tool_use') : []);
@@ -40,25 +42,33 @@ function subagentEdits(transcript, agentId) {
 function turn(lines, transcript) {
   const uses = [];
   const agents = {};
+  const done = {};
+  let answer = null;
   for (let i = lines.length - 1; i >= 0; i--) {
     const o = parse(lines[i]);
     // origin 이 없는 기록(-p · 2.1.292 이하)은 문자열 내용인 user 줄이 사람 입력이다
     if (o.type === 'user' && !o.isMeta && (o.origin ? o.origin.kind === 'human' : typeof o.message?.content === 'string')) {
-      return { said: JSON.stringify(o.message?.content ?? ''), uses: uses.reverse().flatMap((u) => [u, ...(agents[u.id] ? subagentEdits(transcript, agents[u.id]) : [])]) };
+      return { said: JSON.stringify(o.message?.content ?? ''), answer: answer ?? '', since: Date.parse(o.timestamp), done, uses: uses.reverse().flatMap((u) => [u, ...(agents[u.id] ? subagentEdits(transcript, agents[u.id]) : [])]) };
     }
-    // Agent 결과 줄의 toolUseResult.agentId 가 서브에이전트 기록 이름이다(실측 133건 모두 파일이 있었다)
-    if (o.type === 'user' && o.toolUseResult?.agentId) for (const c of o.message?.content ?? []) if (c.tool_use_id) agents[c.tool_use_id] = o.toolUseResult.agentId;
+    // 도구 결과 줄의 시각은 그 명령이 끝난 때다 · Agent 결과의 toolUseResult.agentId 가 서브에이전트 기록 이름이다(실측 133건 모두 파일이 있었다)
+    if (o.type === 'user') for (const c of o.message?.content ?? []) if (c.tool_use_id) {
+      done[c.tool_use_id] = Date.parse(o.timestamp);
+      if (o.toolUseResult?.agentId) agents[c.tool_use_id] = o.toolUseResult.agentId;
+    }
+    const text = o.type === 'assistant' && Array.isArray(o.message?.content) ? o.message.content.filter((c) => c.type === 'text') : [];
+    if (answer === null && text.length) answer = text.map((c) => c.text).join('\n');
     uses.push(...toolUses(o).reverse());
   }
   return null;
 }
 
-function missing({ said, uses }, covers) {
+// graph: { store: 기록 위치, mtime: 기록 파일을 마지막으로 고친 시각 } — 기록 파일이 없는 설치면 null 이고 그래프 칸이 없다
+function missing({ said, uses, answer, since, done }, covers, graph) {
   // 사람이 친 슬래시 명령도 부른 것으로 친다 · 플러그인 스킬은 「플러그인:이름」
   const called = (name) => said.includes(name) || uses.some((u) => u.name === 'Skill' && new RegExp(`(^|:)${name}$`).test(u.input?.skill ?? ''));
   const isVerify = (u) => u.name === 'Bash' && /verify\.mjs/.test(u.input?.command ?? '') && !/--baseline/.test(u.input.command);
   const code = uses.flatMap((u, at) => {
-    const f = codeFile(u);
+    const f = codeFile(u, graph?.store);
     return f ? [{ f, at, covered: covers.some((g) => posix.matchesGlob(f, g)) }] : [];
   });
   const out = [];
@@ -68,6 +78,11 @@ function missing({ said, uses }, covers) {
   const last = Math.max(-1, ...code.filter((c) => c.covered).map((c) => c.at));
   if (last >= 0 && !uses.slice(last).some(isVerify)) out.push('verify (마지막 코드 변경 뒤)');
   if (uses.some(isVerify) && !called('final-gate')) out.push('final-gate');
+  // 기록은 쓰는 길(append · alias · 직접 수정 · 스크립트 · 서브에이전트)을 가리지 않고 파일 시각으로 본다 — 실측: 그래프 원천 설치는 진행 기록을 스크립트로 고친다
+  if (code.length && graph) {
+    if (!(graph.mtime >= since)) { if (!MARK.test(answer)) out.push('그래프 기록 또는 「그래프: 기록 안 함 — <이유>」 한 줄'); }
+    else if (!uses.some((u) => u.name === 'Bash' && /graph-find\.mjs[^|&;\n]*--check/.test(u.input?.command ?? '') && done[u.id] >= graph.mtime)) out.push('graph-find --check (그래프 기록 뒤)');
+  }
   return out;
 }
 
@@ -81,8 +96,13 @@ process.stdin.on('end', () => {
     const waiting = (input.background_tasks ?? []).some((t) => t.type !== 'shell' || /verify\.mjs/.test(t.command ?? ''));
     if (!input.stop_hook_active && !waiting) {
       const t = turn(readFileSync(input.transcript_path, 'utf8').split(/\r?\n/), input.transcript_path);
-      const covers = (JSON.parse(readFileSync(CONFIG, 'utf8')).checks ?? []).flatMap((c) => c.covers ?? []);
-      const miss = t ? missing(t, covers) : [];
+      const conf = JSON.parse(readFileSync(CONFIG, 'utf8'));
+      const covers = (conf.checks ?? []).flatMap((c) => c.covers ?? []);
+      // 기본 위치는 graph-find 와 같다 · 기록은 늦게 쓰일 수 있어 Stop 입력의 마지막 답을 먼저 본다
+      const store = conf.graph?.store ?? '.harness/graph/requests.jsonl';
+      const st = statSync(resolve(ROOT, store), { throwIfNoEntry: false });
+      if (t && input.last_assistant_message) t.answer = input.last_assistant_message;
+      const miss = t ? missing(t, covers, st ? { store, mtime: st.mtimeMs } : null) : [];
       if (miss.length) console.log(JSON.stringify({ decision: 'block', reason: `[관문] 이번 턴에 빠진 것: ${miss.join(' · ')}\n${GUIDE}` }));
     }
   } catch { /* 실패는 조용히 통과 */ }

@@ -6,6 +6,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { cli } from '../lib/config.mjs';
 import { INSTRUCTIONS } from '../lib/parts.mjs';
+import { mybatisFiles } from './mybatis-xml.mjs';
 
 const SOURCE = /\.(c?[jt]sx?|m[jt]s|vue|svelte|java|kts?|scala|groovy|py|rb|go|rs|[ch]|cc|cpp|hpp|cs|php|swift|dart|sql|jsp|sh)$/i;
 const OTHER_RULES = ['.cursor/rules', '.cursorrules', '.github/copilot-instructions.md'];
@@ -42,7 +43,8 @@ export function testHints(dir) {
 export const RECIPES = JSON.parse(readFileSync(new URL('../policy/recipes.json', import.meta.url), 'utf8'));
 export function recipeHints(dir) {
   const at = places(dir);
-  const fits = (w) => !w.files || at.some((sub) => w.files.some((f) => existsSync(join(dir, sub, f))) && (!w.script || scripts(dir, sub)[w.script]));
+  const fits = (w) => (!w.files || at.some((sub) => w.files.some((f) => existsSync(join(dir, sub, f))) && (!w.script || scripts(dir, sub)[w.script])))
+    && (!w.mybatis || mybatisFiles(dir).length > 0);
   return RECIPES.filter((r) => fits(r.when)).map(({ id, label, status }) => ({ id, label, status }));
 }
 // 테스트 소스 자리 — 「테스트 없음」을 선언한 뒤 생기면 junit 검사와 covers 를 더할 때다

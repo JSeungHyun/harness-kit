@@ -120,6 +120,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(처방 `node-tsc`) · 전체 소스 컴파일(처방 `java-javac-compile`) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — 그 검사 하나에 「테스트 없음」을 선언한다: `"tests": "none"` + `"why": "<이유 — 예: 테스트 소스 없음, 첫 테스트 때 junit 검사와 covers 를 더한다>"`(선언 키는 이것 하나 · why 없으면 ⑧-f ⑤ ⛔). 그러면 빌드 · 테스트 단서가 있어도 갱신 · ⑧-f ⑤ 가 covers 로 멈추지 않고, ⑧-f 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다. 선언 뒤 테스트 소스(`src/test` · `test` · `tests`)가 생기면 ⚠️ 「테스트가 생겼다」 — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
+| MyBatis 매퍼 XML(추적 XML 에 MyBatis DOCTYPE — `detect` 가 처방 후보로 낸다) — 테스트 · 컴파일 검사에 더한다 | 처방 `mybatis-xml` — `--jar` 는 저장소 안 jar 또는 Maven 로컬 저장소 jar(앞 `~` 가능) · 매퍼가 아닌데 MyBatis DOCTYPE 을 단 파일(코드 생성기 템플릿 등)은 `--skip` | 처방대로 — covers 없음(형식만 본다 — 매퍼 변경은 `/code-review`) · 「후보」라 사용자에게 보여 주고 고른다 |
 | 그래프 무결성 | 처방 `graph-check` — 기록 위치는 `graph.store` 를 따른다 | 처방대로 |
 
 - Node 는 junit 결과 디렉터리를 만들지 않는다 — 없으면 ENOENT 로 죽는다(실측). `node --test` 에는 디렉터리가 아니라 glob 을 준다
@@ -136,7 +137,7 @@ node .harness/tools/policy-apply.mjs --with gate-hook          # 공유 → .cla
 node .harness/tools/policy-apply.mjs --local --with gate-hook  # 로컬 전용 → .claude/settings.local.json
 ```
 
-권한 · 관문 훅이 기존 설정 위에 병합된다(다시 돌려도 같다). 관문 훅(`gate-hook`, Stop)은 이번 턴의 증거 세트 — 코드를 바꿨으면 `/ponytail-review` · 덮는 검사(`covers`)가 없으면 `/code-review` · 덮는 검사가 있으면 마지막 코드 변경 뒤의 verify · verify 를 돌렸으면 final-gate — 에서 빠진 것만 적어 한 번 되돌려 보낸다. 실제 세션에서 모델은 verify 를 바로 돌리고 스킬을 건너뛰었다(코드 변경 뒤 0/7). 결과를 기다리는 작업(서브에이전트 · 백그라운드 verify)이 도는 멈춤은 통과이고, 상주 개발 서버만 떠 있으면 울린다.
+권한 · 관문 훅이 기존 설정 위에 병합된다(다시 돌려도 같다). 관문 훅(`gate-hook`, Stop)은 이번 턴의 증거 세트 — 코드를 바꿨으면 `/ponytail-review` · 덮는 검사(`covers`)가 없으면 `/code-review` · 덮는 검사가 있으면 마지막 코드 변경 뒤의 verify · verify 를 돌렸으면 final-gate · 그래프 기록 파일이 있는 설치면 이번 턴의 기록 변경 뒤 `graph-find --check` 또는 마지막 답의 `그래프: 기록 안 함 — <이유>` 한 줄 — 에서 빠진 것만 적어 한 번 되돌려 보낸다. 실제 세션에서 모델은 verify 를 바로 돌리고 스킬을 건너뛰었다(코드 변경 뒤 0/7). 결과를 기다리는 작업(서브에이전트 · 백그라운드 verify)이 도는 멈춤은 통과이고, 상주 개발 서버만 떠 있으면 울린다.
 
 **플러그인은 PC(사용자 범위)에서 켜고, 프로젝트에는 선언하지 않는다** — 로컬 설치는 플러그인 선언을 쓰지 않는다. 그래서 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. 공유 모드만 팀원 PC 용으로 `settings.json` 에 superpowers 를 선언한다. 프로젝트 설정에 남은 superpowers · ponytail 항목(켬이든 끔이든 · 옛 마켓 id 포함), 옛 정책의 `extraKnownMarketplaces.ponytail`, `PONYTAIL_DEFAULT_MODE=off` 는 `policy-apply` 가 걷고 출력의 `걷음:` 줄로 알린다. ⛔ 「이 id 를 false 로 두면 전역에서 켜져도 이 프로젝트에서는 꺼진 채」 같은 이유로 남길지 사용자에게 묻지 않는다 — 플러그인은 PC 에서만 관리한다(사용자 결정). `--only gate-hook` 은 걷지 않는다.
 
@@ -210,6 +211,8 @@ node .harness/tools/policy-apply.mjs --local --with graph-hook    # 로컬 전�
 node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 ```
 
+**파일 기록 훅은 선택이다** — 모델이 읽은 파일에 걸린 기록(정본 · 함정 · ⏸)을 붙인다. 프롬프트 훅을 못 받는 서브에이전트에 기록이 닿는다. 사용자가 켜기로 하면 `node .harness/tools/policy-apply.mjs --local --with graph-read-hook`(공유 모드는 `--local` 없이). 켠 설치는 갱신 안내 · 이식 검사 ④ 가 이 훅도 본다.
+
 #### 신규 구축 (`new`)
 
 - 소급할 과거가 없다 — lessons 는 비워 둔다
@@ -266,14 +269,14 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 |---|---|
 | ① 도구 | `.harness/` 의 키트 도구(그래프 도구 포함 — 예외 없음) · lib · 정책이 키트 판과 같다(줄바꿈 무시) · 키트에서 지운 것 0 |
 | ② 규칙 · ③ 스킬 | `harness.md` · `graph.md`(기록 규칙 자리가 기본일 때) · `final-gate` 가 키트 판(자리 채움)과 같다 — 다르면 다른 줄 요약 |
-| ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 관문 훅만 · 그래프 훅 켬 — 옛 자기 그래프 훅이면 키트 훅으로 바꿔 끼울 것)대로 다시 돌려도 바뀌는 것이 없다 |
+| ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 관문 훅만 · 그래프 훅 켬 — 옛 자기 그래프 훅이면 키트 훅으로 바꿔 끼울 것 · 파일 기록 훅 켬)대로 다시 돌려도 바뀌는 것이 없다 |
 | ⑤ `harness.json` | 형식 · 프로필 · 모드 · 장부 파일 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구를 가리키는 줄 0) · 빌드 · 테스트 단서가 있으면 `covers` 검사 1개 이상 또는 「테스트 없음」 선언 · 검사마다 `recipe`(목록에 있는 처방 id) 또는 `why` |
 | ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 · `ponytail-review` 가 고정 커밋에서 받은 그대로 |
 | ⑦ 지시 파일 | Claude 지시 파일이 있고, `AGENTS.md` 가 있으면 import 한다(공유는 커밋되는 `CLAUDE.md` 가) |
-| ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 · 관문 훅이 코드만 바꾼 합성 턴을 되돌리고 다 갖춘 턴은 통과 |
+| ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 · 관문 훅이 코드만 바꾼 합성 턴을 되돌리고 다 갖춘 턴(그래프 기록이 있는 설치면 `그래프: 기록 안 함` 한 줄 포함)은 통과 |
 | ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 — 또는 그 뒤 키트가 설치본에 얹는 것(`lib` · `tools` · `policy` · `templates`)이 그대로(문서만 바뀐 커밋은 다시 갱신하지 않는다 · 키트가 모르는 커밋 · `-dirty` 는 ⛔) |
 
-설치본의 자리는 세 갈래고 정본은 `<kit>/lib/parts.mjs` 한 곳이다 — **키트 소유**(키트 판과 같아야 한다 — ① ② ③ ⑨) · **프로젝트 설정**(`harness.json` 의 검사 · 처방 · why · covers · 테스트 없음 · `graph.names` · `graph.store` · 지시 파일 본문 · `.claude/rules/project-*.md` — 모양과 출처만 ⑤) · **프로젝트 데이터**(그래프 기록 · 장부 본문 · 기준선 — 멀쩡한가만 ⑧). 프로젝트가 `.harness/` 에 더한 도구는 키트 소유가 아니라 보지 않는다. 판정 줄 아래 「프로젝트 맞춤」 절이 설정 · 데이터를 보인다(검사마다 kind · 명령 앞부분 · covers 개수 · 처방 또는 why · 「테스트 없음」 · graph.names · graph.store · 기록 건수 · 프로젝트 규칙 · 장부 줄 수) — 판정은 아니지만 보고에 같이 붙인다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
+설치본의 자리는 세 갈래고 정본은 `<kit>/lib/parts.mjs` 한 곳이다 — **키트 소유**(키트 판과 같아야 한다 — ① ② ③ ⑨) · **프로젝트 설정**(`harness.json` 의 검사 · 처방 · why · covers · 테스트 없음 · `graph.names` · `graph.store` · 지시 파일 본문 · `.claude/rules/project-*.md` — 모양과 출처만 ⑤) · **프로젝트 데이터**(그래프 기록 · 장부 본문 · 기준선 — 멀쩡한가만 ⑧). 프로젝트가 `.harness/` 에 더한 도구는 키트 소유가 아니라 보지 않는다. 판정 줄 아래 「프로젝트 맞춤」 절이 설정 · 데이터를 보인다(검사마다 kind · 명령 앞부분 · covers 개수 · 처방 또는 why · 「테스트 없음」 · graph.names · graph.store · 기록 건수 · 프로젝트 규칙 · 장부 줄 수(빈 줄 뺀 수)) — 판정은 아니지만 보고에 같이 붙인다. ⛔ **exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다** — ⑨ 보고에 표와 판정 줄을 그대로 붙인다. ⛔ 행은 관측 칸대로 고치거나(② ③ 은 「갱신」의 `--own-rules`), 사용자 승인 자리면(④ 정책 줄 · ⑥ PC) 「사용자가 결정해야 하는 것」에 남긴다.
 
 ### ⑨ 보고 — 3단
 
@@ -291,7 +294,7 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 ## ⚠️ 이 프로젝트에 새로 생기는 제약
 - 작업을 끝냈다고 보고하기 직전에 final-gate — 완료 증거 · 작업 파일 목록 · 기록이 한 세트
 - 코드 변경의 완료 증거는 node .harness/tools/verify.mjs — 코드를 바꾼 턴은 /ponytail-review, 검사가 덮지 않는 코드면 /code-review 도(관문 훅이 확인한다)
-- 요구가 오면 그래프 먼저 (node .harness/tools/graph-find.mjs), 끝나면 기록
+- 요구가 오면 그래프 먼저 (node .harness/tools/graph-find.mjs), 끝나면 기록 — 코드를 바꾼 턴은 기록(뒤에 --check) 또는 「그래프: 기록 안 함 — <이유>」 한 줄(관문 훅이 확인한다)
 - 프로젝트 설정의 자동 승인(allow)은 이 폴더를 신뢰해야 적용된다 — 대화형으로 한 번 열어 신뢰 대화상자를 수락한다 (실측: 신뢰 전에는 「Ignoring … permissions.allow entries」)
 ```
 

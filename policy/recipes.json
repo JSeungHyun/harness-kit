@@ -27,6 +27,15 @@
     "basis": "기존 이식 · Java 8 · ant · 단위 테스트 없음 · Windows cmd · 2026-11 — 타입 검사라 covers 없음(매퍼 XML · JSP 오류는 못 잡는다)"
   },
   {
+    "id": "mybatis-xml",
+    "label": "MyBatis 매퍼 XML — jar 안 DTD 로 형식 · 요소 · 필수 속성만 검증(SQL 의미는 못 봄)",
+    "when": { "mybatis": true },
+    "checks": [{ "id": "mybatis-xml", "cmd": "node .harness/tools/mybatis-xml.mjs --jar <mybatis jar — 저장소 안 경로 또는 ~/.m2/repository/org/mybatis/mybatis/<판>/mybatis-<판>.jar> --skip <매퍼가 아닌데 MyBatis DOCTYPE 을 단 파일 glob — 코드 생성기 템플릿 등, 없으면 --skip 째 뺀다>", "kind": "exit-code" }],
+    "edit": [],
+    "status": "후보",
+    "basis": "기존 이식 2곳 사본(ant 222개 · Maven 15개) · 2026-11 — 원본 오탐 0(코드 생성기 템플릿 1건은 --skip) · 넣은 오류 5종 5/5 · 전체 3~5초(처음 실행 8초) · JDK 8 · 21 · 26 같은 판정. 형식 검사라 covers 없음 — SQL · id 중복 · resultMap 참조는 못 잡는다(매퍼 변경은 /code-review)"
+  },
+  {
     "id": "maven-test",
     "label": "Maven 테스트",
     "when": { "files": ["pom.xml"] },

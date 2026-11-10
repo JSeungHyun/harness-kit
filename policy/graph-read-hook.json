@@ -1,0 +1,18 @@
+{
+  "_note": "파일 기록 훅 — 모델이 Read 로 연 파일을 가리키는 살아있는 기록을 붙인다(⏸ 열린 작업 · 최신 정본 1건 · 함정 1줄, 10건 넘게 걸린 파일은 건수만 · 세션마다 파일 한 번 · 같은 턴에 그래프 훅이 붙인 기록은 뺀다). 선택 — 설정이라 사용자 승인 뒤 policy-apply --with graph-read-hook 으로 병합한다. 켜면 이식 검사 ④ · 갱신 안내가 이 훅도 본다. 설계안.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/graph-read-hook.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

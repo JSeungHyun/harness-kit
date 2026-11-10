@@ -45,7 +45,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | 모듈 | 막는 실패 | 도구 (`.harness/tools/`) |
 |---|---|---|
 | **evidence** | 완료를 거짓 보고한다 · 묻지 않고 넘어간 가정이 묵는다 · 같은 실패를 반복한다 | `verify` · `gate-hook` · `decision-check` · `lesson-append` · `policy-apply` |
-| **graph** | 같은 것을 두 번 조사한다 · 사용자의 말과 코드의 이름 사이 다리가 없다 | `graph-find` · `graph-append` · `graph-alias` · `graph-hook` · `graph-view` · `graph-measure` |
+| **graph** | 같은 것을 두 번 조사한다 · 사용자의 말과 코드의 이름 사이 다리가 없다 | `graph-find` · `graph-append` · `graph-alias` · `graph-hook` · `graph-read-hook`(선택) · `graph-view` · `graph-measure` |
 | 설치 | 설치 · 갱신이 키트와 달라진 채 「끝」으로 보고된다 | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` · `install-check` |
 
 자동 로드되는 층은 `.claude/rules/harness.md` · `.claude/rules/graph.md` 둘뿐이다. 관문은 `final-gate` 스킬 — **작업을 끝냈다고 보고하기 직전에 매번** 돈다(계획 유무와 무관).
@@ -72,6 +72,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | **검사가 돌리지 않는 코드** | ❌ verify 녹색은 검사 목록만 증명한다(Java 를 바꿨는데 검사는 `npm test`) | ⭐ 검사의 `covers` — 덮이지 않은 코드 변경에 관문 훅이 `/code-review` 를 요구한다 |
 | **묻지 않은 가정 · 반복 실패의 적립** | ❌ | ⭐ `decision-check`(답을 기다리는 목록) · `lesson-append`(근본 원인 없으면 거부) |
 | **현업 용어 → 코드 식별자 · 함정 한 줄** | ❌ 어디에도 없다 | ⭐ 그래프 `terms` · `note` |
+| **작업 끝 기록을 미루다 빠뜨림** | ❌ 「기록해라」만 있으면 「커밋 뒤에」로 미룬다(원천 재생: 같은 지식을 4턴 내리) | ⭐ 관문 훅 — 코드를 바꾼 턴은 그래프 기록(뒤에 `--check`) 또는 `그래프: 기록 안 함 — <이유>` 한 줄 |
 | **요청하지 않은 변경** | ❌ verify 는 통과하고, 과설계 리뷰는 범위를 안 본다 | ⭐ 범위 검토 — 사용자 말 원문 + diff 만 받은 서브에이전트(final-gate) |
 
 ## ⛔ 도입하지 말아야 할 때

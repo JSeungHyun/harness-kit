@@ -4,6 +4,8 @@
 import { load, scoreDetail, sup, tokenizeKo, tokenizeIds, ORIGIN } from './graph-find.mjs';
 
 const MAX = 2;   // 프롬프트마다 붙는 비용이므로 상위 2건만
+// 정렬은 graph-find 와 같다 — 정확일치 유무가 첫 키다
+const order = (a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s || (b.r.date || '').localeCompare(a.r.date || '');
 
 let raw = '';
 process.stdin.setEncoding('utf8');
@@ -23,9 +25,7 @@ function render(prompt) {
   const all = load();
   const superseded = new Set(all.flatMap(sup));
   const recs = all.filter((r) => !BOOKKEEPING.test(r.req) && !superseded.has(r.req));
-  // 정렬은 graph-find 와 같다 — 정확일치 유무가 첫 키다
-  const hits = recs.map((r) => ({ r, ...scoreDetail(r, [...ko, ...ids]) }))
-    .filter((x) => x.s > 0).sort((a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s || (b.r.date || '').localeCompare(a.r.date || ''));
+  const hits = recs.map((r) => ({ r, ...scoreDetail(r, [...ko, ...ids]) })).filter((x) => x.s > 0).sort(order);
 
   // 1단 판정은 점수 합이 아니라 신호의 종류로 — 정확일치 · 식별자 적중 · 5점 이상. 아니면 2단(압축 색인)
   const top = hits[0];
@@ -97,16 +97,20 @@ function kindOf(rec) {
 
 // 열린 작업(⏸)은 랭킹으로 닿지 않는다 — 점수가 아니라 상태로 붙인다. 표식은 note 맨 앞만, 문턱은 확신 판정과 같은 5
 const OPEN_MIN = 5;
+// 질의와 가장 겹치는 3건만 — 원천 실입력 300 재생에서 ⏸ 부분 p90 5,902 → 1,319자 · 1단 1위 · 재개 질의 16/16 불변. 나머지는 건수와 --open 으로. 바꾸려면 다시 잰다
+const OPEN_SHOW = 3;
 export const isOpen = (r) => (r.note || '').startsWith('⏸');
 function openWork(recs, toks, shown = []) {
-  const open = recs.filter((r) => !shown.includes(r) && isOpen(r) && scoreDetail(r, toks).s >= OPEN_MIN);
+  const open = recs.filter((r) => !shown.includes(r) && isOpen(r)).map((r) => ({ r, ...scoreDetail(r, toks) }))
+    .filter((x) => x.s >= OPEN_MIN).sort(order);
   if (!open.length) return [];
   const out = [`⏸ 열린 작업 ${open.length}건 — 이 주제에 **하다 만 기록**이 있다. 다시 조사하기 전에 이것부터 편다.`];
-  for (const r of open) {
+  for (const { r } of open.slice(0, OPEN_SHOW)) {
     out.push(`  ⏸ ${r.date} ${r.req}`);
     // 앞머리만 — 「어디까지 했고 왜 멈췄나」가 note 앞에 온다
     if (r.note) out.push(`     ⚠️ ${r.note.slice(0, 240)}${r.note.length > 240 ? ' …(전문: graph-find)' : ''}`);
   }
+  if (open.length > OPEN_SHOW) out.push(`  … 나머지 ${open.length - OPEN_SHOW}건: node .harness/tools/graph-find.mjs --open`);
   return out;
 }
 

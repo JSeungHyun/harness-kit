@@ -123,15 +123,16 @@ function hideLocal(dir, rel) {
   appendFileSync(exclude, `${text && !text.endsWith('\n') ? '\n' : ''}/${rel}\n`);
 }
 
-// 대상 설정의 모양 — 관문 훅만 건 설치(--only gate-hook)인가 · 키트 그래프 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
+// 대상 설정의 모양 — 관문 훅만 건 설치(--only gate-hook)인가 · 키트 그래프 훅 · 파일 기록 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
 export function settingsShape(dir) {
   const sets = ['settings.local.json', 'settings.json'].map((f) => read(join(dir, '.claude', f)));
   // 옛 자기 그래프 훅(tools/graph-hook.mjs)도 그래프 훅이다 — 정책 줄이 키트 훅으로 바꿔 끼운다
   const graphHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('graph-hook.mjs'));
+  const readHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('graph-read-hook.mjs'));
   // 정책 전체를 받은 설치는 키트 도구 허용 규칙이 있다 — 플러그인 선언은 표식이 아니다(--only 대상이 ponytail 을 스스로 켤 수 있다)
   const kitAllow = (read(join(KIT, 'policy', 'settings.json')).permissions?.allow ?? []).filter((r) => r.includes('.harness/tools/'));
   const full = sets.some((s) => (s.permissions?.allow ?? []).some((r) => kitAllow.includes(r)));
-  return { graphHook, only: sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full };
+  return { graphHook, readHook, only: sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full };
 }
 
 // 키트 템플릿에서 지운 장부 줄 — 장부 본문은 프로젝트 것이라 그 줄과 같은 줄(앞뒤 공백 무시)만 본다. 갱신이 걷고 이식 검사 ① 이 남은 것을 본다
@@ -291,10 +292,10 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   // 옛 정책이 쓴 플러그인 선언 · ponytail 모드(옛 마켓 id 포함)는 policy-apply 가 걷는다 — 여기서는 --off 를 내지 않는다
   // 관문 훅만 건 설치(--only gate-hook — 지시 파일이 흐름 · 권한을 정한 프로젝트)에 --with 를 내면 받지 않은 정책이 들어간다
   // 키트 그래프 훅을 건 설치 — 다시 병합해야 훅 형식이 바뀐다
-  const { graphHook, only } = settingsShape(dir);
+  const { graphHook, readHook, only } = settingsShape(dir);
   out.push('', '다음 — 이 순서로 (설정이라 사용자가 돌리거나 승인한다):',
     `1. node ${KIT_PATH}/tools/plugin-plan.mjs — 이전 명령이 나오면 사용자 승인 뒤 먼저 실행한다`,
-    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook ? ' --with graph-hook' : ''}`}`,
+    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook ? ' --with graph-hook' : ''}`}${readHook ? ' --with graph-read-hook' : ''}`,
     `3. node ${KIT_PATH}/tools/install-check.mjs ${dir.replace(/\\/g, '/')} — 표를 보고에 그대로 붙인다. exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다`);
 
   // 갱신이 검사 목록을 다시 본다 — 빌드 도구가 있는데 코드를 덮는 검사가 없으면 verify 녹색은 코드 변경의 증거가 아니다
