@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { load, index, check, scoreDetail } from '../tools/graph-find.mjs';
+import { load, index, check, scoreDetail, tokenizeKo } from '../tools/graph-find.mjs';
 import { appendRecord } from '../tools/graph-append.mjs';
 import { tmp, graphInstall } from './scene.mjs';
 
@@ -177,6 +177,26 @@ test('⛔ graph 도구 어디에도 tools/graph/ 하드코딩이 없다', () => 
   for (const f of readdirSync(TOOLS).filter((n) => n.startsWith('graph-'))) {
     assert.doesNotMatch(readFileSync(join(TOOLS, f), 'utf8'), /['"`]tools\/graph|join\([^)]*'graph'/, f);
   }
+});
+
+test('⭐ 토크나이저 — 「명사 + 중 + 조사」는 명사를 더한다 · 「중」 앞이 1글자(집중 · 비중 · 도중)거나 조사가 없으면(…중) 그대로', () => {
+  const t = (q) => [...tokenizeKo(q)].sort();
+  for (const w of ['재고실사중에', '재고실사중엔', '재고실사중인', '재고실사중이', '재고실사중일', '재고실사중에는', '재고실사중에도']) {
+    assert.ok(t(w).includes('재고실사'), w);
+    assert.ok(t(w).includes(w), `${w} — 원형도 남는다`);
+  }
+  assert.deepEqual(t('집중에'), ['집중', '집중에']);
+  assert.deepEqual(t('비중이'), ['비중', '비중이']);
+  assert.deepEqual(t('도중에'), ['도중', '도중에']);
+  assert.deepEqual(t('재고실사중'), ['재고', '재고실사중']);
+  assert.deepEqual(t('처리중에'), ['처리중', '처리중에']);
+  // 이어 붙인 형에는 안 건다 — 「기록을 나중에」가 「기록을나」를 만든다
+  for (const [q, junk] of [['기록을 나중에', '기록을나'], ['매출 비중이', '매출비'], ['업로드 도중에', '업로드도']]) assert.ok(!t(q).includes(junk), q);
+  const s = scene([
+    { req: '정본: 재고실사 구조', terms: { 재고실사: 'stock_audit', 실사지표: 'audit_metric' } },
+    { req: '수동 업로드 조사', terms: { 수동업로드: 'manual_upload' } },
+  ]);
+  assert.match(cards(hook(s, '재고실사중에 수동으로 바꾸는 것과 자동으로 바뀌는 게 뭐야'))[0] ?? '', /정본: 재고실사 구조/);
 });
 
 test('⭐ ③ 용어 「값」은 한글 질의에서 빠지고 식별자 질의에만 걸린다', () => {

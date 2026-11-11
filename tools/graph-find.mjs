@@ -47,6 +47,9 @@ export const sup = (r) => [].concat(r.supersedes || []).filter(Boolean);
 
 // 훅과 CLI 가 같은 토크나이저를 쓴다. 조사를 떼야 용어 정확일치가 걸리고, 원형도 남겨 잘못 떼도 손해가 없다
 const JOSA = /(으로|에서|부터|까지|에게|한테|이나|라도|는|은|를|을|가|이|의|에|도|만|과|와|랑|로|나)$/;
+// 「명사 + 중 + 조사」(…중에 · 중인)는 명사도 — 조사 한 번 떼기로는 「…중」에서 멈춘다. 「중」 앞이 1글자면 집중 · 비중 같은 낱말이다
+// 낱말에만 건다 — 이어 붙인 형에 걸면 「기록을 나중에」가 「기록을나」를 만든다
+const DURING = /^([가-힣]{2,})중(?:에는|에도|에서|에|엔|인|이|일)$/;
 function addTok(set, t) {
   if (t.length >= 2 && !STOP.has(t)) set.add(t);
   const bare = t.replace(JOSA, '');
@@ -56,7 +59,11 @@ export function tokenizeKo(prompt) {
   const ko = new Set();
   // 숫자·영문이 섞인 말을 먼저, 순수 한글을 따로 — [가-힣]{2,} 만 쓰면 섞인 말이 통째로 사라진다
   for (const raw of prompt.match(/[0-9A-Za-z]+[가-힣]+|[가-힣]+[0-9A-Za-z]+[가-힣]*/g) || []) addTok(ko, raw);
-  for (const raw of prompt.match(/[가-힣]{2,}/g) || []) addTok(ko, raw);
+  for (const raw of prompt.match(/[가-힣]{2,}/g) || []) {
+    addTok(ko, raw);
+    const noun = raw.match(DURING)?.[1];
+    if (noun && !STOP.has(noun)) ko.add(noun);
+  }
   // 공백만 다른 형태(「목표 수립」=「목표수립」)를 질의에서 만든다 — 저장 쪽을 늘리지 않는다
   for (const phrase of prompt.split(/[^가-힣\s]+/)) {
     // 1글자 어절도 조합에는 넣는다 — 빼면 「기준 월」이 「기준월」이 안 된다
