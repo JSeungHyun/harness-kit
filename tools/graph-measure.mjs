@@ -4,8 +4,10 @@
 //   node .harness/tools/graph-measure.mjs --self                                 # 살아있는 기록의 req 를 질의로 → 그 기록이 1위인가 (회귀)
 //   node .harness/tools/graph-measure.mjs --baseline <도구 폴더> [--tickets <json>] [--guard self,share]
 //     # 두 판 비교 — 같은 기록에 그 폴더의 graph-find · graph-hook 과 이 판을 돌려 지표를 나란히. --guard 지표가 기준선보다 나쁘면 exit 1 (기본 self)
+//   node .harness/tools/graph-measure.mjs --prompts <세션 기록 폴더|.jsonl> [--limit 300] [--baseline <도구 폴더>] [--guard inject]  # 두 판이면 종류마다 출력 같음 n/N
+//     # 질문당 비용 — 프롬프트 훅을 부른 실입력 최근 N개를 그 판의 graph-hook 으로 재생해 종류별 주입 · 단계 · 훅 시간. inject: 주입 평균이 기준선보다 늘면 exit 1
 //   --store <jsonl>: 기록 위치를 바꾼다(설치 사본 등) — 모든 모드
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18,7 +20,9 @@ const hasTickets = args.includes('--tickets');
 const ticketsPath = opt('--tickets', 'tickets.json');
 const store = resolve(opt('--store', kit.STORE));
 const baseline = opt('--baseline');
-const guard = opt('--guard', 'self').split(',');
+const prompts = opt('--prompts');
+const limit = Number(opt('--limit', 300));
+const guard = opt('--guard', prompts ? 'inject' : 'self').split(',');
 const self = args.includes('--self');
 const patterns = args.filter((a) => a !== '--self');
 
@@ -77,6 +81,80 @@ const METRICS = [
 const CONFIDENT = /^\[그래프 자동조회\] 유사 기록/;
 // 경로 표기만 다른 출력(.harness/tools/ ↔ tools/)은 같은 출력이다
 const norm = (o) => o.replace(/node \S*?graph-(\w+)\.mjs/g, 'node graph-$1.mjs');
+const pct = (sorted, q) => sorted[Math.max(0, Math.ceil(sorted.length * q) - 1)] ?? 0;
+
+// 프롬프트 훅을 부른 입력 — 사람 줄 · 대기 입력(queued_command). 도구 결과 · 압축 요약 · 메타 · 셸 줄은 훅을 부르지 않는다
+// 세션 메시지는 기록에만 앞머리 · 뒤 안내문이 붙는다 — 훅은 감쌈 하나만 받는다(원천 실측: 기록이 안 바뀐 구간에서 훅 출력 전문 일치)
+const PEER = /^Another Claude session sent a message:\n(<([\w-]+)[\s\S]*?<\/\2>)/;
+const COMMAND = /^<command-(name|message)>/;
+const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b.type === 'text').map((b) => b.text).join('\n') : '');
+function opening(o) {
+  let origin, prompt, unsure = false;
+  if (o.type === 'attachment' && o.attachment?.type === 'queued_command') { origin = o.attachment.origin; prompt = textOf(o.attachment.prompt); } else {
+    const c = o.message?.content;
+    if (o.type !== 'user' || o.isSidechain || o.isCompactSummary || (Array.isArray(c) && c.some((b) => b.type === 'tool_result'))) return null;
+    origin = o.origin; prompt = textOf(c);
+    if (!origin && !o.promptSource && !COMMAND.test(prompt)) return null;
+    if (origin?.kind === 'peer') { const m = prompt.match(PEER); unsure = !m; if (m) prompt = m[1]; }
+  }
+  const kind = COMMAND.test(prompt) ? '명령' : origin?.kind === 'peer' ? '세션 메시지'
+    : origin?.kind === 'task-notification' || /^<task-notification>/.test(prompt) ? '알림' : origin?.kind === 'human' ? '사람' : '기타';
+  return { ts: o.timestamp ?? '', origin, prompt, kind, unsure: unsure || kind === '기타' };
+}
+function sessionInputs(path) {
+  const st = statSync(path, { throwIfNoEntry: false });
+  const files = !st ? [] : st.isDirectory() ? readdirSync(path).filter((f) => f.endsWith('.jsonl')).map((f) => join(path, f)) : [path];
+  const inputs = [];
+  let skipped = 0;
+  for (const f of files) {
+    const got = readFileSync(f, 'utf8').split('\n').flatMap((l) => { try { return [opening(JSON.parse(l))].filter(Boolean); } catch { return []; } });
+    // -p 한 건짜리 세션은 사람과의 대화가 아니다
+    if (got.length === 1 && !got[0].origin) skipped++;
+    else inputs.push(...got);
+  }
+  return { files: files.length, skipped, inputs: inputs.sort((a, b) => a.ts.localeCompare(b.ts)) };
+}
+
+if (prompts) {
+  if (guard.some((g) => g !== 'inject')) { console.error(`⛔ --prompts 의 --guard 는 inject 만 받는다: ${guard.join(', ')}`); process.exit(1); }
+  const { files, skipped, inputs } = sessionInputs(resolve(prompts));
+  const picked = inputs.slice(-limit);
+  if (!picked.length) { console.error(`⛔ 턴을 연 입력을 하나도 못 찾았다: ${prompts} — Claude Code 세션 기록(.jsonl 또는 그 폴더)이어야 한다`); process.exit(1); }
+  const dirs = [...(baseline ? [resolve(baseline)] : []), fileURLToPath(new URL('.', import.meta.url))];
+  const timed = async (dir, prompt) => { const t = performance.now(); const out = await hookOut(dir, prompt); return { out, ms: performance.now() - t }; };
+  // 시간은 PC 부하로 흔들린다 — 예열 1회는 버리고(첫 읽기가 수십 배 느리다) 두 판을 입력마다 번갈아 같은 조건에서 잰다
+  for (const d of dirs) await timed(d, picked[0].prompt);
+  const runs = dirs.map(() => []);
+  for (const [i, p] of picked.entries()) for (const k of i % 2 ? [...dirs.keys()].reverse() : dirs.keys()) runs[k][i] = await timed(dirs[k], p.prompt);
+
+  const COLS = [['inj', '주입률', '%'], ['conf', '1단', '%'], ['silent', '침묵', '%'], ['avg', '주입 평균', '자'], ['p90', '주입 p90', '자'], ['t50', '훅 p50', 'ms'], ['t90', '훅 p90', 'ms']];
+  const GROUPS = [['사람', (p) => p.kind === '사람'], ['사람 · 짧은 말(≤20자)', (p) => p.kind === '사람' && p.prompt.length <= 20],
+    ['사람 · 긴 글(>500자)', (p) => p.kind === '사람' && p.prompt.length > 500], ...['세션 메시지', '알림', '명령', '기타'].map((k) => [k, (p) => p.kind === k]), ['전체', () => true]];
+  // 주입 글자 · 비율은 입력당(침묵은 0자) — 질문 한 번의 비용
+  const sum = (rows) => {
+    const rate = (f) => Math.round((rows.filter(f).length / rows.length) * 100);
+    const sizes = rows.map((r) => r.out.length).sort((a, b) => a - b), ms = rows.map((r) => r.ms).sort((a, b) => a - b);
+    return { inj: rate((r) => r.out.trim()), conf: rate((r) => CONFIDENT.test(r.out)), silent: rate((r) => !r.out.trim()), avg: Math.round(sizes.reduce((a, b) => a + b, 0) / rows.length),
+      p90: pct(sizes, 0.9), t50: Math.round(pct(ms, 0.5)), t90: Math.round(pct(ms, 0.9)) };
+  };
+  console.log(`실입력 재생 — 세션 기록 ${prompts} (파일 ${files} · 턴을 연 입력 ${inputs.length} · 뺀 -p 세션 ${skipped}) · 최근 ${picked.length}개 · 기록 ${store} (살아있는 ${recs.length}건)${baseline ? ` · 칸은 기준선(${baseline}) → 지금` : ''}\n`);
+  // 두 판이면 종류마다 출력이 같은 입력 수 — 한 종류만 바꾸려는 변경이 다른 종류를 건드렸는지 본다
+  const same = (at) => (baseline ? [`${at.filter((i) => norm(runs[0][i].out) === norm(runs[1][i].out)).length}/${at.length}`] : []);
+  console.log(`| 종류 | 입력 | ${[...COLS.map(([, h]) => h), ...(baseline ? ['출력 같음'] : [])].join(' | ')} |\n|${'---|'.repeat(COLS.length + 2 + (baseline ? 1 : 0))}`);
+  let total;
+  for (const [name, f] of GROUPS) {
+    const at = picked.flatMap((p, i) => (f(p) ? [i] : []));
+    if (!at.length) continue;
+    total = runs.map((r) => sum(at.map((i) => r[i])));
+    console.log(`| ${name} | ${at.length} | ${[...COLS.map(([k, , u]) => total.map((x) => `${x[k]}${u}`).join(' → ')), ...same(at)].join(' | ')} |`);
+  }
+  console.log(`\n재생 불일치 가능 ${picked.filter((p) => p.unsure).length}건 — 감쌈을 못 벗긴 세션 메시지 · 기타(훅이 받은 글과 같은지 확인 못 한 모양)`);
+  if (!baseline) process.exit(0);
+  const [base, now] = total;
+  if (now.avg > base.avg) { console.log(`⛔ 기준선보다 나쁨 — inject ${base.avg}자 → ${now.avg}자`); process.exit(1); }
+  console.log('\n✅ 주입 평균(inject)이 기준선보다 늘지 않았다');
+  process.exit(0);
+}
 
 if (baseline) {
   const unknown = guard.filter((g) => !METRICS.some(([k]) => k === g));
@@ -101,7 +179,7 @@ if (baseline) {
       outs, n: qs.length, conf, silent: qs.filter((o) => !o.trim()).length,
       self: recs.filter((r) => top(r.req).top?.r === r).length,
       avg: qs.length ? Math.round(sizes.reduce((a, b) => a + b, 0) / qs.length) : 0,
-      p90: sizes[Math.max(0, Math.ceil(qs.length * 0.9) - 1)] ?? 0,
+      p90: pct(sizes, 0.9),
       share: conf ? Math.round((top3 / conf) * 100) : 0,
     };
   };
@@ -143,4 +221,4 @@ if (patterns.length) {
     console.log(`/${p}/ 질의 ${qs.length} · 확신 ${conf} · 정본1위 ${canon} · 상위3 점유 ${conf ? `${Math.round((top3 / conf) * 100)}%` : '—'} · 확신 1위 상위: ${topStr}`);
   }
 }
-if (!self && !patterns.length) { console.error('사용법: node .harness/tools/graph-measure.mjs "<주제 정규식>"… | --self | --baseline <도구 폴더>  [--tickets <json>] [--store <jsonl>] [--guard <지표,…>]'); process.exit(1); }
+if (!self && !patterns.length) { console.error('사용법: node .harness/tools/graph-measure.mjs "<주제 정규식>"… | --self | --baseline <도구 폴더> | --prompts <세션 기록> [--limit N]  [--tickets <json>] [--store <jsonl>] [--guard <지표,…>]'); process.exit(1); }

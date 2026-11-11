@@ -207,6 +207,7 @@ node .harness/tools/verify.mjs                # ⛔ exit 0 — 「기준선 실�
 
 ```bash
 node .harness/tools/graph-measure.mjs . --tickets <이슈 제목 json>   # 「상위3 점유 n%」
+node .harness/tools/graph-measure.mjs --prompts ~/.claude/projects/<프로젝트 폴더>/   # 질문당 비용 — 실입력 최근 300개 재생(주입률 · 1단 · 주입 글자 · 훅 시간)
 node .harness/tools/policy-apply.mjs --local --with graph-hook    # 로컬 전용
 node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 ```
