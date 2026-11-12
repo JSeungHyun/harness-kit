@@ -85,48 +85,6 @@ test('⛔ CLI --check: 이상이 있으면 exit 1, 깨끗하면 exit 0', () => {
   assert.equal(scene([{ req: 'A', files: [] }]).run('graph-find', ['--check']).status, 0);
 });
 
-// 17차 C — 정본 제목 머리 낱말을 다른 기록이 키로 가지면 그 낱말로 찾을 때 정본이 밀린다
-test('⭐ check 정본 대표 키 — 머리 낱말이 정본 키에 없고 다른 기록 키에 있어 1위를 뺏길 때만 걸린다', () => {
-  const canon = { req: '정본: 배송비 계산 규칙 — 무료 기준과 지역 할증', date: '2026-09-10', terms: { 할증: 'surcharge' }, files: ['src/ship.mjs'] };
-  const other = { req: '배송비 표시 오류', date: '2026-09-02', terms: { 배송비: 'ship_fee' }, files: ['src/ship-view.mjs'] };
-  const miss = (recs) => check(index(recs)).canonKey;
-
-  const r = miss([canon, other]);
-  assert.equal(r.n, 1);
-  assert.deepEqual(r.miss.map((x) => [x.head, x.top.req, x.n]), [['배송비', '배송비 표시 오류', 1]]);
-  // 처방 — 정본 키에 넣기만 하면 걸리지 않는다
-  assert.deepEqual(miss([{ ...canon, terms: { ...canon.terms, 배송비: 'ship_fee 계산' } }, other]).miss, []);
-  // 다른 기록이 그 키를 안 가지면 · 그 기록이 대체됐으면 걸리지 않는다
-  assert.deepEqual(miss([canon, { ...other, terms: { 표시: 'x' } }]).miss, []);
-  assert.deepEqual(miss([canon, other, { req: '배송비 표시 오류 고침', date: '2026-09-03', supersedes: '배송비 표시 오류', files: ['src/ship-view.mjs'] }]).miss, []);
-  // 대체된 정본은 세지 않는다 · 머리 낱말이 1글자면 보지 않는다
-  assert.equal(miss([canon, other, { req: '정본: 배송비 계산 규칙 v2', date: '2026-09-11', supersedes: canon.req, terms: { 배송비: 'ship_fee' } }]).miss.length, 0);
-  assert.deepEqual(miss([{ ...canon, req: '정본: 값 — 배송비' }, other]).miss, []);
-  // 키가 없어도 정본이 이미 1위면 울리지 않는다(제목 머리 5자 이상은 정본에 정확일치로 걸리고, 같으면 최신이 먼저)
-  const long = { ...canon, req: '정본: 배송비계산규칙 — 무료 기준' };
-  assert.deepEqual(miss([long, { ...other, terms: { 배송비계산규칙: 'x' } }]).miss, []);
-});
-
-test('⚠️ CLI --check 정본 대표 키 — 요약 한 줄 + 3건 · --all 이면 전부 · exit 는 그대로 0', () => {
-  const words = ['배송비', '적립금', '쿠폰함', '반품비'];
-  const recs = words.flatMap((w, i) => [
-    { req: `정본: ${w} 규칙 정리`, date: '2026-09-10', terms: { 규칙: `${w} 규칙` } },
-    { req: `${w} 화면 오류 ${i}`, date: '2026-09-02', terms: { [w]: `${w}_col` }, scope: 'meta' },
-  ]);
-  const s = scene(recs);
-  const r = s.run('graph-find', ['--check']);
-  assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /정본 4건 중 4건 — 머리 낱말이 정본 키에 없고/);
-  assert.equal(r.stdout.split(/\r?\n/).filter((l) => l.startsWith('  ⚠️ 「')).length, 3);
-  assert.match(r.stdout, /… 나머지 1건 — 전부: node \.harness\/tools\/graph-find\.mjs --check --all/);
-  assert.match(r.stdout, /terms 에 그 낱말 키를 넣는다/);
-  const all = s.run('graph-find', ['--check', '--all']);
-  assert.equal(all.status, 0);
-  assert.equal(all.stdout.split(/\r?\n/).filter((l) => l.startsWith('  ⚠️ 「')).length, 4);
-  assert.doesNotMatch(all.stdout, /나머지/);
-  assert.match(scene([{ req: 'A', files: [] }]).run('graph-find', ['--check']).stdout, /정본 대표 키[^\n]*\n {2}이상 없음 — 정본 0건\./);
-});
-
 test('⛔ graph-append — note 는 한 줄 · 800자까지다. 넘으면 아무것도 쓰지 않고 exit 1 · 기존 기록은 그대로 읽는다', () => {
   const { store } = scene();
   assert.throws(() => appendRecord({ req: 'A', note: '첫 줄\n둘째 줄' }, { store }), /한 줄/);

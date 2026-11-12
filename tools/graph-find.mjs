@@ -238,22 +238,7 @@ export function check(recs, { fileExists } = {}) {
   // 경고만 — 새 기록은 append 가 막는다. 남은 것은 지우거나 scope:meta 를 넣는다
   const offTopic = recs.filter((r) => !superseded.has(r.req) && offRepo(r));
 
-  // 정본 대표 키 — 제목 머리 낱말이 정본 키에 없고 다른 기록 키에만 있으면 그 낱말로 찾을 때 다른 기록이 1위다(원천 실측 정본 37건 중 21건 · 21건 모두 정본 키에 넣기만 해도 1위로 돌아옴). 경고만
-  const live = recs.filter((r) => !superseded.has(r.req));
-  const canon = live.filter((r) => /^정본\s*:/.test(r.req));
-  const canonKey = { n: canon.length, miss: [] };
-  for (const c of canon) {
-    const head = c.req.replace(/^정본\s*:\s*/, '').split(/[(（—\s]/)[0];
-    const h = head.toLowerCase();
-    const owns = owners.get(h) || [];
-    if (h.length < 2 || owns.includes(c)) continue;
-    const others = owns.filter((r) => r !== c && !superseded.has(r.req));
-    if (!others.length) continue;
-    const top = rank(live, [...tokenizeKo(head), ...tokenizeIds(head)])[0]?.r;
-    if (top && top !== c) canonKey.miss.push({ c, head, top, n: others.length });
-  }
-
-  return { problems, gone, noRecorded, retro, stale, unmarked, offTopic, canonKey, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
+  return { problems, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
 }
 
 // 정렬: 정확일치 유무 → 점수 → 살아있는 기록 → 최신
@@ -370,7 +355,7 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
 
   // 무결성 검증 — 문자열 참조로 잇는 구조의 유일한 약점을 시끄럽게 만든다
   if (args[0] === '--check') {
-    const { problems, gone, noRecorded, retro, stale, unmarked, offTopic, canonKey, dupTerms } = check(recs, { fileExists: (f) => existsSync(f) });
+    const { problems, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms } = check(recs, { fileExists: (f) => existsSync(f) });
     console.log(`기록 ${recs.length}건 · 대체 사슬 ${recs.filter((r) => r.supersedes).length}건\n`);
     console.log('── 줄 형식 ──');
     console.log(broken.length ? `  ⛔ 깨진 줄 ${broken.length}개 — 줄 ${broken.join(', ')} (JSON 이 아니거나 req 가 없다 — 어느 도구도 읽지 못한다)\n` : '  이상 없음.\n');
@@ -387,20 +372,6 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
       console.log(`       1위 : ${x.top.req.slice(0, 60)}`);
       console.log(`       최신 : ${x.newest.req.slice(0, 60)}`);
       console.log(`       ⇒ 1위 기록의 값이 낡았으면 supersedes 로 무효화하거나 그 용어 키를 뺀다`);
-    }
-    console.log('\n── 정본 대표 키 (정본 제목 머리 낱말로 찾으면 정본이 1위인가) ──');
-    if (!canonKey.miss.length) console.log(`  이상 없음 — 정본 ${canonKey.n}건.`);
-    else {
-      // 요약 한 줄 + 3건 — 걸린 정본이 수십 건이면 출력이 다른 절을 묻는다
-      const all = args.includes('--all');
-      console.log(`  정본 ${canonKey.n}건 중 ${canonKey.miss.length}건 — 머리 낱말이 정본 키에 없고 다른 기록 키에 있어, 그 낱말로 찾으면 다른 기록이 1위다`);
-      for (const x of all ? canonKey.miss : canonKey.miss.slice(0, 3)) {
-        console.log(`  ⚠️ 「${x.head}」 ${x.c.date} ${x.c.req.slice(0, 50)}`);
-        console.log(`       1위 : ${x.top.date} ${x.top.req.slice(0, 50)} (이 키를 가진 기록 ${x.n}건)`);
-      }
-      if (!all && canonKey.miss.length > 3) console.log(`  … 나머지 ${canonKey.miss.length - 3}건 — 전부: node .harness/tools/graph-find.mjs --check --all`);
-      console.log('       ⇒ 그 낱말이 정본의 대표면 정본을 다시 쓸 때(supersedes) terms 에 그 낱말 키를 넣는다 — 그것만으로 1위로 돌아온다.');
-      console.log('         정본을 처음 만들 때도 대표 낱말을 키로 둔다. 대표가 아니면 그대로 둔다');
     }
     console.log('\n── 열린 작업 표식 (하다 만 것이 훅에 잡히나) ──');
     if (!unmarked.length) console.log('  이상 없음 — 표식 누락 후보 없음.');
