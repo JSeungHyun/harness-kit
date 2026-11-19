@@ -29,3 +29,24 @@ test('15차부터는 비용: 도 한 줄에 — 11~14차 항목은 그대로', (
 test('plan.md 11차부터 체크박스 항목은 강제: · 판정(결과): 를(15차부터는 비용: 도) 적는다', () => {
   assert.deepEqual(missing(readFileSync(new URL('../docs/plan.md', import.meta.url), 'utf8')), []);
 });
+
+// 20차 — 바뀌는 「지금 값」은 그 숫자를 낸 자리 한 곳에만 둔다. 옮겨 적은 사본은 다음 차수에 낡는다
+const doc = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8').split(/\r?\n/);
+const stale = (lines, res) => lines.filter((l) => res.some((re) => re.test(l))).map((l) => l.slice(0, 80));
+const TESTS = [/`npm test`\s*[\d,]+/, /[\d,]+\s*(개\s*)?통과/];
+const RULE_CHARS = [/(harness\.md|graph\.md|SKILL\.md)`?\s*\(?[\d,]+자/];
+
+test('「지금 값」 검사는 시험 수 · 규칙 파일 글자 수 꼴만 잡는다', () => {
+  assert.deepEqual(stale(['`npm test` 338 통과', '시험 수는 `npm test` 로 본다', '종단 20/20 · 5회 중 1회'], TESTS), ['`npm test` 338 통과']);
+  assert.deepEqual(stale(['`templates/rules/graph.md`(4,781자)로는', '`graph.md` 로는 잰 적이 없다', '세션 시작 규칙 | 3097자'], RULE_CHARS), ['`templates/rules/graph.md`(4,781자)로는']);
+});
+
+test('⛔ plan.md 실행 상태 줄에 시험 수 · 규칙 글자를 적지 않는다 — `npm test` · 장부로 본다', () => {
+  const status = doc('docs/plan.md').filter((l) => l.startsWith('**실행 상태'));
+  assert.equal(status.length, 1);
+  assert.deepEqual(stale(status, [...TESTS, ...RULE_CHARS]), []);
+});
+
+test('⛔ 문서가 키트 규칙 파일의 글자 수를 옮겨 적지 않는다 — 낸 자리는 장부(devices.md)와 bench 표다', () => {
+  for (const rel of ['README.md', 'SETUP.md', 'docs/structure.md', 'docs/design.md', 'docs/graph-port.md', 'docs/proof.md']) assert.deepEqual(stale(doc(rel), RULE_CHARS), [], rel);
+});

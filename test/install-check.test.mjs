@@ -375,6 +375,14 @@ test('⭐ 표 아래 「프로젝트 맞춤」 절 — 판정 아님 · 검사�
   assert.match(text, /프로젝트 규칙 \.claude\/rules\/project-harness\.md/);
   assert.match(text, /장부 \.harness\/state\/decisions\.md \d+줄 · \.harness\/state\/lessons\.md \d+줄/);
   assert.doesNotMatch(text, /^테스트 없음 — /m);
+  assert.doesNotMatch(text, /^⚠️ 기록 규칙/m);
+});
+
+test('⭐ 기록 규칙을 다른 자리로 돌린 설치(graph.rules)는 맞춤 절에 그 값이 뜬다 — ② 가 graph.md 를 안 봐 두 벌이 갈라져도 판정에 안 뜨기 때문(20차)', () => {
+  const dir = installed({ checks: [CHECK] });
+  const raw = JSON.parse(readFileSync(join(dir, '.harness/harness.json'), 'utf8'));
+  writeFileSync(join(dir, '.harness/harness.json'), JSON.stringify({ ...raw, graph: { rules: 'AGENTS.md 기록 절' } }));
+  assert.match(custom(dir), /^⚠️ 기록 규칙 graph\.rules AGENTS\.md 기록 절 — 키트 graph\.md 를 얹지 않아 ② 가 비교하지 않는다/m);
 });
 
 test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why) — 단서가 있어도 ⑤ ✅ · 맞춤 절에 늘 「테스트 없음 — 코드 변경마다 /code-review」 · 선언 없으면 지금처럼 ⛔ · why 없는 선언은 ⛔ · 테스트 소스가 생기면 ⚠️', () => {

@@ -192,6 +192,18 @@ test('⭐ 키트에서 지운 도구의 allow 줄(policy/removed.json)을 걷는
   for (const g of gone) assert.ok(!allow.includes(g), g);
 });
 
+test('⭐ 키트에서 지운 훅 도구의 등록을 걷는다 — 남으면 없는 파일을 Read 마다 띄운다 · 프로젝트 훅은 둔다 · --only 설치도', () => {
+  const ours = { matcher: 'Edit', hooks: [{ type: 'command', command: 'node tools/graph-read-hook.mjs' }] };
+  const hooks = { PostToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/graph-read-hook.mjs'], timeout: 10 }] }, ours] };
+  for (const flags of [['--local'], ['--local', '--only', 'gate-hook']]) {
+    const dir = target(null, { '.claude/settings.local.json': JSON.stringify({ hooks }) });
+    const r = apply(dir, ...flags);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /걷음.*hooks\.PostToolUse: graph-read-hook\.mjs/);
+    assert.deepEqual(readJson(join(dir, '.claude', 'settings.local.json')).hooks.PostToolUse, [ours]);
+  }
+});
+
 test('⭐ CLI 공유: settings.json 에는 팀원 PC 용으로 superpowers 만 선언하고 ponytail 선언 · 모드는 걷는다', () => {
   const dir = target(null, { '.claude/settings.json': JSON.stringify({ env: { PONYTAIL_DEFAULT_MODE: 'off' }, enabledPlugins: { 'ponytail@harness-kit': true } }) });
   assert.equal(apply(dir).status, 0);

@@ -136,12 +136,12 @@ export function checkInstall(dir, { plugins } = {}) {
   const local = raw.mode !== 'share';
   const file = settingsPath(dir, local);
   const now = readJson(file);
-  const { graphHook, readHook, only } = settingsShape(dir);
-  const { settings: want } = applyPolicy(now, { local, only, extra: ['gate-hook', ...(graphHook ? ['graph-hook'] : []), ...(readHook ? ['graph-read-hook'] : [])] });
+  const { graphHook, only } = settingsShape(dir);
+  const { settings: want } = applyPolicy(now, { local, only, extra: ['gate-hook', ...(graphHook ? ['graph-hook'] : [])] });
   const diff = differ(now, want);
-  row('④', '정책 — policy-apply 를 다시 돌려도 바뀌는 것 없음 (권한 · 관문 훅 exec 형식 · 켠 설치만 그래프 훅 · 파일 기록 훅)',
+  row('④', '정책 — policy-apply 를 다시 돌려도 바뀌는 것 없음 (권한 · 관문 훅 exec 형식 · 켠 설치만 그래프 훅)',
     diff.length ? `${slash(relative(dir, file))} 에서 바뀔 곳: ${diff.join(', ')} — upgrade 가 낸 policy-apply 줄을 돌린다`
-      : `${slash(relative(dir, file))} 그대로${only ? ' · 관문 훅만(--only gate-hook)' : ''}${graphHook ? ' · 그래프 훅 켬' : ''}${readHook ? ' · 파일 기록 훅 켬' : ''}`,
+      : `${slash(relative(dir, file))} 그대로${only ? ' · 관문 훅만(--only gate-hook)' : ''}${graphHook ? ' · 그래프 훅 켬' : ''}`,
     !diff.length);
 
   // ⑤ harness.json — 값은 프로젝트 것이고 형식 · 있어야 할 것만 본다
@@ -220,6 +220,7 @@ export function custom(dir) {
     ...(raw.checks ?? []).filter((c) => c.tests === 'none').map((c) => `테스트 없음 — 코드 변경마다 /code-review (${c.id}: ${c.why?.trim() ?? ''})`),
     ...(grown ? [grown] : []),
     `그래프 — graph.names ${names} · graph.store ${g.store} · 기록 ${count(g.store)}건`,
+    ...(g.rules !== graphOf({}).rules ? [`⚠️ 기록 규칙 graph.rules ${g.rules} — 키트 graph.md 를 얹지 않아 ② 가 비교하지 않는다(두 벌이 갈라져도 판정에 안 뜬다)`] : []),
     `프로젝트 규칙 ${rules.join(' · ') || '없음'}`,
     `장부 ${ledgers ? `${ledgers} (빈 줄 뺀 수)` : '없음'}`].join('\n');
 }

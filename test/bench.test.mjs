@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graphInstall, put, tmp } from './scene.mjs';
@@ -72,6 +72,19 @@ test('⭐ --snapshot 뒤 --run 은 원본(설치 · 세션 기록)을 다시 읽
   assert.deepEqual(now(b.stdout), now(a.stdout));
   assert.equal(now(b.stdout)['훅 출력 같음'], '3/3');
   assert.deepEqual(JSON.parse(readFileSync(join(s.snap(), 'baseline.json'), 'utf8')), base, '기준 숫자는 --accept 없이 덮이지 않는다');
+});
+
+test('⭐ 얼린 자리를 복사해 기록 파일 시각이 바뀌어도 --run 이 얼릴 때 시각으로 되돌린다 — 관문 훅이 그 시각을 턴 시각과 견준다(20차 복사본에서 관문 판정 93/100)', () => {
+  const s = scene();
+  const old = new Date(Date.UTC(2026, 8, 1));
+  utimesSync(join(s.dir, '.harness/graph/requests.jsonl'), old, old);
+  assert.equal(s.bench('--snapshot', s.dir).status, 0);
+  const a = s.bench('--run');
+  assert.equal(a.status, 0, a.stdout + a.stderr);
+  utimesSync(join(s.snap(), 'install', '.harness/graph/requests.jsonl'), new Date(), new Date());
+  const b = s.bench('--run');
+  assert.equal(b.status, 0, b.stdout + b.stderr);
+  assert.equal(now(b.stdout)['관문 판정 같음'], '3/3');
 });
 
 test('⭐ 주입을 늘린 도구 폴더(--tools)면 exit 1 이고 다른 입력 id 를 낸다 · --accept 뒤에는 통과한다', () => {

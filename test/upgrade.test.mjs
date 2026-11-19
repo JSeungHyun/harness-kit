@@ -191,7 +191,8 @@ test('⛔ 옛 자기 그래프(graph.tools ≠ .harness/tools) — 키트 그래
   assert.match(r.stdout, /AGENTS\.md:3/);
   assert.match(r.stdout, /\.harness\/harness\.json:1/);
   assert.match(r.stdout, /키트가 지우지 않는다/);
-  assert.match(read(dir, '.claude/rules/harness.md'), /node tools\/graph-find\.mjs --check/);
+  // 증거 표는 final-gate 한 곳(20차) — <graph-tools> 자리는 스킬에만 있다
+  assert.match(read(dir, '.claude/skills/final-gate/SKILL.md'), /node tools\/graph-find\.mjs --check/);
   assert.equal(readFileSync(join(dir, 'tools/graph/requests.jsonl'), 'utf8'), before);
   assert.ok(existsSync(join(dir, 'tools/graph-find.mjs')));
 });
@@ -208,7 +209,6 @@ test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.t
   assert.deepEqual(now.files, ['.harness/tools/graph-hook.mjs']);
   assert.deepEqual(trace.files, ['tools/trace.mjs']);
   assert.match(r.stdout, /기록 2건의 files/);
-  assert.match(read(dir, '.claude/rules/harness.md'), /node \.harness\/tools\/graph-find\.mjs --check/);
   assert.match(read(dir, '.claude/skills/final-gate/SKILL.md'), /node \.harness\/tools\/graph-find\.mjs --check/);
   // 참조는 프로젝트가 고친다 — 남아 있는 동안 exit 1
   assert.equal(r.status, 1, r.stdout);
@@ -259,10 +259,11 @@ test('⛔ 설치되지 않은 대상은 거부한다', () => {
 
 test('⭐ 키트에서 지운 도구 · lib 는 설치본에서도 걷는다 — 복사는 덮어쓰기만 한다 · 프로젝트가 더한 도구는 둔다', () => {
   const dir = installed();
-  for (const f of ['.harness/tools/state-check.mjs', '.harness/tools/lesson-promote.mjs', '.harness/lib/mdtable.mjs', '.harness/tools/our-tool.mjs']) put(dir, f, '// 옛 것');
+  const gone = JSON.parse(repoFile('policy/removed.json')).files;
+  for (const f of [...gone, '.harness/tools/our-tool.mjs']) put(dir, f, '// 옛 것');
   const r = run(dir);
   assert.equal(r.status, 0, r.stderr);
-  for (const f of ['.harness/tools/state-check.mjs', '.harness/tools/lesson-promote.mjs', '.harness/lib/mdtable.mjs']) assert.ok(!existsSync(join(dir, f)), f);
+  for (const f of [...gone, '.harness/tools/graph-view.mjs', '.harness/tools/mybatis-xml.mjs', '.harness/tools/graph-read-hook.mjs', '.harness/policy/graph-read-hook.json']) assert.ok(!existsSync(join(dir, f)), f);
   assert.ok(existsSync(join(dir, '.harness/tools/our-tool.mjs')));
   assert.match(r.stdout, /걷음.*state-check\.mjs/);
 });
@@ -315,6 +316,27 @@ test('⭐ 지우는 경로를 살아있는 그래프 기록이 가리키면 목�
   assert.match(r.stdout, /그래프 기록이 지운 경로를 가리킨다/);
   assert.match(r.stdout, /state-check\.mjs ← 대장 점검 도구 사용법/);
   assert.doesNotMatch(r.stdout, /← 옛 기록/);
+});
+
+test('⭐ 살아있는 그래프 기록이 옛 키트 판(키트 이력의 커밋 해시)을 「지금」으로 적었으면 파일:행 목록을 낸다 — 알리기만(exit 0) · 지금 판 · 그때 일을 적은 이력 · 대체된 기록 · 이력에 없는 16진수는 뺀다', () => {
+  const [now, old] = execFileSync('git', ['-C', KIT, 'rev-list', '-n', '2', 'HEAD'], { encoding: 'utf8' }).split('\n');
+  const conf = { profile: 'existing', mode: 'local', graph: { store: 'data/graph.jsonl' }, state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code', why: '시험용' }] };
+  const dir = target(conf, { 'data/graph.jsonl': [
+    rec(`정본: 키트 갱신 — 마지막 갱신 ${old.slice(0, 7)}`, []),
+    rec(`갱신 확인 — 설치본 ${now.slice(0, 7)}`, []),
+    rec(`묻힌 기록 — 지금 판 ${old.slice(0, 9)}`, []),
+    rec('새 기록', [], { supersedes: `묻힌 기록 — 지금 판 ${old.slice(0, 9)}` }),
+    rec('단추 색상 값 — 지금 deadbeef', [], { note: '현재 배경 0000000 · 20261119' }),
+    rec('경고 도입과 철회', [], { note: `2026-10-01 ${old.slice(0, 7)} 로 들였다가 같은 날 뺐다` }),
+  ].join('\n') });
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, new RegExp(`옛 키트 판.*지금 ${now.slice(0, 7)}`));
+  assert.match(r.stdout, new RegExp(`data/graph\\.jsonl:1 ${old.slice(0, 7)} ← 정본: 키트 갱신`));
+  assert.doesNotMatch(r.stdout, /← (갱신 확인|묻힌 기록|새 기록|단추 색상|경고 도입)/);
+  // 옛 판을 적은 기록이 없으면 조용하다
+  const clean = target(conf, { 'data/graph.jsonl': rec(`갱신 확인 — 설치본 ${now.slice(0, 7)}`, []) });
+  assert.doesNotMatch(run(clean).stdout, /옛 키트 판/);
 });
 
 test('⛔ 「지운 것」 목록이 키트와 맞는다 — 지운 도구 · 템플릿이 키트에 남거나 allow 가 정책에 남으면 갱신이 다시 넣는다', () => {

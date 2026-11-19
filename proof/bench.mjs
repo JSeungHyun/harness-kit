@@ -141,6 +141,10 @@ function snapshot(install) {
 // ── 돌리기 ───────────────────────────────────────────────────────────
 function run(dir) {
   const meta = json(join(dir, 'meta.json')), skel = join(dir, 'install'), tools = join(skel, '.harness', 'tools');
+  // 관문 훅은 기록 파일 시각을 턴 시각과 견준다 — 얼린 자리를 복사해 시각이 바뀌어도 첫 --run 때 값으로 되돌린다(20차)
+  const store = join(skel, json(join(skel, '.harness', 'harness.json')).graph?.store ?? '.harness/graph/requests.jsonl');
+  if (meta.storeMtime === undefined) writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, storeMtime: statSync(store).mtimeMs }, null, 2));
+  else utimesSync(store, new Date(), new Date(meta.storeMtime));
   // 도구는 설치본 자리(.harness/tools)에 깐다 — 훅 · 도구가 자기 위치로 harness.json 과 기록을 찾는다
   rmSync(tools, { recursive: true, force: true });
   cpSync(TOOLS, tools, { recursive: true });

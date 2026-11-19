@@ -46,6 +46,21 @@ export function dropOld(settings, declared = {}) {
   return { settings: out, gone };
 }
 
+// 키트에서 지운 훅 도구의 등록 — 남으면 없는 파일을 그 이벤트마다 띄운다. 키트 도구 경로만 보고 --only 설치도 걷는다
+const GONE_HOOKS = readJson(policyFile('removed')).files.filter((f) => f.startsWith('.harness/tools/')).map((f) => `/${f}`);
+function dropHooks(settings) {
+  const gone = [];
+  const dead = (h) => GONE_HOOKS.some((f) => hookKey(h).includes(f));
+  const hooks = Object.fromEntries(Object.entries(settings.hooks ?? {}).map(([event, groups]) => [event, groups.flatMap((g) => {
+    const hit = (g.hooks ?? []).filter(dead);
+    if (!hit.length) return [g];
+    gone.push(...hit.map((h) => `hooks.${event}: ${kitTool(hookKey(h))}`));
+    const left = g.hooks.filter((h) => !dead(h));
+    return left.length ? [{ ...g, hooks: left }] : [];
+  })]).filter(([, groups]) => groups.length));
+  return gone.length ? { settings: { ...settings, hooks }, gone } : { settings, gone };
+}
+
 export function mergeSettings(settings, policy) {
   const out = { ...settings };
   if (policy.permissions) {
@@ -92,7 +107,8 @@ export function applyPolicy(settings, { local = false, extra = [], only = false 
     merged = r.settings;
     gone.push(...r.gone);
   }
-  return { settings: merged, gone };
+  const h = dropHooks(merged);
+  return { settings: h.settings, gone: [...gone, ...h.gone] };
 }
 
 export const settingsPath = (root, local = false) => join(root, '.claude', local ? 'settings.local.json' : 'settings.json');
@@ -140,7 +156,7 @@ cli(import.meta.url, () => {
   const path = settingsPath(root, local);
   const personal = settingsPath(root, true);
   const { settings: merged, gone } = applyPolicy(readJson(path), { local, extra, only });
-  const notes = gone.length ? [`걷음(옛 정책이 쓴 것 — 플러그인 · rm 은 PC 에서 정한다 · 키트에서 지운 도구의 allow): ${gone.join(', ')}`] : [];
+  const notes = gone.length ? [`걷음(옛 정책이 쓴 것 — 플러그인 · rm 은 PC 에서 정한다 · 키트에서 지운 도구의 allow · 훅): ${gone.join(', ')}`] : [];
   // --local 이면 두 경로가 같아 한 번만 쓴다. 읽기는 모두 쓰기 앞에 — 어느 파일이 깨졌어도 반쯤 쓰지 않는다
   const out = new Map([[path, merged]]);
   if (off.size) {

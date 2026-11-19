@@ -3,7 +3,11 @@
   "files": [
     ".harness/tools/state-check.mjs",
     ".harness/tools/lesson-promote.mjs",
-    ".harness/lib/mdtable.mjs"
+    ".harness/lib/mdtable.mjs",
+    ".harness/tools/graph-view.mjs",
+    ".harness/tools/mybatis-xml.mjs",
+    ".harness/tools/graph-read-hook.mjs",
+    ".harness/policy/graph-read-hook.json"
   ],
   "templates": {
     "templates/state/current.md": "current"

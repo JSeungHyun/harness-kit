@@ -123,16 +123,15 @@ function hideLocal(dir, rel) {
   appendFileSync(exclude, `${text && !text.endsWith('\n') ? '\n' : ''}/${rel}\n`);
 }
 
-// 대상 설정의 모양 — 관문 훅만 건 설치(--only gate-hook)인가 · 키트 그래프 훅 · 파일 기록 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
+// 대상 설정의 모양 — 관문 훅만 건 설치(--only gate-hook)인가 · 키트 그래프 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
 export function settingsShape(dir) {
   const sets = ['settings.local.json', 'settings.json'].map((f) => read(join(dir, '.claude', f)));
   // 옛 자기 그래프 훅(tools/graph-hook.mjs)도 그래프 훅이다 — 정책 줄이 키트 훅으로 바꿔 끼운다
   const graphHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('graph-hook.mjs'));
-  const readHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('graph-read-hook.mjs'));
   // 정책 전체를 받은 설치는 키트 도구 허용 규칙이 있다 — 플러그인 선언은 표식이 아니다(--only 대상이 ponytail 을 스스로 켤 수 있다)
   const kitAllow = (read(join(KIT, 'policy', 'settings.json')).permissions?.allow ?? []).filter((r) => r.includes('.harness/tools/'));
   const full = sets.some((s) => (s.permissions?.allow ?? []).some((r) => kitAllow.includes(r)));
-  return { graphHook, readHook, only: sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full };
+  return { graphHook, only: sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full };
 }
 
 // 키트 템플릿에서 지운 장부 줄 — 장부 본문은 프로젝트 것이라 그 줄과 같은 줄(앞뒤 공백 무시)만 본다. 갱신이 걷고 이식 검사 ① 이 남은 것을 본다
@@ -178,6 +177,28 @@ export function graphRefs(dir) {
     .filter((f) => !kitDocs.has(f) && existsSync(join(dir, f)) && statSync(join(dir, f)).isFile())
     .flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n').flatMap((l, i) =>
       ([...l.matchAll(/((?:[\w.${}-]+\/)+)graph-[\w-]+\.mjs/g)].some((m) => !m[1].endsWith('.harness/tools/')) ? [`${f}:${i + 1}`] : [])));
+}
+
+// 살아있는 기록이 「지금」의 판으로 적은 키트 커밋 해시 중 지금 판이 아닌 것 — 판은 바뀌는 상태라 적은 다음 갱신부터 낡는다. 기록은 프로젝트 데이터라 알리기만 한다
+// 해시 앞뒤 40자에 「지금」을 말하는 낱말이 있을 때만 — 그때 일을 적은 이력이 3/4 이었다(20차)
+const NOWISH = /현재|지금|마지막|설치본/;
+export function staleKit(dir, raw, commit) {
+  const rel = graphOf(raw).store;
+  const at = join(dir, rel);
+  if (!commit || !existsSync(at)) return [];
+  const dead = new Set(load(at).flatMap(sup));
+  let known;
+  return readFileSync(at, 'utf8').normalize('NFC').split('\n').flatMap((line, i) => {
+    let r;
+    try { r = JSON.parse(line.trim()); } catch { return []; }
+    if (typeof r?.req !== 'string' || dead.has(r.req)) return [];
+    // supersedes 는 대체된 기록의 req 를 옮긴 것이다 — 거기 실린 해시는 이 기록의 말이 아니다
+    const l = JSON.stringify({ ...r, supersedes: undefined });
+    const old = [...l.matchAll(/(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])/g)]
+      .filter((m) => NOWISH.test(l.slice(Math.max(0, m.index - 40), m.index + m[0].length + 40)) && !commit.startsWith(m[0])
+        && (known ??= kitGit('rev-list', 'HEAD').split('\n')).some((c) => c.startsWith(m[0])));
+    return old.length ? [`   ${rel}:${i + 1} ${[...new Set(old.map((m) => m[0].slice(0, 7)))].join(' ')} ← ${r.req.slice(0, 50)}`] : [];
+  });
 }
 
 // 옛 자기 그래프 → 키트 그래프 도구. 기록은 제자리(graph.store) · 살아있는 기록 files 의 옛 도구 경로만 한 번 바꾼다 — note 는 그대로, 대체된 기록은 경로 검사에서 이미 빠진다
@@ -272,6 +293,8 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   const pointing = recs.filter((r) => !dead.has(r.req))
     .flatMap((r) => (r.files ?? []).filter((f) => gonePaths.has(f.replace(/\\/g, '/').replace(/^\.\//, ''))).map((f) => `   ${f} ← ${r.req.slice(0, 50)}`));
   if (pointing.length) out.push('⚠️ 그래프 기록이 지운 경로를 가리킨다 — 같은 턴에 그 경로를 뺀 기록으로 supersedes 한다(그대로면 graph-find --check 빨강):', ...pointing);
+  const stale = staleKit(dir, raw, commit);
+  if (stale.length) out.push(`⚠️ 그래프 기록이 옛 키트 판을 적었다(지금 ${commit.slice(0, 7)}) — 「지금」으로 읽히면 판 대신 보는 명령(cat .harness/kit-commit)을 적은 기록으로 supersedes 한다 · 그때 일을 적은 이력이면 둔다:`, ...stale);
 
   // 그래프 도구는 .harness/tools 한 벌 — 옛 자기 그래프는 이관 안내, 이관 뒤에도 옛 도구를 가리키는 참조가 남으면 멈춘다(이식 검사 ⑤ 와 같은 목록)
   const refs = graphRefs(dir);
@@ -292,10 +315,10 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   // 옛 정책이 쓴 플러그인 선언 · ponytail 모드(옛 마켓 id 포함)는 policy-apply 가 걷는다 — 여기서는 --off 를 내지 않는다
   // 관문 훅만 건 설치(--only gate-hook — 지시 파일이 흐름 · 권한을 정한 프로젝트)에 --with 를 내면 받지 않은 정책이 들어간다
   // 키트 그래프 훅을 건 설치 — 다시 병합해야 훅 형식이 바뀐다
-  const { graphHook, readHook, only } = settingsShape(dir);
+  const { graphHook, only } = settingsShape(dir);
   out.push('', '다음 — 이 순서로 (설정이라 사용자가 돌리거나 승인한다):',
     `1. node ${KIT_PATH}/tools/plugin-plan.mjs — 이전 명령이 나오면 사용자 승인 뒤 먼저 실행한다`,
-    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook ? ' --with graph-hook' : ''}`}${readHook ? ' --with graph-read-hook' : ''}`,
+    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook ? ' --with graph-hook' : ''}`}`,
     `3. node ${KIT_PATH}/tools/install-check.mjs ${dir.replace(/\\/g, '/')} — 표를 보고에 그대로 붙인다. exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다`);
 
   // 갱신이 검사 목록을 다시 본다 — 빌드 도구가 있는데 코드를 덮는 검사가 없으면 verify 녹색은 코드 변경의 증거가 아니다

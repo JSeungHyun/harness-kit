@@ -2,7 +2,7 @@
 
 > 상태: **설계안** · harness-kit 이 설치했다. 도구는 `.harness/tools/`, 설정은 `.harness/harness.json`
 
-⭐ **코드를 바꾼 작업은 완료를 주장하기 전에 `node .harness/tools/verify.mjs`** — 보고 직전에는 `final-gate`. 작업 종류별 증거는 아래 「완료는 증거로 주장한다」
+⭐ **코드를 바꾼 작업은 완료를 주장하기 전에 `node .harness/tools/verify.mjs`** · 작업을 끝냈다고 보고하기 직전에 매번 `final-gate` 스킬 — 빠진 증거는 Stop 훅이 한 번 되돌린다
 
 ⚠️ 이 프로젝트의 지시 파일(`AGENTS.md` · `CLAUDE.md` 등)이 흐름 · 계획 문서 · ponytail 모드 · 플러그인을 따로 정했으면 그쪽을 따른다 — 이 파일이 더하는 것은 관문 · 완료 증거 · 장부다.
 
@@ -19,20 +19,9 @@
 - **되돌리기 어려운 작업은 착수 전에 제안하고 승인받는다** — 데이터 삭제 · 이력 재작성 · 운영 반영 · 레포 밖으로 나가는 작업 · 비밀값
 - 승인된 일을 실행하는 동안에는 묻지 않는다 — 확인할 것은 가정과 함께 `<decisions>` 1절에 적고 진행한다
 
-## ⭐ 관문 — 작업을 끝냈다고 보고하기 직전에 매번 `final-gate` 스킬
-
-계획이 있으면 그 마지막 태스크가 보고를 부르고, 없으면 보고가 곧 관문이다. 범위 검토 · 과설계 리뷰 · 완료 증거 · 기록이 한 세트다. Stop 훅이 이번 턴의 증거 세트를 보고 빠진 것이 있으면 한 번 되돌려 보낸다 — 코드를 바꿨으면 `/ponytail-review` · 바꾼 코드를 덮는 검사(`harness.json` 의 `covers`)가 없으면 `/code-review` · 덮는 검사가 있으면 마지막 코드 변경 뒤의 verify · verify 를 돌렸으면 final-gate.
-
 ## 완료는 증거로 주장한다
 
-종료코드 0 · `BUILD SUCCESSFUL` · 러너의 `pass` 요약으로 통과를 주장하지 않는다 — 테스트가 0개여도 그렇게 나온다.
-
-| 작업 | 증거 |
-|---|---|
-| 코드 변경 | `node .harness/tools/verify.mjs` — exit 0 (이번 실행이 쓴 결과 파일로 판정, 알려진 실패 기준선은 개수만) |
-| 운영 데이터 · 설정 | 실행·확인 쿼리와 전/후 결과를 본문에 |
-| 기록 변경 | `node <graph-tools>/graph-find.mjs --check` — exit 0 |
-| 조사 · 측정 | 정답 라벨 n건 대조 + 검증한 범위 |
+종료코드 0 · `BUILD SUCCESSFUL` · 러너의 `pass` 요약으로 통과를 주장하지 않는다 — 테스트가 0개여도 그렇게 나온다. `verify` 는 이번 실행이 쓴 결과 파일로 판정한다(알려진 실패 기준선은 개수만). 작업 종류별 증거(코드 · 운영 · 기록 · 조사) → `final-gate` 2단계 표
 
 ⛔ `node .harness/tools/verify.mjs --baseline` 은 사용자가 「원래 있던 실패」라고 확인한 뒤에만 — 실패를 기준선에 넣으면 그 실패는 더 울리지 않는다.
 
@@ -63,4 +52,4 @@ EOF
 node <harness-kit 경로>/tools/plugin-plan.mjs
 ```
 
-ponytail 모드는 쓰지 않는다 — 코드를 바꾼 보고 직전 `final-gate` 에서 `/ponytail-review` 로만 부른다. 사용자가 ponytail 플러그인 끄기를 거절했으면 그 PC 의 전역 env 에 `PONYTAIL_DEFAULT_MODE=off` 를 두게 한다(모드가 superpowers 의 설계 · 질문 단계와 충돌한다).
+ponytail 모드는 쓰지 않는다(superpowers 의 설계 · 질문 단계와 충돌한다). 사용자가 ponytail 플러그인 끄기를 거절했으면 그 PC 의 전역 env 에 `PONYTAIL_DEFAULT_MODE=off` 를 두게 한다.
