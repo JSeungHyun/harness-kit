@@ -3,9 +3,11 @@
 //   node .harness/tools/graph-find.mjs <용어…>          # 어근을 짧게, 여러 개 (--all: 대체된 기록 포함)
 //   node .harness/tools/graph-find.mjs --files <경로조각> # 파일 → 그 파일을 만진 요구 (1홉)
 //   node .harness/tools/graph-find.mjs --with <경로조각>  # 파일 → 같이 움직이는 파일 (2홉)
+//   node .harness/tools/graph-find.mjs --source <req 앞부분> [--transcripts <폴더>]   # 그 기록을 쓴 대화의 코드 블록 (세션 기록에서)
 //   node .harness/tools/graph-find.mjs --open | --check | --promote [정본문서] | --gaps [YYYY-MM-DD]   # --gaps: 그 날짜 뒤 커밋 중 바꾼 파일을 가리키는 살아있는 기록이 없는 것
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 설치에서는 .harness/tools/ 에 있다 — 설정은 ../harness.json, 저장소 루트는 ../../
@@ -181,6 +183,54 @@ export function coChange(recs, needle) {
   return { hits, co: [...co.entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0])) };
 }
 
+// Claude Code 가 세션 기록 폴더 이름을 만드는 규칙 — 영숫자가 아니면 전부 '-'
+export const slug = (path) => path.replace(/[\\/]+$/, '').replace(/[^A-Za-z0-9]/g, '-');
+const CLAUDE_HOME = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+const transcriptDir = () => join(CLAUDE_HOME(), 'projects', slug(ROOT));
+// 세션 파일과 그 세션의 서브에이전트 파일(<세션>/subagents/)
+function transcripts(dir) {
+  const jsonl = (d) => readdirSync(d).filter((n) => n.endsWith('.jsonl')).map((n) => join(d, n));
+  const subs = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(dir, e.name, 'subagents')).filter((d) => existsSync(d));
+  return [...jsonl(dir), ...subs.flatMap(jsonl)];
+}
+const SOURCE_BLOCKS = 6, SOURCE_CHARS = 4000;
+// 쓴 자리 = req 가 든 도구 호출 중 가장 이른 것(원천 실측: 두 달 기록 76건 중 67건이 기록 날짜 ±2일 대화). 그 앞 사람 입력부터 거기까지의 답에서 코드 블록을 꺼낸다
+export function source(req, files) {
+  const esc = (t) => JSON.stringify(t).slice(1, -1);
+  // 도구 입력을 JSON 문자열로 놓고 본다 — req 는 그대로(인자 · 파일 내용)거나 한 번 더 감싸여(heredoc 안 JSON) 들어 있다
+  const forms = [esc(req), esc(esc(req))];
+  const probe = req.split(/["\\]/).sort((a, b) => b.length - a.length)[0];
+  let hit = null;
+  for (const file of files) {
+    const buf = readFileSync(file);
+    if (!buf.includes(probe)) continue;
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].includes(probe)) continue;
+      let o;
+      try { o = JSON.parse(lines[i]); } catch { continue; }
+      if (o.type !== 'assistant' || !Array.isArray(o.message?.content)) continue;
+      const uses = o.message.content.filter((c) => c.type === 'tool_use').map((c) => JSON.stringify(c.input ?? ''));
+      if (!uses.some((u) => forms.some((f) => u.includes(f)))) continue;
+      const ts = String(o.timestamp ?? '');
+      if (!hit || ts < hit.ts) hit = { file, line: i + 1, ts, lines };
+      break;  // 파일 안은 시간순 — 첫 줄이 그 파일에서 가장 이르다
+    }
+  }
+  if (!hit) return null;
+  const texts = [];
+  for (let i = hit.line - 1; i >= 0; i--) {
+    let o;
+    try { o = JSON.parse(hit.lines[i]); } catch { continue; }
+    const c = o.message?.content;
+    if (o.type === 'assistant' && Array.isArray(c)) texts.unshift(...c.filter((x) => x.type === 'text').map((x) => x.text));
+    // 도구 결과도 user 줄이다 — 사람 입력은 글이 있는 것
+    if (o.type === 'user' && !o.isMeta && (typeof c === 'string' || (Array.isArray(c) && c.some((x) => x.type === 'text')))) break;
+  }
+  const blocks = [...texts.join('\n').matchAll(/```([^\n`]*)\n([\s\S]*?)```/g)].map((m) => ({ lang: m[1].trim(), body: m[2].trimEnd() }));
+  return { file: hit.file, line: hit.line, ts: hit.ts, blocks };
+}
+
 // 무결성 — 문자열로 잇는 구조라 오타 한 글자로 사슬이 끊긴다
 export function check(recs, { fileExists } = {}) {
   const byReq = new Map();
@@ -283,7 +333,7 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
 
   if (!recs.length) { console.log('기록이 없다. .harness/tools/graph-append.mjs 로 먼저 쌓는다.'); process.exit(0); }
   if (!args.length) {
-    console.error('사용법: node .harness/tools/graph-find.mjs <용어…>  |  --files <경로조각>  |  --with <경로조각>  |  --open  |  --check  |  --gaps [날짜]  |  --promote [정본문서]');
+    console.error('사용법: node .harness/tools/graph-find.mjs <용어…>  |  --files <경로조각>  |  --with <경로조각>  |  --open  |  --check  |  --gaps [날짜]  |  --source <req 앞부분>  |  --promote [정본문서]');
     console.error(`현재 누적 ${recs.length}건`);
     process.exit(1);
   }
@@ -376,6 +426,54 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
     console.log(`커밋 빈틈 ${gaps.length}건 — ${since} 뒤 커밋 ${commits.length}건 가운데 바꾼 파일을 가리키는 살아있는 기록이 하나도 없는 것`);
     for (const c of gaps) console.log(`\n${c.hash} ${c.date} ${c.subject}\n   ${c.files.slice(0, 5).join(' · ')}${c.files.length > 5 ? ` … 외 ${c.files.length - 5}개` : ''}`);
     if (gaps.length) console.log('\n⇒ 요구 단위로 묶어 node .harness/tools/graph-append.mjs 로 적는다(date 는 그 커밋 날짜) — 무엇을 왜 바꿨는지는 사람 · 세션이 읽고 쓴다');
+    process.exit(0);
+  }
+
+  // 기록에는 요약만 있다 — 그때 주고받은 원문(쿼리 · 명령)은 세션 기록에서 되찾는다. 조회라 못 찾아도 exit 0 · 아무것도 쓰지 않는다
+  if (args[0] === '--source') {
+    const rest = args.slice(1);
+    const t = rest.indexOf('--transcripts');
+    const custom = t >= 0 ? rest.splice(t, 2)[1] : null;
+    const q = rest.join(' ');
+    if (!q) { console.error('사용법: --source <req 또는 앞부분> [--transcripts <세션 기록 폴더>]'); process.exit(1); }
+    const exact = recs.filter((r) => r.req === q);
+    const found = exact.length ? exact.slice(-1) : recs.filter((r) => r.req.startsWith(q));
+    if (!found.length) { console.log(`「${q}」로 시작하는 기록이 없다 — req 의 앞부분을 그대로 적는다.`); process.exit(0); }
+    if (found.length > 1) {
+      console.log(`「${q}」로 시작하는 기록 ${found.length}건 — 하나만 남게 더 길게 적는다\n`);
+      for (const r of found) console.log(`  ${r.date}  ${r.req}`);
+      process.exit(0);
+    }
+    const [rec] = found;
+    const day = rec.recorded || rec.date;
+    const dir = custom ? resolve(custom) : transcriptDir();
+    if (!existsSync(dir)) {
+      console.log(`세션 기록 폴더가 없다: ${dir}\n⇒ 다른 PC · 다른 경로에서 한 작업이면 --transcripts <폴더> 로 알려 준다`);
+      process.exit(0);
+    }
+    const files = transcripts(dir);
+    const src = source(rec.req, files);
+    if (!src) {
+      let keep = 30;  // Claude Code 기본값
+      try { keep = JSON.parse(readFileSync(join(CLAUDE_HOME(), 'settings.json'), 'utf8')).cleanupPeriodDays ?? keep; } catch { /* 설정 없음 */ }
+      console.log(`「${rec.req.slice(0, 60)}」(${day}) — 이 req 가 어느 도구 호출에도 없다 (세션 기록 ${files.length}개)`);
+      if (Date.now() - Date.parse(day) > keep * 864e5) console.log(`⇒ 기록 날짜가 보관 기간(cleanupPeriodDays ${keep}일)보다 오래됐다 — ${keep}일 지나 지워졌을 수 있다`);
+      else console.log('⇒ 이관 · 일괄 기록(대화가 아니라 스크립트가 쓴 것)이거나 다른 폴더의 세션일 수 있다');
+      process.exit(0);
+    }
+    const when = new Date(src.ts).toLocaleString('sv');
+    const gap = Math.round(Math.abs(Date.parse(when.slice(0, 10)) - Date.parse(day)) / 864e5);
+    const rel = src.file.slice(dir.length + 1).replace(/\\/g, '/');
+    console.log(`쓴 자리: ${rel}:${src.line} · ${when.slice(0, 16)} · 기록 날짜 ${day} 과 ${gap}일 차${gap > 2 ? ' ⚠️ 쓴 자리가 아니라 나중에 다시 언급한 자리일 수 있다' : ''}`);
+    if (!src.blocks.length) console.log(`그 턴의 답에 코드 블록이 없다 — 세션 파일을 직접 본다: ${src.file}`);
+    let shown = 0, chars = 0;
+    for (const b of src.blocks) {
+      if (shown === SOURCE_BLOCKS || (shown && chars + b.body.length > SOURCE_CHARS)) break;
+      shown++;
+      chars += b.body.length;
+      console.log(`\n── 코드 블록 ${shown}/${src.blocks.length}${b.lang ? ` · ${b.lang}` : ''} ──\n${b.body.slice(0, SOURCE_CHARS)}`);
+    }
+    if (shown < src.blocks.length) console.log(`\n… 나머지 ${src.blocks.length - shown}개 — 세션 파일을 직접 본다: ${src.file}`);
     process.exit(0);
   }
 

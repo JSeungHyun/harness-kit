@@ -325,6 +325,15 @@ node <kit>/tools/upgrade.mjs <대상>
 
 **설치 현황 — 키트를 고친 뒤** — 키트 개선의 끝은 커밋이 아니라 이 PC 의 설치가 모두 같은 판이 된 때다:
 
+키트의 그래프 도구 · 훅 · 규칙을 고쳤으면 커밋 전에 상시 측정 묶음을 돌린다 — 얼린 입력이라 차수끼리 숫자가 이어진다. 스냅숏은 PC 마다 따로 뜨고 저장소 밖(`~/.claude/harness-bench/`)에 둔다(질문 원문이 들어 있다):
+
+```bash
+npm run bench -- --run            # 얼린 설치마다 기준 숫자와 견준다 — 허용폭 밖이면 exit 1 · 그 PC 에서 처음 한 번은 --snapshot <설치 폴더…>
+npm run bench -- --run --accept   # 의도한 변화면 기준 숫자를 덮는다 — plan 항목 비용: 에 전후를 적는다
+```
+
+시간 지표는 PC 부하에 흔들려 ⚠️ 만 낸다(exit 0) — 조용할 때 한 번 더 돌려 읽는다. 그다음 설치 현황:
+
 ```bash
 node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>   # 설치마다 ⑨ 판 · ① 동일만(verify 없이) — 뒤처지거나 다르면 exit 1
 ```

@@ -113,6 +113,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 npm test                    # 결과 XML 은 test-results/
 node proof/run.mjs          # 결정론 실측 (LLM 없음)
 node proof/run.mjs --claude # + 새 세션 실측 (토큰을 쓴다)
+npm run bench -- --run      # 상시 측정 묶음 — 얼린 입력을 지금 도구로 돌려 기준 숫자와 견준다 (LLM 없음 · 처음은 --snapshot)
 node proof/ab.mjs prereg|run|agg <계획.json>   # 그래프 있이 · 없이 A/B 틀 (run 은 토큰을 쓴다 — 사람 승인 뒤)
 ```
 

@@ -8,10 +8,13 @@
 //     # 질문당 비용 — 프롬프트 훅을 부른 실입력 최근 N개를 그 판의 graph-hook 으로 재생해 종류별 주입 · 단계 · 훅 시간. inject: 주입 평균이 기준선보다 늘면 exit 1
 //   node .harness/tools/graph-measure.mjs --gate <세션 기록 폴더|.jsonl> [--limit 300] [--baseline <도구 폴더>]
 //     # 관문 훅 시간 — 사람 턴이 끝날 때마다 그때까지 잘린 기록으로 그 판의 gate-hook 을 실제로 띄워 기록 크기별 p50 · p90 · 되돌림. 두 판이면 판정 같음 n/N
+//   --freeze <파일>(--prompts): 재생하지 않고 고른 입력 줄만 그 파일에 쓴다 — 그 파일을 다시 --prompts 에 주면 같은 입력이다(proof/bench.mjs 가 얼린다)
+//   --dump <파일>(--prompts · --gate): 지금 판의 입력마다 [{ id, hash }](출력 해시)를 쓴다 — 차수를 건너 출력이 같은지 견준다
 //   --store <jsonl>: 기록 위치를 바꾼다(설치 사본 등) — 모든 모드
 //   --asof <YYYY-MM-DD>: 되감기 — recorded 가 그 날짜 전인 기록만 남긴 판으로 잰다(모든 모드 · 날짜를 바꿔 돌리면 성장 곡선). 제자리 수정은 되감지 못한다
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdtempSync, appendFileSync, symlinkSync, rmdirSync, unlinkSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { availableParallelism, tmpdir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,6 +30,9 @@ const baseline = opt('--baseline');
 const prompts = opt('--prompts');
 const gate = opt('--gate');
 const limit = Number(opt('--limit', 300));
+const freeze = opt('--freeze');
+const dump = opt('--dump');
+const sha = (s) => createHash('sha1').update(s).digest('hex').slice(0, 10);
 const guard = opt('--guard', prompts ? 'inject' : 'self').split(',');
 const self = args.includes('--self');
 const patterns = args.filter((a) => a !== '--self');
@@ -150,6 +156,7 @@ if (gate) {
     if (existsSync(side)) { try { rmdirSync(link); } catch { unlinkSync(link); } }
     rmSync(copy, { force: true });
   }
+  if (dump) writeFileSync(dump, JSON.stringify(picked.map((e) => ({ id: `${basename(e.file)}@${e.size}`, hash: sha(e.runs.at(-1).out) }))));
   const MB = 1 << 20;
   const blocked = (r) => r.out.includes('"decision":"block"');
   const cell = (rows, f) => dirs.map((_, k) => f(rows.map((e) => e.runs[k]))).join(' → ');
@@ -207,6 +214,7 @@ function sessionInputs(path) {
       if (!p) return [];
       if (p.prompt.includes('<command-name>/clear</command-name>')) events.push({ reset: true });
       events.push({ input: p });
+      p.raw = l;
       return [p];
     });
     // -p 한 건짜리 세션은 사람과의 대화가 아니다
@@ -222,11 +230,13 @@ if (prompts) {
   const picked = inputs.slice(-limit);
   if (!picked.length) { console.error(`⛔ 턴을 연 입력을 하나도 못 찾았다: ${prompts} — Claude Code 세션 기록(.jsonl 또는 그 폴더)이어야 한다`); process.exit(1); }
   const dirs = [...(baseline ? [resolve(baseline)] : []), HERE];
+  if (freeze) { writeFileSync(freeze, picked.map((p) => `${p.raw.trimEnd()}\n`).join('')); console.log(`얼림 — 턴을 연 입력 ${inputs.length} 중 최근 ${picked.length}개 → ${freeze}`); process.exit(0); }
   // 시간은 PC 부하로 흔들린다 — 예열 1회는 버리고(첫 읽기가 수십 배 느리다) 두 판을 입력마다 번갈아 같은 조건에서 잰다
   for (const d of dirs) await hookOut(d, picked[0].prompt);
   const runs = dirs.map(() => []);
   for (const [i, p] of picked.entries()) for (const k of i % 2 ? [...dirs.keys()].reverse() : dirs.keys()) runs[k][i] = await timed(() => hookOut(dirs[k], p.prompt));
 
+  if (dump) writeFileSync(dump, JSON.stringify(picked.map((p, i) => ({ id: sha(p.ts + p.prompt), hash: sha(norm(runs.at(-1)[i].out)) }))));
   const COLS = [['inj', '주입률', '%'], ['conf', '1단', '%'], ['silent', '침묵', '%'], ['avg', '주입 평균', '자'], ['p90', '주입 p90', '자'], ['t50', '훅 p50', 'ms'], ['t90', '훅 p90', 'ms']];
   const GROUPS = [['사람', (p) => p.kind === '사람'], ['사람 · 짧은 말(≤20자)', (p) => p.kind === '사람' && p.prompt.length <= 20],
     ['사람 · 긴 글(>500자)', (p) => p.kind === '사람' && p.prompt.length > 500], ...['세션 메시지', '알림', '명령', '기타'].map((k) => [k, (p) => p.kind === k]), ['전체', () => true]];
