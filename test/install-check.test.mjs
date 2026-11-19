@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, put, repoFile, tmp, kitRepo } from './scene.mjs';
+import { applyMode } from '../tools/install-mode.mjs';
 import { checkInstall, checkAll, custom } from '../tools/install-check.mjs';
 import { partOf } from '../lib/parts.mjs';
 import { applyPolicy } from '../tools/policy-apply.mjs';
@@ -51,7 +52,28 @@ test('⭐ 키트대로 얹은 대상은 ①~⑨ 모두 ✅ — 로컬 · 공유'
   const local = check(installed());
   assert.deepEqual(Object.keys(local), ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨']);
   assert.deepEqual(bad(local), [], JSON.stringify(local, null, 1));
-  assert.deepEqual(bad(check(installed({ mode: 'share' }))), []);
+  assert.deepEqual(bad(check(shared())), []);
+});
+
+// 공유 설치는 git 저장소이고 install-mode share 를 거쳤다
+function shared() {
+  const dir = installed({ mode: 'share' });
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  applyMode('share', dir);
+  return dir;
+}
+
+test('⛔ 공유 설치인데 기록 파일이 merge=union 이 아니면 ⑤ 가 잡고 install-mode share 를 처방한다 — 로컬 설치는 보지 않는다 (18차)', () => {
+  const dir = installed({ mode: 'share' });
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  const before = check(dir)['⑤'];
+  assert.equal(before.ok, false);
+  assert.match(before.observed, /merge=union.*install-mode\.mjs share/);
+  applyMode('share', dir);
+  assert.equal(check(dir)['⑤'].ok, true);
+  const local = installed();
+  execFileSync('git', ['init', '-q'], { cwd: local });
+  assert.equal(check(local)['⑤'].ok, true);
 });
 
 test('다를 수 있는 것은 보지 않는다 — 그래프 데이터 · 장부 본문 · 기준선 · 검사 명령 · 지시 파일 본문 · 프로젝트가 더한 도구', () => {

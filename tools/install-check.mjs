@@ -14,6 +14,7 @@ import { KIT, DOCS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
 import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, ledgerLeft, graphRefs } from './upgrade.mjs';
 import { applyPolicy, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
+import { isUnion } from './install-mode.mjs';
 
 const slash = (p) => p.replace(/\\/g, '/');
 const keys = (a, b) => [...new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])];
@@ -152,6 +153,10 @@ export function checkInstall(dir, { plugins } = {}) {
   // 그래프 — 도구는 .harness/tools 한 벌. 옛 자기 그래프는 이관 미완, 옛 도구를 가리키는 줄이 남으면 모델이 그것을 불러 판이 갈라진다
   if (own) probs.push(`옛 자기 그래프(graph.tools ${graph.tools}) — 이관 미완: node <kit>/tools/upgrade.mjs <대상> --migrate-graph`);
   if (raw.graph?.store && !existsSync(join(dir, raw.graph.store))) probs.push(`graph.store 없음 (${raw.graph.store})`);
+  // 공유 설치는 기록 파일에 여럿이 이어 쓴다 — git 저장소가 아니면 볼 것이 없다
+  if (raw.mode === 'share' && spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir }).status === 0 && !isUnion(dir, graph.store)) {
+    probs.push(`기록 파일(${graph.store})이 merge=union 이 아니다 — 따로 쓴 기록이 병합 충돌한다: node .harness/tools/install-mode.mjs share`);
+  }
   const refs = graphRefs(dir);
   if (refs.length) probs.push(`키트 밖 그래프 도구를 가리키는 곳 ${list(refs)} — .harness/tools/graph-*.mjs 로 고친다`);
   const gap = coversGap(dir, raw);

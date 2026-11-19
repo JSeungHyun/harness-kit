@@ -18,6 +18,8 @@ function git(dir, ...args) {
   try {
     return { ok: true, out: execFileSync('git', ['-C', dir, '-c', 'core.quotepath=false', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) };
   } catch (e) {
+    // 종료 코드가 없으면 git 이 뜨지 못한 것이다(ENOENT · EPERM · 강제 종료) — 빈 출력을 「저장소 아님 · 커밋 0」으로 읽지 않는다
+    if (typeof e.status !== 'number') throw new Error(`git 을 띄우지 못했다(${e.code ?? e.signal ?? e.message}) — 판별 불가 · 다시 돌린다`);
     return { ok: false, out: String(e.stdout ?? '') };
   }
 }

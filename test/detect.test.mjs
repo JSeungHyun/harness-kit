@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { suggest } from '../tools/detect.mjs';
-import { gitRepo, put, target } from './scene.mjs';
+import { gitRepo, put, target, tmp } from './scene.mjs';
 
 const DETECT = fileURLToPath(new URL('../tools/detect.mjs', import.meta.url));
 const GLOBAL = '.claude/\nAGENTS.md\nCLAUDE.md\n';
@@ -133,4 +133,29 @@ test('사람용 출력은 사실과 제안을 한 화면에 낸다', () => {
   // 미커밋 변경은 멈춤이 아니라 확인 — ⛔ 멈춤 줄과 같은 너비(라벨 뒤 공백 9칸)
   assert.match(r.stdout, /^⚠️ 확인 {9}미커밋 변경 1건 — /m);
   assert.doesNotMatch(r.stdout, /⛔ 멈춤/);
+});
+
+// git 이 없는 PATH — Windows 는 변수 이름이 Path 일 수 있다
+const noGit = (env) => ({ ...Object.fromEntries(Object.entries(env).filter(([k]) => k.toUpperCase() !== 'PATH')), PATH: tmp('nogit-') });
+
+test('⛔ git 을 띄우지 못하면 판별 불가로 멈춘다 — 커밋 0 · 「신규」로 읽지 않는다(18차)', () => {
+  const { dir, env } = gitRepo(many(60), { commits: 25 });
+  for (const args of [[dir, '--json'], [dir]]) {
+    const r = spawnSync(process.execPath, [DETECT, ...args], { env: noGit(env), encoding: 'utf8' });
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stderr, /^⛔ git 을 띄우지 못했다/);
+    assert.equal(r.stdout, '');
+  }
+  // 같은 저장소 · git 이 뜨면 기존
+  const f = detect({ dir, env });
+  assert.equal(f.commits, 25);
+  assert.equal(f.suggest.profile, 'existing');
+});
+
+test('git 이 0 이 아닌 코드로 끝난 것은 기동 실패가 아니다 — 빈 저장소는 커밋 0 · 신규 그대로', () => {
+  const f = detect(gitRepo({ 'a.txt': 'x' }, { commits: 0 }));
+  assert.equal(f.git, true);
+  assert.equal(f.commits, 0);
+  assert.equal(f.suggest.profile, 'new');
+  assert.deepEqual(f.suggest.stop, []);
 });

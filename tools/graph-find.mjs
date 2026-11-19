@@ -3,8 +3,8 @@
 //   node .harness/tools/graph-find.mjs <용어…>          # 어근을 짧게, 여러 개 (--all: 대체된 기록 포함)
 //   node .harness/tools/graph-find.mjs --files <경로조각> # 파일 → 그 파일을 만진 요구 (1홉)
 //   node .harness/tools/graph-find.mjs --with <경로조각>  # 파일 → 같이 움직이는 파일 (2홉)
-//   node .harness/tools/graph-find.mjs --open | --check | --promote [정본문서]
-import { existsSync, readFileSync } from 'node:fs';
+//   node .harness/tools/graph-find.mjs --open | --check | --promote [정본문서] | --gaps [YYYY-MM-DD]   # --gaps: 그 날짜 뒤 커밋 중 바꾼 파일을 가리키는 살아있는 기록이 없는 것
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -199,9 +199,17 @@ export function check(recs, { fileExists } = {}) {
       }
     }
   }
+  // 공유 모드에서 둘이 같은 기록을 따로 대체하면 병합 뒤 이 꼴이 된다 — 늦게 쓴 쪽이 앞 정본을 대체하면 사슬이 한 줄로 돌아온다
+  const at = (seqs) => seqs.map((n) => `줄${n}`).join(' · ');
   const dupes = new Map();
-  for (const r of recs) for (const s of sup(r)) dupes.set(s, (dupes.get(s) || 0) + 1);
-  for (const [req, n] of dupes) if (n > 1) problems.push(['중복 대체', `「${req.slice(0, 40)}」 를 ${n}개 기록이 대체한다 — 사슬이 갈라진다`]);
+  for (const r of recs) for (const s of sup(r)) dupes.set(s, [...(dupes.get(s) || []), r.seq]);
+  for (const [req, seqs] of dupes) {
+    if (seqs.length > 1) problems.push(['중복 대체', `「${req.slice(0, 40)}」 를 ${seqs.length}개 기록(${at(seqs)})이 대체한다 — 사슬이 갈라진다\n       ⇒ 맨 앞 줄(줄${seqs[0]})은 그대로 두고, 뒤 줄(${at(seqs.slice(1))})은 supersedes 를 바로 앞 줄의 req 로 바꾼다`]);
+  }
+  // 경고만 — merge=union 은 제자리 수정의 옛 줄 · 새 줄을 다 남긴다
+  const lines = new Map();
+  for (const r of recs) lines.set(r.req, [...(lines.get(r.req) || []), r.seq]);
+  const sameReq = [...lines].filter(([, seqs]) => seqs.length > 1);
 
   // 경로가 사라졌으면 그래프가 코드보다 낡았다. ⛔ 대체된 기록은 뺀다 — 경로 소멸이 대체의 이유인 경우가 많아 영구 오탐이 된다
   const superseded = new Set(recs.flatMap(sup));
@@ -238,7 +246,7 @@ export function check(recs, { fileExists } = {}) {
   // 경고만 — 새 기록은 append 가 막는다. 남은 것은 지우거나 scope:meta 를 넣는다
   const offTopic = recs.filter((r) => !superseded.has(r.req) && offRepo(r));
 
-  return { problems, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
+  return { problems, sameReq, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms: [...owners.values()].filter((v) => v.length > 1).length };
 }
 
 // 정렬: 정확일치 유무 → 점수 → 살아있는 기록 → 최신
@@ -275,7 +283,7 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
 
   if (!recs.length) { console.log('기록이 없다. .harness/tools/graph-append.mjs 로 먼저 쌓는다.'); process.exit(0); }
   if (!args.length) {
-    console.error('사용법: node .harness/tools/graph-find.mjs <용어…>  |  --files <경로조각>  |  --with <경로조각>  |  --open  |  --check  |  --promote [정본문서]');
+    console.error('사용법: node .harness/tools/graph-find.mjs <용어…>  |  --files <경로조각>  |  --with <경로조각>  |  --open  |  --check  |  --gaps [날짜]  |  --promote [정본문서]');
     console.error(`현재 누적 ${recs.length}건`);
     process.exit(1);
   }
@@ -344,6 +352,33 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
     process.exit(0);
   }
 
+  // 커밋 빈틈 — 여럿이 쓰는 로컬 설치에서 동료가 한 일은 내 그래프에 없다. 목록만 낸다 — 무엇을 왜 바꿨는지는 도구가 뽑지 않는다
+  if (args[0] === '--gaps') {
+    const { spawnSync } = await import('node:child_process');
+    const git = (...a) => spawnSync('git', a, { encoding: 'utf8', maxBuffer: 1 << 28 });
+    const top = git('rev-parse', '--show-toplevel');
+    if (top.status !== 0) { console.error('⛔ git 저장소가 아니다 — 저장소 루트에서 돌린다'); process.exit(1); }
+    const since = args[1] ?? recs.map((r) => r.recorded || r.date).filter(Boolean).sort()[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(since ?? '')) { console.error(`⛔ 날짜는 YYYY-MM-DD 다: ${since}`); process.exit(1); }
+    const key = (f) => f.replace(/\\/g, '/').replace(/:\d+(-\d+)?$/, '').toLowerCase();
+    const gone = new Set(recs.flatMap(sup));
+    const known = new Set(recs.filter((r) => !gone.has(r.req)).flatMap((r) => r.files || []).map(key));
+    // 지금 없는 파일 · 기록 파일 자체는 채울 거리가 아니다
+    const root = top.stdout.trim();
+    const real = (p) => (existsSync(p) ? realpathSync.native(p) : resolve(p)).toLowerCase();  // 짧은 이름(8.3) · 대소문자가 달라도 같은 파일
+    const left = (f) => existsSync(resolve(root, f)) && real(resolve(root, f)) !== real(STORE);
+    const commits = git('log', '--no-merges', '--date=short', '--format=%x1e%h%x09%ad%x09%s', '--name-only').stdout.split('\x1e').filter((c) => c.trim()).map((c) => {
+      const [head, ...files] = c.split('\n').map((l) => l.trim()).filter(Boolean);
+      const [hash, date, subject] = head.split('\t');
+      return { hash, date, subject, files: files.filter(left) };
+    }).filter((c) => c.date >= since);
+    const gaps = commits.filter((c) => c.files.length && !c.files.some((f) => known.has(key(f))));
+    console.log(`커밋 빈틈 ${gaps.length}건 — ${since} 뒤 커밋 ${commits.length}건 가운데 바꾼 파일을 가리키는 살아있는 기록이 하나도 없는 것`);
+    for (const c of gaps) console.log(`\n${c.hash} ${c.date} ${c.subject}\n   ${c.files.slice(0, 5).join(' · ')}${c.files.length > 5 ? ` … 외 ${c.files.length - 5}개` : ''}`);
+    if (gaps.length) console.log('\n⇒ 요구 단위로 묶어 node .harness/tools/graph-append.mjs 로 적는다(date 는 그 커밋 날짜) — 무엇을 왜 바꿨는지는 사람 · 세션이 읽고 쓴다');
+    process.exit(0);
+  }
+
   // 열린 작업 목록 — 훅은 주제가 겹칠 때만 붙여 주므로 「뭐 하다 말았나」는 여기서 본다
   if (args[0] === '--open') {
     const gone2 = new Set(recs.flatMap(sup));
@@ -355,13 +390,17 @@ if (process.argv[1] && process.argv[1].endsWith('graph-find.mjs')) {
 
   // 무결성 검증 — 문자열 참조로 잇는 구조의 유일한 약점을 시끄럽게 만든다
   if (args[0] === '--check') {
-    const { problems, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms } = check(recs, { fileExists: (f) => existsSync(f) });
+    const { problems, sameReq, gone, noRecorded, retro, stale, unmarked, offTopic, dupTerms } = check(recs, { fileExists: (f) => existsSync(f) });
     console.log(`기록 ${recs.length}건 · 대체 사슬 ${recs.filter((r) => r.supersedes).length}건\n`);
     console.log('── 줄 형식 ──');
     console.log(broken.length ? `  ⛔ 깨진 줄 ${broken.length}개 — 줄 ${broken.join(', ')} (JSON 이 아니거나 req 가 없다 — 어느 도구도 읽지 못한다)\n` : '  이상 없음.\n');
     console.log('── 사슬 무결성 ──');
     if (!problems.length) console.log('  이상 없음.');
     for (const [kind, msg] of problems) console.log(`  ⛔ ${kind}: ${msg}`);
+    for (const [req, seqs] of sameReq) {
+      console.log(`  ⚠️ 같은 req ${seqs.length}줄(${seqs.map((n) => `줄${n}`).join(' · ')}): 「${req.slice(0, 40)}」`);
+      console.log('       ⇒ 병합이 제자리 수정의 옛 줄까지 남긴 것이면 옛 줄을 지운다. 여럿이 쓰는 기록은 제자리에서 고치지 말고 supersedes 로 새 줄을 쓴다');
+    }
     console.log('\n── 경로 무결성 (그래프가 코드보다 낡았나) ──');
     if (!gone.length) console.log(`  이상 없음 — 참조 경로 전부 존재.`);
     for (const [r, f] of gone) console.log(`  ⛔ 없는 경로  ${f}\n              ← ${r.date} ${r.req.slice(0, 44)}`);

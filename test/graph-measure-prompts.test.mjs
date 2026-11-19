@@ -118,6 +118,35 @@ test('--prompts --baseline — 시간은 예열 1회를 버리고 두 판을 입
   assert.equal(readFileSync(join(s.dir, '.harness', 'order.log'), 'utf8'), 'BN' + 'BN' + 'NB' + 'BN');
 });
 
+// 18차 — 훅이 넣은 글은 그 질문에서 끝나지 않고 압축 · /clear 까지 문맥에 남아 뒤 호출마다 입력으로 다시 들어간다
+test('⭐ --prompts — 「세션 누적 주입」: API 호출(message.id)마다 그때까지 남은 주입을 입력 합에 견준다 · 압축 뒤 0 · 사이드체인 제외 · 창 밖 입력이 낀 구간은 뺀다', () => {
+  const s = install();
+  const call = (id, input, more = {}) => ({ type: 'assistant', message: { id, model: 'm', usage: { input_tokens: 10, cache_creation_input_tokens: 90, cache_read_input_tokens: input - 100, output_tokens: 5 } }, timestamp: at(), ...more });
+  put(s.dir, 's.jsonl', jsonl(
+    human('주문취소 어디서 막혀?'),
+    call('m1', 1000), call('m1', 1000),
+    call('side', 9000, { isSidechain: true }),
+    human('응 진행해'),
+    call('m2', 2000),
+    { type: 'system', subtype: 'compact_boundary', timestamp: at() },
+    call('m3', 3000),
+  ));
+  const injected = s.run('graph-hook', [], JSON.stringify({ prompt: '주문취소 어디서 막혀?' })).stdout.length;
+  assert.ok(injected > 0);
+  const r = s.run('graph-measure', ['--prompts', 's.jsonl']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const share = (((injected * 0.83 * 2) / 6000) * 100).toFixed(1);
+  assert.match(r.stdout, new RegExp(`^세션 누적 주입 — 입력 토큰의 ${share.replace('.', '\\.')}% \\(추정 · 주입 글 0\\.83 토큰/자\\) · API 호출 3 · 호출별 p90 [\\d.]+% · 문맥에 남은 주입 최대 ${injected}자`, 'm'), r.stdout);
+  // 첫 입력이 창 밖이면 그 뒤 호출은 압축 전까지 세지 않는다 — 덜 쌓인 값으로 낮게 나오지 않게
+  const cut = s.run('graph-measure', ['--prompts', 's.jsonl', '--limit', '1']).stdout;
+  assert.match(cut, /^세션 누적 주입 — 입력 토큰의 0\.0% .* API 호출 1 /m, cut);
+  const same = join(s.dir, '.harness', 'same');
+  cpSync(join(s.dir, '.harness', 'tools'), same, { recursive: true });
+  assert.match(s.run('graph-measure', ['--prompts', 's.jsonl', '--baseline', same]).stdout, new RegExp(`^세션 누적 주입 — 입력 토큰의 ${share.replace('.', '\\.')}% → ${share.replace('.', '\\.')}% `, 'm'));
+  put(s.dir, 'plain.jsonl', jsonl(human('주문취소 어디서 막혀?')));
+  assert.match(s.run('graph-measure', ['--prompts', 'plain.jsonl']).stdout, /^세션 누적 주입 — 잴 API 호출 0/m);
+});
+
 test('⛔ --prompts — 턴을 연 입력을 하나도 못 찾으면 조용한 0 이 아니라 실패다', () => {
   const s = install();
   put(s.dir, 'empty.jsonl', jsonl({ type: 'user', message: { content: [{ type: 'tool_result', content: 'x' }] } }));

@@ -5,7 +5,8 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname, relative, isAbsolute } from 'node:path';
-import { cli } from '../lib/config.mjs';
+import { cli, CONFIG } from '../lib/config.mjs';
+import { graphOf } from '../lib/parts.mjs';
 
 const SHARE_TRACK = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/final-gate/SKILL.md',
   '.claude/settings.json', 'docs/harness/decisions.md', 'AGENTS.md', 'CLAUDE.md'];
@@ -42,7 +43,26 @@ export function applyMode(mode, target) {
     : LOCAL_PROBES.map((p) => [p, true]);
   const rows = expect.map(([p, want]) => ({ p, want, ok: ignored(p) === want }));
   const gitDir = resolve(dir, execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: dir, encoding: 'utf8' }).trim());
-  return { file, wrote, rows, ok: rows.every((r) => r.ok), hook: mode === 'share' ? preCommit(gitPath('hooks/pre-commit'), gitDir) : null };
+  const union = mode === 'share' ? unionStore(dir) : null;
+  return { file, wrote, rows, union, ok: rows.every((r) => r.ok) && (union?.ok ?? true), hook: mode === 'share' ? preCommit(gitPath('hooks/pre-commit'), gitDir) : null };
+}
+
+// 공유 모드는 기록 파일 하나에 여럿이 이어 쓴다 — merge=union 이 없으면 따로 쓴 두 줄이 병합 충돌한다. 판정은 git check-attr 로
+export const isUnion = (dir, store) => /: merge: union\s*$/.test(spawnSync('git', ['check-attr', 'merge', '--', store], { cwd: dir, encoding: 'utf8' }).stdout ?? '');
+function unionStore(dir) {
+  const cfg = join(dir, CONFIG);
+  const { store } = graphOf(existsSync(cfg) ? JSON.parse(readFileSync(cfg, 'utf8')) : {});
+  if (!isUnion(dir, store)) {
+    const file = join(dir, '.gitattributes');
+    const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    const eol = text.includes('\r\n') ? '\r\n' : '\n';
+    const head = `${BEGIN} (install-mode share)`;
+    const rule = `${store} merge=union`;
+    writeFileSync(file, text.includes(head)
+      ? text.replace(head, () => `${head}${eol}${rule}`)
+      : `${text}${text && !text.endsWith('\n') ? eol : ''}${[head, rule, END].join(eol)}${eol}`);
+  }
+  return { store, ok: isUnion(dir, store) };
 }
 
 // 공유 모드는 커밋 전마다 민감 정보를 검사한다. ⛔ 이미 있는 훅은 덮지 않는다 — 그 훅의 주인이 한 줄을 더한다
@@ -62,6 +82,7 @@ cli(import.meta.url, () => {
   const r = applyMode(mode, target);
   console.log(`${r.wrote ? '반영' : '이미 있음 (표식 블록) — 그대로 둔다'}: ${r.file}`);
   for (const { p, want, ok } of r.rows) console.log(`${ok ? '✅' : '⛔'} ${want ? '무시됨' : '추적 가능'} 이어야 한다 — ${p}`);
+  if (r.union) console.log(`${r.union.ok ? '✅' : '⛔'} merge=union 이어야 한다 — ${r.union.store}`);
   if (r.hook?.state === 'outside') console.log(`⚠️ core.hooksPath 가 저장소 git 디렉터리 밖(${r.hook.path})을 가리켜 쓰지 않았다 — 그 훅의 주인이 이 한 줄을 더한다: ${HOOK_LINE}`);
   else if (r.hook?.state === 'foreign') console.log(`⚠️ 이미 있는 pre-commit 을 덮지 않았다 — ${r.hook.path} 에 이 한 줄을 더한다: ${HOOK_LINE}`);
   else if (r.hook) console.log(`✅ pre-commit 이 scan-shared 를 부른다 — ${r.hook.path}`);

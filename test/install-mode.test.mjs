@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { readFileSync, existsSync, cpSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawnSync, execFileSync } from 'node:child_process';
+import { readFileSync, existsSync, cpSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitRepo, tmp } from './scene.mjs';
@@ -41,6 +41,7 @@ test('⭐ 로컬 — 설치 경로를 .git/info/exclude 로 숨기고 .gitignore
     assert.equal(ignored(repo, p), true, p);
   }
   assert.equal(existsSync(join(repo.dir, '.gitignore')), false);
+  assert.equal(existsSync(join(repo.dir, '.gitattributes')), false);
 });
 
 test('⭐ 멱등 — 두 번 돌려도 블록은 한 번이다', () => {
@@ -110,4 +111,43 @@ test('⛔ 공유 — core.hooksPath 가 저장소 git 디렉터리 밖이면 pre
     assert.equal(existsSync(join(repo.dir, '.git', 'hooks', 'pre-commit')), false, 'git 이 안 쓰는 기본 자리에도 쓰지 않는다');
     assert.match(r.stdout, /⚠️ .*core\.hooksPath.*node \.harness\/tools\/scan-shared\.mjs \|\| exit 1/);
   }
+});
+
+// 18차 — 공유 모드는 기록 파일 하나에 여럿이 이어 쓴다. 표식이 없으면 따로 쓴 두 줄이 병합 충돌하고, 충돌 표식이 든 기록은 --check 빨강이다
+const FIND = fileURLToPath(new URL('../tools/graph-find.mjs', import.meta.url));
+const STORE = '.harness/graph/requests.jsonl';
+const line = (req) => `${JSON.stringify({ date: '2026-09-01', recorded: '2026-09-01', req, terms: {}, files: ['a.txt'] })}\n`;
+const commit = ({ dir, env }, msg) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', msg, '--no-verify'], { cwd: dir, env });
+
+test('⭐ 공유 — 기록 파일을 .gitattributes 표식 블록에 merge=union 으로 · 두 클론이 따로 이어 쓴 기록이 충돌 없이 합쳐지고 --check exit 0', () => {
+  const repo = gitRepo({ 'a.txt': 'x', [STORE]: line('기본 기록') });
+  const r = run(repo, 'share');
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(read(repo.dir, '.gitattributes'), `# harness-kit:begin (install-mode share)\n${STORE} merge=union\n# harness-kit:end\n`);
+  assert.match(r.stdout, /✅ merge=union 이어야 한다 — \.harness\/graph\/requests\.jsonl/);
+  assert.equal(run(repo, 'share').status, 0);
+  assert.equal(read(repo.dir, '.gitattributes').match(/harness-kit:begin/g).length, 1, '두 번 돌려도 블록은 한 번');
+  repo.git('add', '-A');
+  commit(repo, '설치');
+  const other = { dir: tmp('clone-'), env: repo.env };
+  execFileSync('git', ['clone', '-q', repo.dir, other.dir], { env: repo.env });
+  appendFileSync(join(repo.dir, STORE), line('이쪽이 쓴 기록'));
+  commit(repo, '이쪽');
+  appendFileSync(join(other.dir, STORE), line('저쪽이 쓴 기록'));
+  commit(other, '저쪽');
+  const pull = spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', 'pull', '-q', '--no-rebase', '--no-edit'], { cwd: other.dir, env: repo.env, encoding: 'utf8' });
+  assert.equal(pull.status, 0, `${pull.stdout}${pull.stderr}`);
+  const merged = read(other.dir, STORE);
+  for (const req of ['기본 기록', '이쪽이 쓴 기록', '저쪽이 쓴 기록']) assert.ok(merged.includes(req), req);
+  const c = spawnSync(process.execPath, [FIND, '--check'], { cwd: other.dir, env: { ...repo.env, HARNESS_GRAPH_STORE: join(other.dir, STORE) }, encoding: 'utf8' });
+  assert.equal(c.status, 0, c.stdout);
+});
+
+test('공유 — merge=union 줄은 harness.json 의 graph.store 를 따르고, 기록 위치가 바뀌면 다시 돌릴 때 그 줄을 더한다', () => {
+  const repo = gitRepo({ '.gitattributes': '*.png binary\n', '.harness/harness.json': JSON.stringify({ graph: { store: 'docs/graph/requests.jsonl' } }) });
+  assert.equal(run(repo, 'share').status, 0);
+  assert.match(read(repo.dir, '.gitattributes'), /^\*\.png binary\n# harness-kit:begin \(install-mode share\)\ndocs\/graph\/requests\.jsonl merge=union\n/);
+  writeFileSync(join(repo.dir, '.harness', 'harness.json'), JSON.stringify({ graph: { store: 'wiki/requests.jsonl' } }));
+  assert.equal(run(repo, 'share').status, 0);
+  assert.match(read(repo.dir, '.gitattributes'), /^wiki\/requests\.jsonl merge=union$/m);
 });

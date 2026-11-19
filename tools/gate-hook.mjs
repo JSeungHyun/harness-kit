@@ -2,7 +2,7 @@
 // Stop 훅 — 한 턴의 증거 세트(과설계 리뷰 · 덮지 않는 코드의 code-review · 마지막 변경 뒤 verify · final-gate · 그래프 기록 또는 건너뛴 이유)에서 빠진 것이 있으면 한 번 되돌려 보낸다. 설계안.
 // 실측(설치 3곳 6세션): 코드를 바꾼 턴에 verify 5/5 · final-gate 0/7 — 빠지는 것은 모델의 기억에 맡긴 단계다(plan 11차).
 // verify 는 「끝내려 한다」는 신호로만 쓴다 — 훅에서 다시 돌리지 않는다(중앙 50초). 실패는 조용히 통과 — 종료를 막지 않는다.
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, openSync, fstatSync, readSync, closeSync } from 'node:fs';
 import { relative, resolve, isAbsolute, posix, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -86,6 +86,19 @@ function missing({ said, uses, answer, since, done }, covers, graph) {
   return out;
 }
 
+const TAIL_MAX = 8 << 20;
+function tail(path) {
+  const fd = openSync(path, 'r');
+  try {
+    const size = fstatSync(fd).size, n = Math.min(size, TAIL_MAX);
+    const buf = Buffer.alloc(n);
+    readSync(fd, buf, 0, n, size - n);
+    const lines = buf.toString('utf8').split(/\r?\n/);
+    if (n < size) lines.shift(); // 잘린 첫 줄
+    return lines;
+  } finally { closeSync(fd); }
+}
+
 let raw = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (c) => { raw += c; });
@@ -95,7 +108,8 @@ process.stdin.on('end', () => {
     // 되돌린 뒤의 멈춤 · 결과를 기다리는 진행 보고에는 울리지 않는다. 셸은 백그라운드 verify 만 기다림이다 — 상주 개발 서버도 shell 이라 그것만 떠 있으면 예외가 아니다(2.1.319 덤프: type shell · subagent)
     const waiting = (input.background_tasks ?? []).some((t) => t.type !== 'shell' || /verify\.mjs/.test(t.command ?? ''));
     if (!input.stop_hook_active && !waiting) {
-      const t = turn(readFileSync(input.transcript_path, 'utf8').split(/\r?\n/), input.transcript_path);
+      // 긴 세션에서 전체를 읽으면 느리다 — 끝 8MB 만 읽고, 그 안에 턴 시작이 없을 때만 전체를 읽는다
+      const t = turn(tail(input.transcript_path), input.transcript_path) ?? turn(readFileSync(input.transcript_path, 'utf8').split(/\r?\n/), input.transcript_path);
       const conf = JSON.parse(readFileSync(CONFIG, 'utf8'));
       const covers = (conf.checks ?? []).flatMap((c) => c.covers ?? []);
       // 기본 위치는 graph-find 와 같다 · 기록은 늦게 쓰일 수 있어 Stop 입력의 마지막 답을 먼저 본다

@@ -29,6 +29,7 @@ claude --version                       # 2.1.277 이상
 | `detect` 가 낸 것 | 행동 |
 |---|---|
 | `⛔ 멈춤` 줄이 있다 (저장소 아님 · 루트 아님 · 이미 설치됨 · Node 22 미만) | ⛔ 멈추고 알린다. 이미 설치됐으면 키트를 올리는 것인지 묻는다 — 그렇다면 아래 「갱신」, 아니면 덮어쓰지 않는다 |
+| `⛔ git 을 띄우지 못했다` 로 멈췄다 (exit 1 · 판별 결과 없음) | 그대로 다시 돌린다 — PC 부하 · 보안 프로그램 탓이고 판별 결과가 아니다 |
 | `⚠️ 확인` 줄의 미커밋 변경 | 로컬 전용이면 진행하고 보고에 적는다 — 설치 전 `git status --porcelain` 출력을 적어 둔다(⑧-a 가 그것과 비교한다) · 공유를 고르면 ⛔ 멈춘다(설치 파일이 작업 중 변경과 한 커밋에 섞인다) · 겹침 줄(`설치가 고치고 git 에서 숨기는 경로에 …`)이 있으면 그 파일을 사용자에게 보여 주고 진행 여부를 묻는다. 한계: 전역 gitignore 가 `.claude/` 를 무시하는 PC 에서는 `.claude/` 의 미추적 파일(`settings.local.json` 등)이 `git status` 에 안 나와 겹침 줄이 `CLAUDE.local.md` 만 잡는다 — 설치는 `settings.local.json` 을 병합만 해서 위험은 낮다 |
 | `context-graph 있음` | 그 프로젝트의 그래프 기록이 이미 있다 — ⛔ 기록은 옮기지 않는다. 그래프 도구는 키트 판을 그대로 얹고(② — 도구가 두 벌이면 판이 갈라진다) ⑤ 에 `graph` 를 적은 뒤 ⑥ 끝에서 `upgrade --migrate-graph` 로 기록 위치(`graph.store`)를 잇는다. 기록 규칙이 지시 파일 · 스킬에 있으면 graph.md 는 얹지 않는다(⑦의 그래프 단계 생략). 보고에 적는다 |
 
@@ -72,10 +73,12 @@ node .harness/tools/install-mode.mjs local      # 또는 share — ⛔ exit 0 �
 
 | | 로컬 전용 | 공유 |
 |---|---|---|
-| 하는 일 | 설치 경로를 `.git/info/exclude` 에 | 지금 git 에 무시되는 설치 경로만 `.gitignore` 에 부정 규칙(`!.claude/` 등) + `.claude/settings.local.json` 은 다시 무시 + `.git/hooks/pre-commit` 에 `node .harness/tools/scan-shared.mjs` |
-| 끝에 확인 | 전부 무시됨 | 설치 경로가 전부 추적 가능 · pre-commit 이 scan-shared 를 부른다 |
+| 하는 일 | 설치 경로를 `.git/info/exclude` 에 | 지금 git 에 무시되는 설치 경로만 `.gitignore` 에 부정 규칙(`!.claude/` 등) + `.claude/settings.local.json` 은 다시 무시 + `.git/hooks/pre-commit` 에 `node .harness/tools/scan-shared.mjs` + `.gitattributes` 에 `<기록 파일> merge=union` |
+| 끝에 확인 | 전부 무시됨 | 설치 경로가 전부 추적 가능 · pre-commit 이 scan-shared 를 부른다 · 기록 파일이 `merge=union`(`git check-attr`) |
 
 공유 모드에서 이미 pre-commit 훅이 있으면 덮지 않는다 — 출력의 ⚠️ 줄(그 훅에 더할 한 줄)을 사용자에게 보여준다. `core.hooksPath` 가 설정돼 있어 훅 자리가 저장소 git 디렉터리 밖(전역 훅 폴더 · 추적되는 `.husky` 등)이면 **쓰지 않고** 같은 한 줄을 안내한다 — 전역 훅 폴더에 쓰면 `.harness/` 가 없는 다른 모든 레포의 커밋이 실패한다.
+
+공유 모드는 기록 파일 하나에 여럿이 이어 쓴다 — `merge=union` 이라 따로 이어 쓴 기록은 병합 충돌 없이 합쳐진다. 둘이 같은 기록을 따로 대체하면 `graph-find --check` 가 「중복 대체」(exit 1)와 처방 줄을 낸다. 여럿이 쓰는 기록은 제자리에서 고치지 않고 `supersedes` 로 새 줄을 쓴다 — 제자리 수정은 병합 뒤 옛 줄이 남아 `--check` 가 ⚠️ 같은 req 로 알린다.
 
 **공유 모드 — 민감 정보 패턴을 프로젝트에 맞춘다.** `.harness/scan.json` 의 기본 7종은 예시라 프로젝트 형식을 모른다(실측: 기본 6종 중 4종이 실제 값을 못 잡았다 — 각 패턴의 `놓치는 것` 참고). 사용자에게 **사번 형식 · 사내 호스트 목록 · 이슈 번호 형식** 셋을 묻고, 패턴을 고치거나 더한 뒤 `"reviewed": true` 로 바꾼다. 맞추기 전에는 scan-shared 가 「⚠️ 기본 패턴 그대로다」를 낸다(커밋은 막지 않는다). ⛔ 비대화형이면 `false` 로 두고 「사용자가 결정해야 하는 것」에 남긴다 — 실제 값으로 패턴을 지어내지 않는다.
 
@@ -182,7 +185,7 @@ git log --format='%h %ad %s%n%b' --date=short -60      # 본문까지 본다 —
 ```
 
 - 수정 커밋(`fix` · 버그 · 원인) 중 **근본 원인이 드러난 것**만 lessons 2~3건 — `node .harness/tools/lesson-append.mjs`(필드는 `.claude/rules/harness.md` 의 예시 — 맡긴 설치처럼 규칙이 아직 안 읽힌 세션은 그 파일을 연다). 이미 테스트·규칙으로 막혀 있으면 `guard` 에 그 위치를 적는다
-- 요구 단위 커밋 3~5건 → 그래프 `node .harness/tools/graph-append.mjs` — `req` 는 그때의 요구, `date` 는 **그 커밋 날짜**(소급), `files` 는 그 커밋의 변경 파일 중 **지금도 있는 것**(`git show --name-only --format= <해시>` — 사라진 경로는 `--check` 를 깨뜨린다). ⛔ **`terms`(현업 용어 → 코드 식별자)를 채워야 값이 있다** — 커밋 제목만 넣은 기록은 0 이다. 커밋 유래 기록은 기여가 낮으니 건수를 채우려고 늘리지 않는다
+- 요구 단위 커밋 3~5건 → 그래프 `node .harness/tools/graph-append.mjs` — `req` 는 그때의 요구, `date` 는 **그 커밋 날짜**(소급), `files` 는 그 커밋의 변경 파일 중 **지금도 있는 것**(`git show --name-only --format= <해시>` — 사라진 경로는 `--check` 를 깨뜨린다). ⛔ **`terms`(현업 용어 → 코드 식별자)를 채워야 값이 있다** — 커밋 제목만 넣은 기록은 0 이다. 건수를 채우려고 늘리지는 않는다 — 다만 커밋 유래 기록의 기여가 낮지는 않았다(그래프 원천 사본 티켓 재생: 기록당 「정답 1단 1위」 커밋 유래 0.105 대 일하며 쓴 기록 0.078 · 커밋 쪽 적중 2회로 표본이 얇다). 설치 뒤에 생긴 빈틈은 `node .harness/tools/graph-find.mjs --gaps [날짜]` 로 본다 — 바꾼 파일을 가리키는 기록이 없는 커밋 목록(로컬 전용으로 여럿이 쓰면 동료 커밋이 여기 나온다)
 - ⛔ 소급 기록에 `supersedes` 를 붙이지 않는다. ⛔ 개인 식별자(사번·이름·연락처)를 적지 않는다 — 사람은 역할로
 - 그래프는 `.claude/rules/graph.md` 의 기록 규칙을 따른다
 
@@ -208,6 +211,7 @@ node .harness/tools/verify.mjs                # ⛔ exit 0 — 「기준선 실�
 ```bash
 node .harness/tools/graph-measure.mjs . --tickets <이슈 제목 json>   # 「상위3 점유 n%」
 node .harness/tools/graph-measure.mjs --prompts ~/.claude/projects/<프로젝트 폴더>/   # 질문당 비용 — 실입력 최근 300개 재생(주입률 · 1단 · 주입 글자 · 훅 시간)
+node .harness/tools/graph-measure.mjs --gate ~/.claude/projects/<프로젝트 폴더>/      # 관문 훅 시간 — 기록 크기별 p50 · p90
 node .harness/tools/policy-apply.mjs --local --with graph-hook    # 로컬 전용
 node .harness/tools/policy-apply.mjs --with graph-hook            # 공유
 ```
@@ -316,6 +320,7 @@ node <kit>/tools/upgrade.mjs <대상>
 - 규칙 · final-gate 스킬은 설치본이 키트 이력의 한 버전(장부 경로를 채운 것)과 같을 때만 바꾼다. `⛔ … 프로젝트가 고쳤다 +n −m` 이면(exit 1) 키트 파일을 손으로 병합하지 않는다 — 다른 줄을 사용자에게 보여 주고 그 줄 끝의 `node <kit>/tools/upgrade.mjs <대상> --own-rules` 를 돌린다. 고친 줄은 `.claude/rules/project-<이름>.md` 로 옮겨지고(더한 줄은 그 절 제목 아래 · 뺀 키트 줄은 「따르지 않는 키트 줄」 · 「키트 판과 어긋나면 이 파일이 이긴다」) 키트 파일은 키트 판으로 다시 깔린다. 만들어진 파일을 사용자에게 보여 준다 — 로컬 전용이면 그 파일도 `.git/info/exclude` 에 들어간다
 - 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. 정책 줄은 옛 정책이 이 프로젝트에 쓴 플러그인 선언 · `PONYTAIL_DEFAULT_MODE` 를 걷고(출력의 `걷음:`), 키트 훅을 새 형식으로 바꿔 끼운다. ⛔ 이전을 먼저 한다 — 선언만 걷히고 PC 에 키트 마켓 플러그인이 없으면 superpowers 가 빠진다
 - 플러그인 판은 세션을 열 때 실린다 — 갱신 뒤 열려 있던 세션은 새로 연다
+- 옛 판으로 깐 공유 설치는 갱신 뒤 이식 검사 ⑤ 가 ⛔(기록 파일이 `merge=union` 이 아니다)를 낸다 — `node .harness/tools/install-mode.mjs share` 를 다시 돌린다
 - 끝나면 ⑧-a~⑧-d(도구 · 새 세션 규칙 로드 · PC 맞춤 · 플러그인 하나씩)를 다시 하고, 마지막에 ⑧-f 이식 검사(갱신 출력 「다음」의 3) — 보고에 출력 그대로 붙인다. ⛔ exit 0 이 아니면 「갱신 끝 · 이식 성공」이라고 쓰지 않는다
 
 **설치 현황 — 키트를 고친 뒤** — 키트 개선의 끝은 커밋이 아니라 이 PC 의 설치가 모두 같은 판이 된 때다:

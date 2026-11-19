@@ -150,3 +150,12 @@ test('깨진 입력은 조용히 통과한다 — 종료를 막지 않는다', (
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '');
 });
+
+// 끝 8MB 만 읽는 판 — 턴 시작이 그 밖이면 전체를 읽어 판정이 같아야 한다
+test('긴 기록 — 턴 시작이 끝 8MB 밖이어도 같은 판정이다', () => {
+  const big = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'r1', content: 'x'.repeat(9 << 20) }] } };
+  const turn = [human('고쳐줘'), edit('e1'), review('p1'), verify('v1')];
+  assert.deepEqual(missing(stop([...turn, big])), ['final-gate']);
+  // 턴 시작이 끝 8MB 안이면 앞 턴은 보지 않는다
+  assert.equal(blocked(stop([...turn, big, human('설명해줘'), use('r2', 'Read', { file_path: 'src/a.mjs' })])), false);
+});

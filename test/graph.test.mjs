@@ -222,6 +222,26 @@ test('⭐ ⑧ --check 대체 사슬 4종 — 각각 잡고 exit 1', () => {
   }
 });
 
+test('⭐ --check 중복 대체 — 줄 번호와 처방 줄을 내고, 처방대로 고치면 exit 0 (18차 · 공유 모드에서 둘이 같은 기록을 따로 대체)', () => {
+  const s = scene([{ req: 'A' }, { req: 'B', supersedes: 'A' }, { req: 'C', supersedes: 'A' }]);
+  const r = s.run('graph-find', ['--check']);
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /⛔ 중복 대체: 「A」 를 2개 기록\(줄2 · 줄3\)이 대체한다/);
+  assert.match(r.stdout, /⇒ 맨 앞 줄\(줄2\)은 그대로 두고, 뒤 줄\(줄3\)은 supersedes 를 바로 앞 줄의 req 로 바꾼다/);
+  writeFileSync(s.store, readFileSync(s.store, 'utf8').replace('"req":"C","supersedes":"A"', '"req":"C","supersedes":"B"'));
+  assert.equal(s.run('graph-find', ['--check']).status, 0);
+});
+
+test('--check 같은 req 두 줄 — 경고만(exit 0) · 병합(merge=union)이 제자리 수정의 옛 줄 · 새 줄을 다 남긴 꼴 (18차)', () => {
+  const recs = [{ req: 'A' }, { req: 'B' }, { req: 'A', terms: { 별칭: '값' } }];
+  assert.deepEqual(check(index(recs.map((x) => ({ files: [], ...x })))).sameReq, [['A', [1, 3]]]);
+  const r = scene(recs).run('graph-find', ['--check']);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /⚠️ 같은 req 2줄\(줄1 · 줄3\): 「A」/);
+  assert.match(r.stdout, /⇒ .*옛 줄을 지운다.*supersedes/);
+  assert.doesNotMatch(scene([{ req: 'A' }, { req: 'B' }]).run('graph-find', ['--check']).stdout, /같은 req/);
+});
+
 test('⛔ ⑧ 경로 무결성은 대체된 기록을 뺀다 — 안 빼면 --check 가 영구 exit 1 이 된다', () => {
   const s = scene([
     { req: '옛 화면', files: ['src/old-screen.mjs'] },
@@ -511,4 +531,41 @@ test('⭐ --check 1위 독점 — 질의는 살아있는 최근 200건만, 경�
   const r = scene([broad, ...many]).run('graph-find', ['--check']);
   assert.match(r.stdout, /질의 200 · 상위3 점유/);
   assert.match(r.stdout, /⚠️ 1위 독점 — \d+\/200 {2}용어 사전: 쇼핑몰 전반/);
+});
+
+test('⭐ --gaps — 바꾼 파일을 가리키는 살아있는 기록이 하나도 없는 커밋만 낸다 · 기록은 쓰지 않는다 (18차 · 여럿이 쓰는 로컬 설치)', () => {
+  const s = scene([{ req: '환불 규칙', files: ['src/refund.mjs:12'] }, { req: '옛 배송', files: ['src/ship.mjs'] }, { req: '배송 정리', supersedes: '옛 배송' }]);
+  assert.equal(s.run('graph-find', ['--gaps']).status, 1, 'git 저장소가 아니면 실패');
+  const cfg = join(tmp('gitcfg-'), 'gitconfig');
+  writeFileSync(cfg, '');
+  const git = (...a) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: s.dir, env: { ...process.env, GIT_CONFIG_GLOBAL: cfg, GIT_CONFIG_NOSYSTEM: '1' }, encoding: 'utf8' });
+  const commit = (day, msg, files, body = msg) => {
+    for (const f of files) { mkdirSync(join(s.dir, 'src'), { recursive: true }); writeFileSync(join(s.dir, f), body); }
+    git('add', '-A');
+    assert.equal(git('commit', '-qm', msg, '--date', `${day}T12:00:00`).status, 0, msg);
+  };
+  git('init', '-q');
+  commit('2026-08-20', '옛 작업', ['src/old.mjs']);
+  commit('2026-09-02', '환불 수정', ['src/refund.mjs']);
+  commit('2026-09-03', '배송 고침', ['src/ship.mjs']);
+  commit('2026-09-04', '쿠폰 추가', ['src/coupon.mjs', 'src/refund.mjs']);
+  commit('2026-09-05', '정산 추가', ['src/settle.mjs']);
+  commit('2026-09-06', '곧 지울 파일', ['src/gone.mjs']);
+  git('rm', '-q', 'src/gone.mjs');
+  commit('2026-09-07', '파일 지움', []);
+  const before = readFileSync(s.store, 'utf8');
+  writeFileSync(s.store, `${before}\n`);
+  commit('2026-09-08', '기록만 고침', []);
+  writeFileSync(s.store, before);
+  const r = s.run('graph-find', ['--gaps']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^커밋 빈틈 2건 — 2026-09-01 뒤 커밋 7건/);
+  assert.match(r.stdout, /^[0-9a-f]{7,} 2026-09-05 정산 추가\n {3}src\/settle\.mjs$/m);
+  assert.match(r.stdout, /^[0-9a-f]{7,} 2026-09-03 배송 고침\n {3}src\/ship\.mjs$/m, '대체된 기록만 가리키면 빈틈이다');
+  assert.doesNotMatch(r.stdout, /옛 작업|환불 수정|쿠폰 추가|지울 파일|파일 지움|기록만 고침/);
+  assert.match(r.stdout, /⇒ .*graph-append/);
+  const late = s.run('graph-find', ['--gaps', '2026-09-04']).stdout;
+  assert.match(late, /^커밋 빈틈 1건 — 2026-09-04 뒤 커밋 5건/);
+  assert.equal(readFileSync(s.store, 'utf8'), before, '기록은 쓰지 않는다');
+  assert.equal(s.run('graph-find', ['--gaps', '9월']).status, 1);
 });
