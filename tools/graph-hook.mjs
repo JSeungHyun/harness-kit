@@ -4,6 +4,9 @@
 import { load, scoreDetail, sup, tokenizeKo, tokenizeIds, ORIGIN } from './graph-find.mjs';
 
 const MAX = 2;   // 프롬프트마다 붙는 비용이므로 상위 2건만
+// 모르면 침묵(21차 · 원천 사본 시험) — 기록의 10% 넘게 걸리는 흔한 한글 낱말의 정확일치는 확신 · 정렬에 세지 않고, 본문 합 5점은 제목에 질문 낱말이 2개 닿을 때만 1단.
+// 무관 1단 7,095 → 색인 5,012자 · 실입력 300 1단 84 → 75% · 자기검색 187 → 188/195. 하한 5건은 작은 기록 보호. 바꾸려면 다시 잰다
+const COMMON_SHARE = 0.1, COMMON_MIN = 5, TITLE_MIN = 2;
 // 정렬은 graph-find 와 같다 — 정확일치 유무가 첫 키다
 const order = (a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s || (b.r.date || '').localeCompare(a.r.date || '');
 
@@ -25,19 +28,24 @@ function render(prompt) {
   const all = load();
   const superseded = new Set(all.flatMap(sup));
   const recs = all.filter((r) => !BOOKKEEPING.test(r.req) && !superseded.has(r.req));
-  const hits = recs.map((r) => ({ r, ...scoreDetail(r, [...ko, ...ids]) })).filter((x) => x.s > 0).sort(order);
+  const toks = [...ko, ...ids];
+  const base = recs.map((r) => ({ r, ...scoreDetail(r, toks) })).filter((x) => x.s > 0);
+  const common = commonKo(recs, base, ko);
+  const rest = toks.filter((t) => !common.has(t));
+  const hits = base.map((h) => ({ ...h, exact: h.exact && common.size ? scoreDetail(h.r, rest).exact : h.exact,
+    th: titleHits(h.r.req, ko) })).sort(order);
 
-  // 1단 판정은 점수 합이 아니라 신호의 종류로 — 정확일치 · 식별자 적중 · 5점 이상. 아니면 2단(압축 색인)
+  // 1단 판정은 점수 합이 아니라 신호의 종류로 — 정확일치(흔한 낱말 뺌) · 식별자 적중 · 제목에 닿는 5점 이상. 아니면 2단(압축 색인)
   const top = hits[0];
   const idHit = top && ids.length > 0 && scoreDetail(top.r, ids).s > 0;
-  const confident = top && (top.exact >= 1 || idHit || top.s >= 5);
-  if (!confident) return fallbackIndex(recs, hits, [...ko, ...ids]);
+  const confident = top && (top.exact >= 1 || idHit || (top.s >= 5 && top.th >= TITLE_MIN));
+  if (!confident) return fallbackIndex(recs, hits, toks);
 
   // ⛔ 1단에도 탈출구를 둔다 — 「걸렸다」가 「답이다」는 아니다
   // 정본이 1위면 1장 — 절차 질의에서 정본 + 무관한 광역 카드로 7,128자가 나갔다. 바꾸려면 다시 잰다
   const take = /^정본:/.test(top.r.req) ? 1 : MAX;
   const out = [`[그래프 자동조회] 유사 기록 ${hits.length}건 — 상위 ${Math.min(take, hits.length)}건만 표시.`,
-    `⚠️ 아래는 과거 작업에서 실측한 것이다. 함정과 「용어 → 실체」 매핑 둘 다 근거로 쓴다 — 추측으로 대체하지 않는다.`,
+    `⚠️ 아래는 지난 작업의 단서다 — 어디를 볼지와 함정은 그대로 쓴다. 다만 사용자 말과 어긋나거나 단계·확인을 없애는 결론(「안 해도 된다」·「없다」·「거르지 않는다」)은 근거 위치를 한 번 열어 확인한다.`,
     `⛔ 값이 「제거됨」·「바뀜」으로 시작하면 그게 답이다. 코드에 안 보인다고 「모름」이라 하지 않는다.`,
     `⭐ 다만 위 기록이 이 질문에 답하지 않으면 그렇다고 말하고 평소대로 코드를 탐색한다 — 걸린 것이 답이라는 뜻은 아니다.`];
   // 2위 카드는 정본 · 사전만 전문 — 1위가 광역 사전이고 2위 정본이 실제 답인 경우가 1단의 12.9%(이슈 제목 실측)라 그 둘은 지키고, 작업 이력 · 조사는 제목 + 함정만
@@ -52,7 +60,7 @@ function render(prompt) {
     if (rest.length) out.push(`    … 이 질의와 안 걸린 항목 ${rest.length}개(키만): ${rest.map(([k]) => k).join(' · ')}`);
     for (const f of (r.files || []).slice(0, 6)) out.push(`    ${f}`);
   }
-  out.push(...openWork(recs, [...ko, ...ids], hits.slice(0, take).map((h) => h.r)));
+  out.push(...openWork(recs, toks, hits.slice(0, take).map((h) => h.r)));
   out.push(`더 볼 것: node .harness/tools/graph-find.mjs <어근>  (어근은 짧게, 여러 개)`);
   return out.join('\n');
 }
@@ -74,6 +82,18 @@ function splitTerms(rec, ko, ids) {
   const hits = [...exact, ...partial];
   const hit = (hits.length ? hits : pairs).slice(0, TERM_MAX);
   return { hit, rest: pairs.filter((p) => !hit.includes(p)) };
+}
+// 정확일치가 난 한글 낱말 중 살아 있는 기록의 10% 넘게(그리고 5건 넘게) 걸리는 것. 식별자는 세지 않는다 — 값까지 색인돼 흔해도 실체를 가리킨다
+function commonKo(recs, hits, ko) {
+  const exactKo = new Set(hits.filter((h) => h.exact).flatMap((h) => [...ko].filter((t) => scoreDetail(h.r, [t]).exact)));
+  const limit = Math.max(recs.length * COMMON_SHARE, COMMON_MIN);
+  return new Set([...exactKo].filter((t) => recs.filter((r) => scoreDetail(r, [t]).s > 0).length > limit));
+}
+// 제목에 닿은 질문 낱말 수 — 겹치는 토큰(「환불처리」 · 어근 「환불」)은 긴 것 하나로. 공백은 지우지 않는다(띄어 쓴 두 낱말이 붙인 꼴 하나로 합쳐진다)
+function titleHits(req, ko) {
+  const title = String(req).toLowerCase();
+  const m = [...ko].map((t) => t.toLowerCase()).filter((t) => title.includes(t));
+  return m.filter((t) => !m.some((u) => u !== t && u.includes(t))).length;
 }
 function clip(v) {
   const s = String(v);

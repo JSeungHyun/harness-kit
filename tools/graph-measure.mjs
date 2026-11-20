@@ -53,14 +53,12 @@ const dead = new Set(all.flatMap(kit.sup));
 const BOOK = /^TODO 갱신|^TODO:/;
 const recs = all.filter((r) => !BOOK.test(r.req) && !dead.has(r.req));
 
-// 판(graph-find 모듈)마다 같은 정렬 · 확신 판정 — 두 판 비교가 기준선 판의 채점으로 돈다
+// 판(graph-find 모듈)마다 같은 정렬 — 두 판 비교가 기준선 판의 채점으로 돈다. 1단 확신은 여기서 다시 판정하지 않고 훅 출력으로 센다(따로 두면 훅과 갈라진다 — 21차)
 const ranker = (m) => (q) => {
   const ko = m.tokenizeKo(q), ids = m.tokenizeIds(q);
   const hits = recs.map((r) => ({ r, ...m.scoreDetail(r, [...ko, ...ids]) })).filter((x) => x.s > 0)
     .sort((a, b) => (b.exact > 0 ? 1 : 0) - (a.exact > 0 ? 1 : 0) || b.s - a.s || (b.r.date || '').localeCompare(a.r.date || ''));
-  const top = hits[0];
-  const confident = !!top && (top.exact >= 1 || (ids.length > 0 && m.scoreDetail(top.r, ids).s > 0) || top.s >= 5);
-  return { top, confident };
+  return { top: hits[0] };
 };
 const rank = ranker(kit);
 
@@ -336,14 +334,13 @@ if (patterns.length) {
   for (const p of patterns) {
     const re = new RegExp(p);
     const qs = subj.filter((s) => re.test(s));
-    let conf = 0, canon = 0; const tops = new Map(); const wins = new Map();
-    for (const q of qs) {
-      const { top, confident } = rank(q);
-      if (!confident) continue;
-      conf++;
-      if (/^정본:/.test(top.r.req)) canon++;
-      const k = top.r.req.slice(0, 28); tops.set(k, (tops.get(k) || 0) + 1);
-      wins.set(top.r, (wins.get(top.r) || 0) + 1);
+    const outs = (await each(qs, (q) => hookOut(HERE, q))).filter((o) => CONFIDENT.test(o));
+    const conf = outs.length; let canon = 0; const tops = new Map(); const wins = new Map();
+    for (const o of outs) {
+      const req = (o.match(/^· \[[^\]]*\] \S+ (.*)$/m) ?? [])[1] ?? '';
+      if (/^정본:/.test(req)) canon++;
+      const k = req.slice(0, 28); tops.set(k, (tops.get(k) || 0) + 1);
+      wins.set(req, (wins.get(req) || 0) + 1);
     }
     const topStr = [...tops.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${k}×${v}`).join(' , ');
     // 상위 3 점유 — 확신 질의 중 가장 자주 1위를 한 기록 3개가 1위인 비율. 훅을 켜는 조건은 < 50% (건수는 대리 지표다)
