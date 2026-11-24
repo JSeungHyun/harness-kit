@@ -347,12 +347,12 @@ test('⭐ 지운 템플릿은 손대지 않은 설치본만 걷는다 — 쓴 �
   assert.ok(existsSync(join(used, '.harness/state/current.md')));
 });
 
-test('⛔ 빌드 · 테스트 단서가 보이는데 covers 를 가진 검사가 없으면 갱신 보고를 ⛔ 로 멈춘다(exit 1)', () => {
+test('⛔ 코드 영역(JS 단서)을 덮는 covers 검사가 없으면 갱신 보고를 ⛔ 로 멈춘다(exit 1)', () => {
   const pkg = { 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) };
   const bare = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, pkg);
   const r = run(bare);
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /⛔ .*package\.json test.*covers/);
+  assert.match(r.stdout, /⛔ 코드 영역 JS\/TS\(package\.json test/);
   const covered = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'], recipe: 'node-npm-test' }] }, pkg);
   assert.equal(run(covered).status, 0);
 });
@@ -412,16 +412,16 @@ test('⛔ 검사에 처방 id 도 why 도 없거나 목록에 없는 처방이�
   assert.equal(run(target(conf([{ id: 't', cmd: 'npm test', kind: 'exit-code', covers: ['src/**'], why: '이 프로젝트의 테스트 묶음' }]), pkg)).status, 0);
 });
 
-test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why)이면 covers 단서 ⛔ 를 내지 않는다 · 선언 뒤 테스트 소스가 생기면 ⚠️', () => {
+test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why)이면 영역 ⛔ 를 내지 않는다(area 를 적은 선언만) · 선언 뒤 테스트 소스가 생기면 ⚠️', () => {
   const pom = { 'pom.xml': '<project/>' };
   const conf = (extra) => ({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 'compile', cmd: 'javac', kind: 'exit-code', recipe: 'java-javac-compile', ...extra }] });
   const bare = run(target(conf({}), pom));
   assert.equal(bare.status, 1);
-  assert.match(bare.stdout, /⛔ 빌드 · 테스트 단서\(pom\.xml\).*"tests": "none"/);
-  const dir = target(conf({ tests: 'none', why: '테스트 소스 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다' }), pom);
+  assert.match(bare.stdout, /⛔ 코드 영역 Java\(pom\.xml.*"tests": "none"/);
+  const dir = target(conf({ tests: 'none', area: 'java', why: '테스트 소스 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다' }), pom);
   const r = run(dir);
   assert.equal(r.status, 0, r.stdout);
-  assert.doesNotMatch(r.stdout, /covers 를 가진 검사가 없다|테스트가 생겼다/);
+  assert.doesNotMatch(r.stdout, /덮는 검사가 없다|테스트가 생겼다/);
   put(dir, 'src/test/java/AppTest.java', 'class AppTest {}\n');
   const grown = run(dir);
   assert.equal(grown.status, 0, grown.stdout);

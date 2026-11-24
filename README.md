@@ -18,7 +18,9 @@ Claude Code 가 「테스트 통과, 끝났습니다」라고 보고해도 실�
 ```
 
 Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
-플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. **플러그인은 PC(사용자 범위)에서 켜고 프로젝트에는 선언하지 않는다** — 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. ponytail 은 플러그인이 아니라 그 커밋의 리뷰 스킬 `ponytail-review` 하나만 쓴다(모드 없음). 규칙이 기대는 superpowers 동작은 brainstorming 의 종료 조건이다.
+플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. **플러그인은 PC(사용자 범위)에 두고 프로젝트에는 선언하지 않는다** — 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. ponytail 은 플러그인이 아니라 그 커밋의 리뷰 스킬 `ponytail-review` 하나만 쓴다(모드 없음). 규칙이 기대는 superpowers 동작은 brainstorming 의 종료 조건이다.
+
+**구현 사이클 `/exec-cycle`(26차)** 은 키트 기본 스킬이다 — 사용자가 부를 때만 쓰이고, 설계 → 계획 → 구현 → verify → `/ponytail-review` → 보고를 종료 훅이 강제한다. 검증만 하는 `/exec-review`(verify → 과설계 리뷰 → 보고 · 수정이 없어도 같은 훅이 증거를 요구)도 같이 깔린다. superpowers · ponytail 스킬은 자동 주입이 아니라 `tools/cycle-skill.mjs` 가 낸 경로의 파일로 읽는다 — 그래서 superpowers 는 PC 에 설치하되 꺼 두는 것이 기본이다(켜 두면 세션마다 시작 글이 붙는다 → 이식 검사 ⑥ · `--all` 「사이클」 칸이 ⚠️). 그래프 무결성 검사는 모든 설치가 같고, 이식 때 verify 에 넣을 검사는 프로젝트 성격(코드 영역 — Java · JS/TS · Python)대로 고른다: 감지한 영역마다 그 소스를 덮는 `covers` 검사가 없으면 갱신 · 이식 검사가 ⛔ 와 처방을 낸다.
 
 ### 플러그인을 올릴 때 — 이 레포에서
 

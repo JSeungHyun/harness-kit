@@ -9,7 +9,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cli } from '../lib/config.mjs';
-import { claudeDir } from './policy-apply.mjs';
+import { claudeDir, readJson } from './policy-apply.mjs';
+import { pluginEntries, skillFile } from './cycle-skill.mjs';
 
 // ponytail 은 플러그인으로 켜지 않는다 — 관문이 쓰는 것은 /ponytail-review 뿐이라 그 스킬만 사용자 범위에 둔다
 const REVIEW_SKILL = 'ponytail-review';
@@ -29,7 +30,6 @@ const KIT = fileURLToPath(new URL('..', import.meta.url)).replace(/\\/g, '/').re
 export function plan(list, ids, kit, pinned = {}, off = [], hasSkill = true) {
   const user = list.filter((x) => x.scope === 'user');
   const install = [];
-  const enable = [];
   const update = [];
   const disable = [];
   const remove = [];
@@ -38,7 +38,6 @@ export function plan(list, ids, kit, pinned = {}, off = [], hasSkill = true) {
     const mine = user.find((x) => x.id === id);
     const keepOff = off.includes(id);
     if (!mine && !keepOff) install.push(`claude plugin install ${id}`);
-    else if (mine && !mine.enabled && !keepOff) enable.push(`claude plugin enable ${id}`);
     else if (mine?.enabled && keepOff) disable.push(`claude plugin disable ${id} --scope user`);
     // --scope 없이 돌리면 그 폴더의 local 범위 기록만 오른다(2.1.318 실측)
     if (mine && pinned[id] && mine.version !== pinned[id]) update.push(`claude plugin update ${id} --scope user`);
@@ -47,7 +46,7 @@ export function plan(list, ids, kit, pinned = {}, off = [], hasSkill = true) {
   const market = install.length ? [`claude plugin marketplace add ${kit}`] : update.length ? ['claude plugin marketplace update harness-kit'] : [];
   // 리뷰 스킬을 먼저 — ponytail 을 끄기 전에 /ponytail-review 가 있어야 관문이 비지 않는다
   const skill = off.length && !hasSkill ? [`node ${kit}/tools/plugin-plan.mjs --review-skill`] : [];
-  return [...skill, ...market, ...install, ...enable, ...update, ...disable, ...remove];
+  return [...skill, ...market, ...install, ...update, ...disable, ...remove];
 }
 
 // 고정 커밋의 리뷰 스킬 한 파일을 사용자 스킬로 — 다른 파일에 기대지 않는다(2026-11-05 확인)
@@ -79,6 +78,28 @@ export function pcPlan(list) {
   return { ids, cmds: plan(list, ids, KIT, pinned, off, reviewSkillPinned(market)) };
 }
 
+// /exec-cycle · /exec-review 를 바로 쓸 수 있나 — superpowers 가 키트 고정 판으로 설치돼 있고(켬/끔 무관) 사이클이 읽는 스킬 파일이 다 있고 ponytail-review 가 있다.
+// problems: ⛔ + 고칠 명령 · warns: ⚠️(켜져 있으면 세션마다 시작 글이 자동 주입된다 — 사이클만 쓰려면 끈다 · 사용자 승인 몫). list: claude plugin list --json (없으면 사용자 settings 의 enabledPlugins)
+// 사이클이 읽는 스킬은 두 스킬 본문(templates/skills/exec-cycle · exec-review)에서 뽑는다 — 이름을 두 곳에 적지 않는다
+const SP = 'superpowers@harness-kit';
+export const cycleSkills = () => [...new Set(['exec-cycle', 'exec-review'].flatMap((s) => [...readFileSync(new URL(`../templates/skills/${s}/SKILL.md`, import.meta.url), 'utf8').matchAll(/`((?:superpowers|ponytail) [a-z-]+)`/g)].map((m) => m[1])))].map((k) => k.split(' '));
+export function cycleReady(list) {
+  const pin = readMarket().plugins.find((x) => x.name === 'superpowers').version;
+  const problems = [];
+  const warns = [];
+  const mine = pluginEntries('superpowers', SP).find((e) => e.scope === 'user');
+  if (!mine) problems.push(`superpowers 가 이 PC 에 없다 — claude plugin install ${SP}(plugin-plan 의 명령)`);
+  else if (mine.version !== pin) problems.push(`superpowers ${mine.version} 은 키트 고정 판(${pin})이 아니다 — claude plugin update ${SP} --scope user`);
+  const missing = cycleSkills().filter(([plugin, skill]) => !skillFile(plugin, skill)).map(([plugin, skill]) => `${plugin} ${skill}`);
+  if (mine && missing.some((m) => m.startsWith('superpowers'))) problems.push(`사이클이 읽는 superpowers 스킬 파일이 없다: ${missing.filter((m) => m.startsWith('superpowers')).join(' · ')} — 플러그인을 다시 깐다(claude plugin install ${SP})`);
+  if (missing.some((m) => m.startsWith('ponytail'))) problems.push(`ponytail-review 스킬이 없다 — node <kit>/tools/plugin-plan.mjs --review-skill`);
+  let on;
+  if (list) on = list.some((x) => x.id === SP && x.scope === 'user' && x.enabled);
+  else try { on = readJson(join(claudeDir(), 'settings.json')).enabledPlugins?.[SP] === true; } catch { on = false; }
+  if (mine && on) warns.push(`superpowers 가 켜져 있다 — 자동 주입(세션마다 시작 글 약 6k자)이 붙는다. /exec-cycle · /exec-review 안에서만 쓰면 끈다: claude plugin disable ${SP} --scope user · superpowers 스킬을 단독으로도 부르면 켜 둔다 (사용자 승인 몫 · 끄기는 설치를 남긴다 — 사이클이 스킬 파일을 읽는다 · uninstall 하면 /exec-cycle · /exec-review 가 멈춘다)`);
+  return { problems, warns };
+}
+
 // 키트 폴더에서 읽는다 — 프로젝트 폴더에서는 그 프로젝트 설정이 사용자 범위를 덮은 값이 나온다(2026-11-05 실측)
 export function pluginList() {
   const raw = execSync('claude plugin list --json', { cwd: KIT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -108,8 +129,15 @@ cli(import.meta.url, async () => {
   const market = readMarket();
   if (process.argv.includes('--upstream')) return console.log((await upstream(market)).join('\n'));
   if (process.argv.includes('--review-skill')) return console.log(await reviewSkill(market));
-  const { ids, cmds } = pcPlan(pluginList());
-  if (!cmds.length) return console.log(`✅ 이 PC 가 키트 마켓의 고정 커밋이다 — 켬 ${ids.join(' · ')} · 리뷰 스킬만 ${REVIEW_SKILL} — 옮길 것 없다`);
-  console.log('⚠️ 이 PC 의 사용자 범위 플러그인을 키트 마켓의 고정 커밋으로 옮긴다 — 이 PC 의 모든 프로젝트에 걸리므로 사용자에게 보여 주고 승인받은 뒤 이 순서로:');
-  for (const c of cmds) console.log(`  ${c}`);
+  const list = pluginList();
+  const { ids, cmds } = pcPlan(list);
+  if (!cmds.length) console.log(`✅ 이 PC 가 키트 마켓의 고정 커밋이다 — 설치 ${ids.join(' · ')} · 리뷰 스킬만 ${REVIEW_SKILL} — 옮길 것 없다`);
+  else {
+    console.log('⚠️ 이 PC 의 사용자 범위 플러그인을 키트 마켓의 고정 커밋으로 옮긴다 — 이 PC 의 모든 프로젝트에 걸리므로 사용자에게 보여 주고 승인받은 뒤 이 순서로:');
+    for (const c of cmds) console.log(`  ${c}`);
+  }
+  const cycle = cycleReady(list);
+  for (const p of cycle.problems) console.log(`⛔ /exec-cycle · /exec-review — ${p}`);
+  for (const w of cycle.warns) console.log(`⚠️ /exec-cycle · /exec-review — ${w}`);
+  if (!cycle.problems.length) console.log('✅ /exec-cycle · /exec-review 를 바로 쓸 수 있다 — superpowers 스킬 · ponytail-review 파일이 있다');
 });

@@ -9,9 +9,9 @@ import { cli, CONFIG } from '../lib/config.mjs';
 import { graphOf } from '../lib/parts.mjs';
 
 const SHARE_TRACK = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md',
-  '.claude/settings.json', 'AGENTS.md', 'CLAUDE.md'];
-const LOCAL_HIDE = ['/.harness/', '/.claude/rules/harness.md', '/.claude/rules/graph.md', '/.claude/settings.local.json', '/CLAUDE.local.md'];
-const LOCAL_PROBES = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/settings.local.json', 'CLAUDE.local.md'];
+  '.claude/settings.json', '.claude/skills/exec-cycle/SKILL.md', '.claude/skills/exec-review/SKILL.md', 'AGENTS.md', 'CLAUDE.md'];
+const LOCAL_HIDE = ['/.harness/', '/.claude/rules/harness.md', '/.claude/rules/graph.md', '/.claude/skills/exec-cycle/', '/.claude/skills/exec-review/', '/.claude/settings.local.json', '/CLAUDE.local.md'];
+const LOCAL_PROBES = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/exec-cycle/SKILL.md', '.claude/skills/exec-review/SKILL.md', '.claude/settings.local.json', 'CLAUDE.local.md'];
 const PERSONAL = '.claude/settings.local.json';
 // 부정 규칙은 맨 위 경로에만 건다 — 부모 디렉터리가 무시되면 안쪽 파일은 되살릴 수 없다(git 규칙)
 const NEGATE = { '.claude': '!.claude/', '.harness': '!.harness/', 'AGENTS.md': '!AGENTS.md', 'CLAUDE.md': '!CLAUDE.md' };

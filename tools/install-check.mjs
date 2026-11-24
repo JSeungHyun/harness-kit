@@ -10,9 +10,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
 import { KIT, DOCS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
-import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, graphRefs, graphRules, removedDocs, removedRefs } from './upgrade.mjs';
+import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, areaGaps, areaGapText, recipeGap, grownTests, graphRefs, graphRules, removedDocs, removedRefs } from './upgrade.mjs';
 import { applyPolicy, dropGone, settingsPath, readJson } from './policy-apply.mjs';
-import { pcPlan, pluginList } from './plugin-plan.mjs';
+import { pcPlan, pluginList, cycleReady } from './plugin-plan.mjs';
 import { isUnion } from './install-mode.mjs';
 
 const slash = (p) => p.replace(/\\/g, '/');
@@ -68,14 +68,20 @@ export function checkAll(root, config = join(KIT, CONFIG)) {
   const bad = all.filter((a) => !same(a)).map((a) => a.name);
   const gone = skip.filter((n) => !names.includes(n));
   const dirty = dirtyKit();
+  // 사이클 — /exec-cycle · /exec-review 를 바로 쓸 수 있나는 PC 상태라 설치마다 같은 칸이다. ⛔ 면 설치가 키트 판이어도 끝이 아니다
+  let cycle = { problems: [], warns: [] };
+  try { cycle = cycleReady(); } catch (e) { cycle.problems.push(e.message.split('\n')[0]); }
+  const cyc = cycle.problems.length ? `⛔ ${cell(cycle.problems[0])}` : cycle.warns.length ? '⚠️ 사용 가능 — superpowers 켜짐(자동 주입)' : '✅ 사용 가능';
   return {
-    ok: all.length > 0 && !bad.length && !dirty,
-    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 맞나 |', '|---|---|---|---|---|---|',
-      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | | | — |`),
-      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.rules.length ? `설치 글에 따로 ${list(a.rules)}` : '키트 graph.md 하나'} | ${a.gone.length ? `설치 글이 지운 것을 가리킴 ${list(a.gone)}` : '없음'} | ${same(a) ? '✅' : '⛔'} |`),
+    ok: all.length > 0 && !bad.length && !dirty && !cycle.problems.length,
+    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 사이클 | 맞나 |', '|---|---|---|---|---|---|---|',
+      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | | | | — |`),
+      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.rules.length ? `설치 글에 따로 ${list(a.rules)}` : '키트 graph.md 하나'} | ${a.gone.length ? `설치 글이 지운 것을 가리킴 ${list(a.gone)}` : '없음'} | ${cyc} | ${same(a) ? '✅' : '⛔'} |`),
       ...(gone.length ? ['', `⚠️ installs.skip 에 있는데 이 폴더에 설치가 없다: ${gone.join(' · ')} — 목록이 낡았다`] : []),
-      ...(dirty ? [] : ['', !all.length ? '⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
-        : `✅ 설치 ${all.length}곳 모두 키트 판 (${kitCommit()?.slice(0, 7)})`])].join('\n'),
+      ...(dirty ? [] : ['', ...cycle.warns.map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`), ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`),
+        !all.length ? '⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
+          : cycle.problems.length ? '⛔ 설치는 모두 키트 판이지만 이 PC 에서 /exec-cycle · /exec-review 를 바로 쓸 수 없다 — 위 명령을 사용자 승인 뒤 실행한다'
+            : `✅ 설치 ${all.length}곳 모두 키트 판 (${kitCommit()?.slice(0, 7)})`])].join('\n'),
   };
 }
 
@@ -105,7 +111,7 @@ export function checkInstall(dir, { plugins } = {}) {
     });
     row(n, what, notes.map(([, s]) => s).join(' · '), notes.every(([ok]) => ok));
   };
-  docs('②', '규칙 harness.md · graph.md 가 키트 판(자리 채움)과 같다', DOCS.filter(([src]) => src.startsWith('templates/rules/')));
+  docs('②', '규칙 harness.md · graph.md · 스킬 exec-cycle · exec-review 가 키트 판(자리 채움)과 같다', DOCS);
   // ③ 키트에서 지운 문서(스킬 · 에이전트 정의) — 손대지 않은 판은 갱신이 걷고(① 도 본다), 고친 판은 설치가 정리한다
   const rd = removedDocs(dir, fill);
   row('③', '키트에서 지운 문서(policy/removed.json docs — final-gate · kit-implementer · kit-verifier)가 설치본에 0',
@@ -145,20 +151,22 @@ export function checkInstall(dir, { plugins } = {}) {
   if (apart.length) probs.push(`그래프 쓰는 법을 설치 글에 따로 적은 곳 ${list(apart)} — 키트 graph.md · 훅 하나가 정본이다: 일반 규칙은 키트에 제안하고 지운다 · 이 저장소 사실만 남기되 키트 그래프 도구 이름 · supersedes · ⏸ 를 쓰지 않는다`);
   const gone = removedRefs(dir);
   if (gone.length) probs.push(`키트에서 지운 것을 가리키는 곳 ${list(gone)} — 그 줄을 지운다`);
-  const gap = coversGap(dir, raw);
-  if (gap.length) probs.push(`빌드 · 테스트 단서(${gap.join(' · ')})가 있는데 covers 를 가진 검사도 「테스트 없음」 선언도 없다 (SETUP ⑤)`);
+  for (const a of areaGaps(dir, raw)) { const g = areaGapText(a); probs.push(`${g.text}${g.note ? ` — ⚠️ ${g.note}` : ''}`); }
   probs.push(...recipeGap(raw));
-  row('⑤', 'harness.json — 형식 · 프로필 · 모드 · 그래프(이관 · 기록 위치 · 키트 밖 도구 참조 · 설치 글에 따로 적은 쓰는 법 · 키트에서 지운 것을 가리키는 곳) · 단서가 있으면 covers 검사 또는 「테스트 없음」 선언 · 검사마다 처방 또는 why',
+  row('⑤', 'harness.json — 형식 · 프로필 · 모드 · 그래프(이관 · 기록 위치 · 키트 밖 도구 참조 · 설치 글에 따로 적은 쓰는 법 · 키트에서 지운 것을 가리키는 곳) · 코드 영역마다 소스를 덮는 covers 검사 또는 영역의 「테스트 없음」 선언 · 검사마다 처방 또는 why',
     probs.join(' · ') || `검사 ${raw.checks?.length ?? 0} (covers ${(raw.checks ?? []).filter((c) => c.covers?.length).length}) · ${raw.profile} · ${raw.mode}`, !probs.length);
 
   // ⑥ PC — 대상 밖이다. plugin-plan 의 판정을 그대로 쓴다
   let pc = plugins;
   if (pc === undefined) try { pc = pluginList(); } catch { pc = null; }
-  if (pc === null) row('⑥', 'PC — plugin-plan 이 낼 명령 없음', '플러그인 목록을 읽지 못함 (claude plugin list --json)', false);
+  if (pc === null) row('⑥', 'PC — plugin-plan 이 낼 명령 없음 · /exec-cycle · /exec-review 를 바로 쓴다', '플러그인 목록을 읽지 못함 (claude plugin list --json)', false);
   else {
     const { cmds } = pcPlan(pc);
-    row('⑥', 'PC — plugin-plan 이 낼 명령 없음 (superpowers 고정 판 · ponytail-review 가 고정 커밋에서 받은 그대로)',
-      cmds.length ? `낼 명령 ${cmds.length}: ${cmds.join(' ; ')}` : '옮길 것 없다', !cmds.length);
+    const cycle = cycleReady(pc);
+    row('⑥', 'PC — plugin-plan 이 낼 명령 없음 (superpowers 고정 판 설치 — 켬/끔 무관 · ponytail-review 가 고정 커밋에서 받은 그대로) · /exec-cycle · /exec-review 를 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) · superpowers 가 켜져 있으면 ⚠️',
+      [cmds.length ? `낼 명령 ${cmds.length}: ${cmds.join(' ; ')}` : '옮길 것 없다', ...cycle.problems.map((p) => `⛔ ${p}`), ...(cycle.warns.length ? ['⚠️ superpowers 켜짐 — 아래 ⚠️ 줄'] : [])].join(' · '),
+      !cmds.length && !cycle.problems.length);
+    if (cycle.warns.length) rows.at(-1).warn = cycle.warns.join(' ');
   }
 
   // ⑦ 지시 파일 — 본문은 프로젝트 것, import 만 본다. 공유는 커밋되는 파일이 import 해야 팀원 세션도 읽는다
@@ -226,6 +234,7 @@ cli(import.meta.url, () => {
     console.log('| | 기대 | 관측 | 맞나 |\n|---|---|---|---|');
     for (const r of rows) console.log(`| ${r.n} | ${r.what} | ${r.observed.replace(/\|/g, '\\|')} | ${r.ok ? '✅' : '⛔'} |`);
     const bad = rows.filter((r) => !r.ok).map((r) => r.n);
+    for (const r of rows.filter((x) => x.warn)) console.log(`⚠️ ${r.n} — ${r.warn}`);
     if (!dirty) console.log(bad.length ? `\n⛔ 이식 실패 — ⛔ ${bad.length}개 (${bad.join(' ')}) · 「이식 성공」이라고 쓰지 않는다` : `\n✅ 이식 성공 — ${rows.length}/${rows.length}`);
     console.log(`\n${custom(dir)}`);
   }

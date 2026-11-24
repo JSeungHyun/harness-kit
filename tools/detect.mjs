@@ -44,8 +44,50 @@ export function testHints(dir) {
 export const RECIPES = JSON.parse(readFileSync(new URL('../policy/recipes.json', import.meta.url), 'utf8'));
 export function recipeHints(dir) {
   const at = places(dir);
-  const fits = (w) => (!w.files || at.some((sub) => w.files.some((f) => existsSync(join(dir, sub, f))) && (!w.script || scripts(dir, sub)[w.script])));
+  const areas = codeAreas(dir).map((a) => a.id);
+  const fits = (w) => (!w.files || at.some((sub) => w.files.some((f) => existsSync(join(dir, sub, f))) && (!w.script || scripts(dir, sub)[w.script]))) && (!w.area || areas.includes(w.area));
   return RECIPES.filter((r) => fits(r.when)).map(({ id, label, status }) => ({ id, label, status }));
+}
+
+// 코드 영역 — 단서(빌드 파일 · 테스트 스크립트)나 소스가 있는 언어. 이식 때 verify 검사가 영역마다 그 소스를 덮어야 한다(covers). Java 는 빌드 파일 없이 .java 소스만으로도 영역이다
+const SKIP_DIRS = new Set(['node_modules', 'target', 'build', 'dist', 'out', 'vendor', '__pycache__']);
+export const AREAS = [
+  { id: 'java', label: 'Java', src: /\.java$/i, bySource: true, files: ['pom.xml', 'build.gradle', 'build.gradle.kts', 'gradlew', 'build.xml'], recipes: ['maven-compile', 'gradle-compile', 'java-javac-compile'] },
+  { id: 'js', label: 'JS/TS', src: /\.(c?[jt]sx?|m[jt]s|vue|svelte)$/i, script: ['test', 'typecheck'], recipes: ['node-npm-test', 'node-tsc'] },
+  { id: 'python', label: 'Python', src: /\.py$/i, files: ['pytest.ini', 'conftest.py'], recipes: ['python-pytest'] },
+];
+
+// 소스 파일 걷기 — 점 폴더 · 벤더 · 빌드 산출물은 건너뛴다. 영역마다 경로(/ 구분)를 모은다
+function walk(dir, found, rel = '', budget = { n: 200000 }) {
+  for (const e of readdirSync(join(dir, rel), { withFileTypes: true })) {
+    if (budget.n-- < 0) return;
+    const p = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) { if (!e.name.startsWith('.') && !SKIP_DIRS.has(e.name)) walk(dir, found, p, budget); } else for (const a of AREAS) if (a.src.test(e.name)) found[a.id].push(p);
+  }
+}
+
+export function codeAreas(dir) {
+  const found = Object.fromEntries(AREAS.map((a) => [a.id, []]));
+  walk(dir, found);
+  const at = places(dir);
+  return AREAS.map((a) => {
+    const clues = [...new Set(at.flatMap((sub) => [
+      ...(a.files ?? []).filter((f) => existsSync(join(dir, sub, f))).map((f) => (sub ? `${sub}/${f}` : f)),
+      ...(a.script ?? []).filter((s) => scripts(dir, sub)[s]).map((s) => `${sub ? `${sub}/` : ''}package.json ${s}`),
+      ...(a.id === 'python' && /\[tool\.pytest/.test(existsSync(join(dir, sub, 'pyproject.toml')) ? readFileSync(join(dir, sub, 'pyproject.toml'), 'utf8') : '') ? [`${sub ? `${sub}/` : ''}pyproject.toml`] : []),
+    ]))];
+    return { id: a.id, label: a.label, clues, sources: found[a.id], recipes: a.recipes };
+  }).filter((a) => a.clues.length || (AREAS.find((x) => x.id === a.id).bySource && a.sources.length));
+}
+
+// glob 한 개가 경로(/ 구분)에 닿는가 — ** 는 폴더를 넘고 * 는 한 칸 · 접두어 폴더도 닿는다
+export function globMatch(glob, path) {
+  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  let r = '';
+  for (let i = 0; i < g.length;) {
+    if (g.startsWith('**/', i)) { r += '(?:.*/)?'; i += 3; } else if (g.startsWith('**', i)) { r += '.*'; i += 2; } else if (g[i] === '*') { r += '[^/]*'; i++; } else if (g[i] === '?') { r += '[^/]'; i++; } else r += g[i++].replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${r}(?:/.*)?$`).test(path);
 }
 // 테스트 소스 자리 — 「테스트 없음」을 선언한 뒤 생기면 junit 검사와 covers 를 더할 때다
 export const testSources = (dir) => [...new Set(places(dir).flatMap((sub) => ['src/test', 'test', 'tests'].map((f) => (sub ? `${sub}/${f}` : f))))]

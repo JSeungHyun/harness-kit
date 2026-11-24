@@ -5,13 +5,14 @@
 //   --own-rules: 프로젝트가 고친 줄을 .claude/rules/project-<이름>.md 로 옮기고 키트 판을 다시 깐다 — 키트 파일은 키트 판 그대로여야 이식 검사 ② ③ 이 맞다
 //   --migrate-graph: 옛 자기 그래프(graph.tools)를 키트 그래프 도구로 — 기록은 제자리(graph.store), 기록 files 의 옛 도구 경로만 한 번 바꾼다
 // ⛔ 설정은 쓰지 않는다 — 권한 설정은 사용자 확인 자리라 실행할 명령만 낸다.
-import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, rmSync, rmdirSync, readdirSync, statSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, rmdirSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { join, resolve, dirname, basename } from 'node:path';
+import { join, resolve, dirname, basename, delimiter } from 'node:path';
 import { loadConfig, cli, CONFIG } from '../lib/config.mjs';
 import { KIT, SHIPPED, COPIED, DOCS, INSTRUCTIONS, graphOf } from '../lib/parts.mjs';
 import { load, sup } from './graph-find.mjs';
-import { testHints, testSources, RECIPES, recipeHints, recipeLine } from './detect.mjs';
+import { cycleReady } from './plugin-plan.mjs';
+import { testSources, RECIPES, recipeHints, recipeLine, codeAreas, globMatch } from './detect.mjs';
 
 const KIT_PATH = KIT.replace(/\\/g, '/').replace(/\/$/, '');
 export const nl = (s) => s.replace(/\r\n/g, '\n');
@@ -116,6 +117,7 @@ function moveOwn(dir, dst, name, now, diff, mode) {
     ...groups.flatMap((g) => ['', ...(g.head ? [g.head] : []), ...g.lines]),
     ...(diff.removed.length ? ['', '## 이 프로젝트가 따르지 않는 키트 줄', ...diff.removed.map((l) => `> ${l}`)] : []),
   ];
+  mkdirSync(dirname(at), { recursive: true });
   appendFileSync(at, `${body.join('\n')}\n`);
   if (mode !== 'share') hideLocal(dir, rel);
   return rel;
@@ -141,8 +143,33 @@ export function settingsShape(dir) {
   return { graphHook, only: !full };
 }
 
-// 빌드 · 테스트 단서가 있는데 코드를 덮는 검사가 없으면 그 단서 — 그때 verify 녹색은 코드 변경의 증거가 아니다. 「테스트 없음」 선언(tests: none)이면 그 자리는 /code-review 다
-export const coversGap = (dir, raw) => ((raw.checks ?? []).some((c) => c.covers?.length || c.tests === 'none') ? [] : testHints(dir));
+// 코드 영역마다 그 소스를 덮는(covers) 검사가 있어야 한다 — 없으면 verify 녹색은 그 영역 코드 변경의 증거가 아니다(Java 프로젝트가 JS 검사만으로 통과하던 자리).
+// 덮음: covers 가 영역 소스에 닿는다(소스가 아직 없으면 covers 가 있는 검사면 된다) · 「테스트 없음」 선언은 "area" 를 적은 검사가 그 영역만 맡는다 — 그 자리는 /code-review 다
+export function areaGaps(dir, raw) {
+  const checks = raw.checks ?? [];
+  const declared = (c, a) => c.tests === 'none' && [].concat(c.area ?? []).includes(a.id);
+  const covered = (c, a) => c.covers?.length && (!a.sources.length || a.sources.some((p) => c.covers.some((g) => globMatch(g, p))));
+  return codeAreas(dir).filter((a) => !checks.some((c) => declared(c, a) || covered(c, a)));
+}
+
+// PATH 에 실행 파일이 있나 — 윈도는 확장자 후보를 본다
+const onPath = (cmd) => (process.env.PATH ?? process.env.Path ?? '').split(delimiter).filter(Boolean)
+  .some((d) => ['', '.cmd', '.exe', '.bat'].some((x) => existsSync(join(d, cmd + x))));
+
+// 영역 하나의 ⛔ 문장 — 갱신 · 이식 검사 ⑤ 가 같이 쓴다. note: 이 PC 에서 처방을 못 돌릴 때의 안내(한 줄)
+export function areaGapText(a) {
+  const label = (id) => { const r = RECIPES.find((x) => x.id === id); return r ? `${id} — ${r.label}` : id; };
+  // 이 영역 단서에 맞는 처방만(단서 파일이 처방의 when.files 에 있는 것 · 빌드 파일 없는 Java 는 javac) — 하나도 안 맞으면 영역의 처방 전부
+  const files = a.clues.map((c) => c.split(' ')[0].split('/').pop());
+  const fit = a.recipes.filter((id) => { const w = RECIPES.find((x) => x.id === id)?.when ?? {}; return !w.files ? true : w.files.some((f) => files.includes(f)); });
+  const note = a.id === 'java' && a.clues.some((c) => /(^|\/)pom\.xml$/.test(c)) && !onPath('mvn')
+    ? '이 PC 의 PATH 에 mvn 이 없다 — mvnd 압축본(Maven 포함 · 관리자 불필요)을 사용자 폴더에 풀어 그 bin 의 mvnd 로 돌리거나 javac 처방(java-javac-compile)으로 컴파일만 본다' : '';
+  return {
+    text: `코드 영역 ${a.label}(${[...a.clues.slice(0, 3), a.sources.length && `소스 ${a.sources.length}개 · 예 ${a.sources[0]}`].filter(Boolean).join(' · ')})를 덮는 검사가 없다 — `
+      + `covers 가 그 소스에 닿는 검사를 harness.json 에 더한다(SETUP ⑤). 처방 후보: ${(fit.length ? fit : a.recipes).map(label).join(' · ')}. 못 돌리면 실제로 도는 검사 하나에 "tests": "none" · "area": "${a.id}" · "why": "<이유>" 를 적어 그 영역의 「테스트 없음」을 선언한다`,
+    note,
+  };
+}
 
 // 검사마다 처방 id 또는 처방에서 벗어난 이유 — 맞춤의 출처가 남아야 같은 벗어남이 여러 설치에서 반복되는지 본다. 「테스트 없음」은 why 가 그 이유다
 export function recipeGap(raw) {
@@ -273,6 +300,14 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
 
   for (const [src, dst, name] of DOCS) {
     const at = join(dir, dst);
+    // 스킬(templates/skills)은 키트 기본 부품 — 옛 설치에도 깐다. 규칙(graph.md 등)은 얹지 않은 모듈이면 그대로 둔다
+    if (!existsSync(at) && src.startsWith('templates/skills/')) {
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, to(readFileSync(join(KIT, src), 'utf8')));
+      if (raw.mode !== 'share') hideLocal(dir, dst.slice(0, dst.lastIndexOf('/') + 1));
+      out.push(`✅ ${dst} — 새로 깔았다(키트 기본 스킬 — 사용자가 /${name} 로 부를 때만 쓰인다)`);
+      continue;
+    }
     if (!existsSync(at)) { out.push(`· ${dst} — 없다(얹지 않은 모듈) · 그대로`); continue; }
     const now = nl(readFileSync(at, 'utf8'));
     const doc = docState(src, now, fill, to);
@@ -345,12 +380,16 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
     `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'}${only ? (graphHook ? ' --only graph-hook' : ' --clean') : graphHook ? ' --with graph-hook' : ''}`,
     `3. node ${KIT_PATH}/tools/install-check.mjs ${dir.replace(/\\/g, '/')} — 표를 보고에 그대로 붙인다. exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다`);
 
-  // 갱신이 검사 목록을 다시 본다 — 빌드 도구가 있는데 코드를 덮는 검사가 없으면 verify 녹색은 코드 변경의 증거가 아니다
-  const hints = coversGap(dir, raw);
-  if (hints.length) {
+  // 이 PC 가 /exec-cycle · /exec-review 를 바로 쓸 수 있나 — PC 상태라 갱신을 멈추지 않고 「다음」 곁에 같은 줄을 낸다
+  let cycle = { problems: [], warns: [] };
+  try { cycle = cycleReady(); } catch { /* 키트 마켓 파일을 못 읽음 — 이식 검사 ⑥ 가 말한다 */ }
+  if (cycle.problems.length || cycle.warns.length) out.push('', ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`), ...cycle.warns.map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`));
+
+  // 갱신이 검사 목록을 다시 본다 — 코드 영역마다 덮는 검사가 없으면 verify 녹색은 그 영역 코드 변경의 증거가 아니다
+  for (const a of areaGaps(dir, raw)) {
+    const g = areaGapText(a);
     stop = true;
-    out.push('', `⛔ 빌드 · 테스트 단서(${hints.join(' · ')})가 보이는데 covers 를 가진 검사가 없다 — 코드 변경의 증거는 verify 가 아니라 /code-review 이고 verify 는 「코드 검사 없음」을 낸다. `
-      + '그 코드를 돌리는 검사를 harness.json 에 더하고 covers 에 그 코드의 glob 을 적은 뒤(SETUP ⑤) 갱신을 다시 돌린다. 테스트 소스가 없거나 이 PC 에서 못 돌리면(테스트 명령을 지어내지 않는다) 실제로 도는 검사 하나에 "tests": "none" 과 "why": "<이유>" 를 적는다 — 이식 검사 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다');
+    out.push('', `⛔ ${g.text}`, ...(g.note ? [`   ⚠️ ${g.note}`] : []));
   }
   const grown = grownTests(dir, raw);
   if (grown) out.push('', grown);

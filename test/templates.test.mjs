@@ -155,7 +155,7 @@ test('⭐ SETUP 의 「테스트 없음」 선언은 검사의 "tests": "none" +
   const setup = repoFile('SETUP.md');
   const row = setup.split(/\r?\n/).find((l) => l.startsWith('| 테스트 러너가 아직 없다')) ?? '';
   assert.match(row, /"tests": "none"/);
-  const stop = setup.split(/\r?\n/).find((l) => l.includes('covers 를 가진 검사가 없다`')) ?? '';
+  const stop = setup.split(/\r?\n/).find((l) => l.includes('덮는 검사가 없다`')) ?? '';
   assert.match(stop, /"tests": "none"/);
 });
 

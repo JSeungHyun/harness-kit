@@ -52,6 +52,8 @@ cp -r <kit>/lib <kit>/tools <kit>/policy <대상>/.harness/
 cp <kit>/templates/harness.json <대상>/.harness/harness.json
 cp <kit>/templates/rules/harness.md <대상>/.claude/rules/harness.md
 cp <kit>/templates/rules/graph.md <대상>/.claude/rules/graph.md
+mkdir -p <대상>/.claude/skills/exec-cycle && cp <kit>/templates/skills/exec-cycle/SKILL.md <대상>/.claude/skills/exec-cycle/SKILL.md   # 키트 기본 스킬 — 사용자가 /exec-cycle 로 부를 때만 쓰인다(PC 준비는 ⑥)
+mkdir -p <대상>/.claude/skills/exec-review && cp <kit>/templates/skills/exec-review/SKILL.md <대상>/.claude/skills/exec-review/SKILL.md   # 검증 전용 스킬 — /exec-review
 cp <kit>/templates/scan.json <대상>/.harness/scan.json                   # 공유 모드만 — 민감 정보 패턴 (③에서 프로젝트에 맞춘다)
 git -C <kit> rev-parse HEAD > <대상>/.harness/kit-commit                 # 얹은 키트 판 — ⑧-f 이식 검사 ⑨ 가 키트의 지금 커밋과 비교한다
 ```
@@ -102,7 +104,9 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 `graph` 는 선택이다 — `store`(기록 위치, 기본 `.harness/graph/requests.jsonl`) · `names`(식별자로 치지 않을 프로젝트 이름, 기본은 저장소 폴더 이름의 `-` · `_` 앞부분 — 워크트리를 쓰면 적는다). 그래프 도구는 늘 `.harness/tools` 한 벌이다.
 `context-graph 있음` 이면 `"graph": { "tools": "<그 프로젝트의 그래프 도구 폴더, 예: tools>" }` 로 적고 ⑥ 끝에서 `node <kit>/tools/upgrade.mjs <대상> --migrate-graph` 를 돌린다 — `store` 를 그 기록 경로로 적고 `tools` 를 걷고, 살아있는 기록의 files 에서 옛 도구 경로만 `.harness/tools/` 로 한 번 바꾼다(기록은 옮기지 않는다 · note 는 그대로). 출력의 「키트 밖 그래프 도구를 가리키는 곳」(파일:행 — 그 프로젝트의 지시 파일 · 스킬 · 검사 명령)은 사용자에게 보여 주고 `.harness/tools/graph-*.mjs` 로 고친다 — 남아 있으면 ⑧-f ⑤ ⛔.
 `checks` 에는 **실제로 도는 명령**만, 그리고 결과 XML 을 **매번 새로 쓰는** 명령만 적는다 — verify 는 이번 실행이 쓰지 않은 XML 을 증거로 쓰지 않는다.
-테스트 검사에는 `covers` — **그 테스트가 실제로 돌리는 코드**의 glob 배열(예: `["src/**"]` · 모노레포 `["backend/src/main/**"]`)을 적는다. 타입 검사 · 그래프 무결성 · 다른 언어의 테스트에는 두지 않는다. 덮이지 않은 코드 변경의 증거는 `/code-review` 이고(final-gate), `covers` 가 하나도 없으면 verify 첫 줄이 「코드 검사 없음 — 코드 변경의 증거는 /code-review」다.
+테스트 검사에는 `covers` — **그 테스트가 실제로 돌리는 코드**의 glob 배열(예: `["src/**"]` · 모노레포 `["backend/src/main/**"]`)을 적는다. 그래프 무결성 · 다른 언어의 테스트에는 두지 않는다(컴파일 검사는 컴파일하는 소스에 둔다 — 아래 영역). 덮이지 않은 코드 변경의 증거는 `/code-review` 이고(final-gate), `covers` 가 하나도 없으면 verify 첫 줄이 「코드 검사 없음 — 코드 변경의 증거는 /code-review」다.
+
+**코드 영역마다 덮는다 (26차)** — 이식 때 verify 에 넣을 검사는 그 프로젝트의 성격(어떤 코드 영역이 있나)대로 고른다. 그래프 무결성 검사만 모든 설치가 같다. 감지(`detect.mjs` 의 `codeAreas`)가 낸 코드 영역 — Java(`pom.xml` · `build.gradle(.kts)` · `gradlew` · `build.xml` 또는 `*.java` 소스: 빌드 파일이 없어도 영역이다) · JS/TS(`package.json` 의 `test` · `typecheck`) · Python(pytest 단서) — 마다 그 영역 소스에 `covers` 가 닿는 검사가 있어야 한다. Java 프로젝트에 JS 검사만 있으면 ⛔(갱신 exit 1 · ⑧-f ⑤)이고 출력이 그 영역의 처방 후보(`maven-compile` · `gradle-compile` · `java-javac-compile`)를 낸다. 못 돌리는 영역은 실제로 도는 검사 하나에 `"tests": "none"` · `"area": "java"`(배열도 된다) · `"why"` 로 영역마다 선언한다 — `area` 없는 선언은 어느 영역도 맡지 않는다. 영역에 소스가 아직 없으면(신규) `covers` 를 가진 검사가 있으면 덮은 것으로 본다. `mvn` 이 PATH 에 없으면 출력이 mvnd 압축본(Maven 포함 · 관리자 불필요)을 사용자 폴더에 푸는 길을 안내한다.
 
 **처방 목록** — 스택별 검사는 `<kit>/policy/recipes.json`(키트 소유 — 단서 · 명령 · kind · covers 힌트 · 수정 직후 검사 · 근거)에 있고, `detect` 의 「처방 후보: <id> — <이름> (검증됨|후보)」 줄이 이 대상에 맞는 처방이다. 「검증됨」은 실제 설치에서 쓰는 처방, 「후보」는 잰 적 없는 처방이라 사용자에게 보여 주고 고른다(자동 적용 안 함). 처방의 `<…>` 는 대상에 맞춰 채운다. **검사마다 출처를 적는다** — 처방대로면 `"recipe": "<처방 id>"`, 처방에서 벗어났거나 처방이 없으면 `"why": "<이유>"`(둘 다 써도 된다). 없거나 목록에 없는 처방 id 면 갱신 exit 1 · ⑧-f ⑤ ⛔ — 같은 벗어남이 여러 설치에서 반복되면 처방 목록에 올릴 후보다. 아래 표에서 처방이 있는 스택은 처방 id 만 적는다(명령은 목록에만).
 
@@ -115,7 +119,7 @@ exit 1 이면 출력의 ⛔ 경로를 `git check-ignore -v <경로>` 로 보고 
 | pytest | 처방 `python-pytest` | 처방대로 |
 | Node (Jest) · junit 리포터가 없다 · 다른 언어 저장소에 JS 테스트만 있다 | 처방 `node-npm-test` — ⛔ 리포터를 넣으려고 의존성을 더하지 않는다 | 처방대로 — Jest 는 테스트가 0개면 스스로 실패한다(`--passWithNoTests` 가 없을 때) · `covers` 는 테스트가 import · 읽는 파일만 |
 | 결과 XML 을 낼 수 없다 | 테스트 명령 | `exit-code` — ⚠️ 테스트 0개를 못 잡는다고 사용자에게 알린다 |
-| 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(처방 `node-tsc`) · 전체 소스 컴파일(처방 `java-javac-compile`) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — 그 검사 하나에 「테스트 없음」을 선언한다: `"tests": "none"` + `"why": "<이유 — 예: 테스트 소스 없음, 첫 테스트 때 junit 검사와 covers 를 더한다>"`(선언 키는 이것 하나 · why 없으면 ⑧-f ⑤ ⛔). 그러면 빌드 · 테스트 단서가 있어도 갱신 · ⑧-f ⑤ 가 covers 로 멈추지 않고, ⑧-f 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다. 선언 뒤 테스트 소스(`src/test` · `test` · `tests`)가 생기면 ⚠️ 「테스트가 생겼다」 — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
+| 테스트 러너가 아직 없다 (신규 · 골격 전) · 기존인데 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌린다 (`mvn` 없음 · `skipTests` 등) | 실제로 도는 검사만 — 타입 검사(처방 `node-tsc`) · 전체 소스 컴파일(처방 `java-javac-compile` · `covers` 는 컴파일하는 소스 — 타입 검사지만 그 소스에 닿아야 Java 영역을 덮는다) · Maven · Gradle 컴파일(처방 `maven-compile` · `gradle-compile`) · 컴파일이 도는 다른 길이 있으면 그 빌드(예: 컨테이너 빌드 — 오래 걸리면 넣지 않는다) · 아래 그래프 무결성 | `exit-code` — 그 검사 하나에 「테스트 없음」을 선언한다: `"tests": "none"` + `"area": "<영역 id — java · js · python>"` + `"why": "<이유 — 예: 테스트 소스 없음, 첫 테스트 때 junit 검사와 covers 를 더한다>"`(why 없으면 ⑧-f ⑤ ⛔ · area 를 적은 영역만 맡는다 — 다른 영역은 따로 덮는다). 그러면 그 영역은 갱신 · ⑧-f ⑤ 가 멈추지 않고, ⑧-f 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다. 선언 뒤 테스트 소스(`src/test` · `test` · `tests`)가 생기면 ⚠️ 「테스트가 생겼다」 — junit 검사는 첫 테스트를 만들 때 더한다. ⛔ 테스트 명령을 지어내 넣지 않는다. ⚠️ 이때 verify 녹색은 코드 변경의 증거가 아니다 — final-gate 의 `/code-review` 단계가 그 자리다. 보고에 「테스트 검사 없음 — 코드 변경은 /code-review 로」를 적는다 |
 | 생성물이 계약 (OpenAPI 스냅샷 등) | 생성 명령 | `file-unchanged` · 산출물 경로 |
 | 검증 쿼리 · 운영 저장소 | 결과를 stdout 에 내는 명령 | `output-match` · `"expect": "<정규식>"` (예: `"^rows=0$"`) |
 | 그래프 무결성 | 처방 `graph-check` — 기록 위치는 `graph.store` 를 따른다 | 처방대로 |
@@ -136,7 +140,18 @@ node .harness/tools/policy-apply.mjs --local  # 로컬 전용 → .claude/settin
 
 권한이 기존 설정 위에 병합된다(다시 돌려도 같다). 키트에서 지운 도구를 부르는 훅 등록(옛 관문 훅 등)은 걷는다 — 관문 훅은 22차에 걷었다(`docs/proof.md` 「23차」).
 
-**플러그인은 PC(사용자 범위)에서 켜고, 프로젝트에는 선언하지 않는다** — 로컬 설치는 플러그인 선언을 쓰지 않는다. 그래서 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. 공유 모드만 팀원 PC 용으로 `settings.json` 에 superpowers 를 선언한다. 프로젝트 설정에 남은 superpowers · ponytail 항목(켬이든 끔이든 · 옛 마켓 id 포함), 옛 정책의 `extraKnownMarketplaces.ponytail`, `PONYTAIL_DEFAULT_MODE=off` 는 `policy-apply` 가 걷고 출력의 `걷음:` 줄로 알린다. ⛔ 「이 id 를 false 로 두면 전역에서 켜져도 이 프로젝트에서는 꺼진 채」 같은 이유로 남길지 사용자에게 묻지 않는다 — 플러그인은 PC 에서만 관리한다(사용자 결정). `--clean` · `--only` 는 걷지 않는다(정책을 받지 않는 대상).
+**플러그인은 PC(사용자 범위)에 두고, 프로젝트에는 선언하지 않는다** — 로컬 설치는 플러그인 선언을 쓰지 않는다. 그래서 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. 공유 모드만 팀원 PC 용으로 `settings.json` 에 superpowers 를 선언한다. 프로젝트 설정에 남은 superpowers · ponytail 항목(켬이든 끔이든 · 옛 마켓 id 포함), 옛 정책의 `extraKnownMarketplaces.ponytail`, `PONYTAIL_DEFAULT_MODE=off` 는 `policy-apply` 가 걷고 출력의 `걷음:` 줄로 알린다. ⛔ 「이 id 를 false 로 두면 전역에서 켜져도 이 프로젝트에서는 꺼진 채」 같은 이유로 남길지 사용자에게 묻지 않는다 — 플러그인은 PC 에서만 관리한다(사용자 결정). `--clean` · `--only` 는 걷지 않는다(정책을 받지 않는 대상).
+
+**superpowers 는 설치하되 꺼 둔다 · `/exec-cycle` 은 파일로 읽는다 (26차)** — `/exec-cycle`(키트 기본 스킬 · 사용자가 부를 때만 · 종료 훅이 verify 와 `/ponytail-review` 를 강제)은 superpowers 스킬(brainstorming · writing-plans · executing-plans)과 `ponytail-review` 를 `node .harness/tools/cycle-skill.mjs <플러그인> <스킬>` 이 낸 경로로 읽는다 — 플러그인이 꺼져 있어도 된다. 켜 두면 모든 세션 시작에 스킬 목록 · 시작 글(약 6k자)이 자동 주입된다. 그래서 PC 는 superpowers 를 키트 고정 판으로 **설치**하고, 사이클만 쓰려면 끈다: `claude plugin disable superpowers@harness-kit --scope user`(사용자 승인 — 끄면 다른 세션에서 superpowers 스킬을 Skill 도구로 못 부른다). `plugin-plan` 은 꺼진 superpowers 를 켜라고 하지 않고, 설치 · 고정 판 · 사이클이 읽는 스킬 파일 · `ponytail-review` 가 있나를 점검한다 — 없거나 판이 다르면 ⛔ 와 설치 · update 명령(아래 표의 흐름 그대로), 켜져 있으면 ⚠️ 와 끄는 명령 한 줄(판정은 ✅ 그대로). 이식 검사 ⑥ · `--all` 「사이클」 칸 · 갱신 출력 「다음」 곁이 같은 줄을 낸다. 공유 모드의 `settings.json` 이 superpowers 를 선언하면 그 프로젝트에서는 켜진다 — 사이클만 쓰는 팀이면 그 선언을 빼는 것은 사용자 결정이다.
+
+이식 때 사용자에게 **한 번 묻는다**(PC 에 한 번 — 다음 프로젝트부터는 묻지 않는다). 답은 보고의 「사용자가 결정한 것」에 남긴다:
+
+| superpowers | 세션마다 실리는 글 | 평소 질문 | `/exec-cycle` · `/exec-review` | `/superpowers:…` 단독 호출 |
+|---|---|---|---|---|
+| **끔(사이클 안에서만 쓸 때 — 기본 추천)** | 0 | 끼어들지 않는다 | 동작 — 스킬 파일을 읽는다 | 안 된다 |
+| 켬(단독으로도 부를 때) | 약 6k자(시작 글 + 스킬 목록) | 「스킬부터」 규칙이 끼어든다 | 동작 | 된다 |
+
+⛔ **끄기(`disable`)와 지우기(`uninstall`)는 다르다** — 끄면 설치 파일이 남아 사이클이 그 파일을 읽는다. 지우면 `/exec-cycle` · `/exec-review` 가 멈추고 이식 검사 ⑥ · `--all` 「사이클」 칸이 ⛔ 다. 켜 두기로 정했으면 ⑥ 의 ⚠️ 는 알림일 뿐 그대로 둔다.
 
 **ponytail 은 플러그인이 아니라 사용자 스킬 `ponytail-review` 하나로 둔다** — 쓰는 것은 `/ponytail-review` 뿐이고, 스킬 파일은 다른 파일에 기대지 않는다. 플러그인은 지우지 않고 사용자 범위에서 끈다 — 지시 파일이 ponytail 모드를 쓰는 프로젝트(키트 정책을 받지 않는 대상)는 자기 설정에서 `ponytail@harness-kit` 을 켠다.
 
@@ -242,12 +257,12 @@ claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence
 **⑧-c. PC 가 키트에 맞는가 · ponytail 은 리뷰 스킬만인가** — 정책이 아니라 PC 의 상태다(⑥)
 
 ```bash
-node <kit>/tools/plugin-plan.mjs    # ⛔ 「옮길 것 없다」 — 리뷰 스킬이 고정 커밋에서 받은 그대로 · ponytail 플러그인은 사용자 범위에서 꺼짐 · superpowers 는 고정 판
+node <kit>/tools/plugin-plan.mjs    # ⛔ 「옮길 것 없다」 — 리뷰 스킬이 고정 커밋에서 받은 그대로 · ponytail 플러그인은 사용자 범위에서 꺼짐 · superpowers 는 설치 · 고정 판(켬/끔 무관 — 켜져 있으면 ⚠️ 와 끄는 명령 한 줄) · `/exec-cycle` 이 읽는 스킬 파일 · ponytail-review 있음
 ```
 
 지시 파일이 ponytail 모드를 쓰는 프로젝트(키트 정책을 받지 않는 대상)는 자기 설정에서 ponytail 을 켠다 — 그 프로젝트는 이 점검의 「꺼짐」에 해당하지 않는다. 모드 훅을 세션 출력으로 확인하려면 stream-json 이 아니라 `--debug-file` 을 본다 — stream-json 에는 UserPromptSubmit 훅 이벤트가 나오지 않는다(2026-11-05 실측).
 
-**⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers 인 `enabled` 항목의 **id** 가 하나다. ponytail 은 0개(리뷰 스킬만)가 기본이고, 모드를 쓰는 프로젝트 안에서만 하나다.
+**⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers 인 항목의 **id** 가 하나다(설치 — 켬/끔 무관 · 사이클만 쓰면 꺼 두는 것이 기본 — 켜져 있으면 ⚠️). ponytail 은 0개(리뷰 스킬만)가 기본이고, 모드를 쓰는 프로젝트 안에서만 하나다.
 같은 id 가 여러 줄인 것은 정상이다 — 목록은 이 PC 의 모든 프로젝트 설치 기록을 보여준다.
 
 **⑧-e.** `git diff` 와 새로 생긴 파일 목록을 사용자에게 보여준다. 로컬 전용이면 `git diff` 에는 (미커밋 변경 위에 설치했다면) 작업 중 변경만 나오고 설치 파일은 안 나온다 — 설치 파일은 새로 생긴 파일 목록으로 보여준다. 기존 설정·지시 파일 보존은 사용자만 판정한다.
@@ -261,10 +276,10 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 | | 보는 것 |
 |---|---|
 | ① 도구 | `.harness/` 의 키트 도구(그래프 도구 포함 — 예외 없음) · lib · 정책이 키트 판과 같다(줄바꿈 무시) · 키트에서 지운 것 0 |
-| ② 규칙 · ③ 지운 문서 | ② `harness.md` · `graph.md`(기록 규칙 자리가 기본일 때)가 키트 판(자리 채움)과 같다 — 다르거나 없으면 ⛔ · 다르면 다른 줄 요약. ③ 키트에서 지운 문서(final-gate · 에이전트 정의)가 설치본에 0 — 손대지 않은 판은 갱신이 걷고(① 도 본다), 고친 판은 프로젝트가 정리한다 |
+| ② 규칙 · 스킬 · ③ 지운 문서 | ② `harness.md` · `graph.md`(기록 규칙 자리가 기본일 때) · 스킬 `exec-cycle` · `exec-review` 가 키트 판(자리 채움)과 같다 — 다르거나 없으면 ⛔ · 다르면 다른 줄 요약. ③ 키트에서 지운 문서(final-gate · 에이전트 정의)가 설치본에 0 — 손대지 않은 판은 갱신이 걷고(① 도 본다), 고친 판은 프로젝트가 정리한다 |
 | ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 키트 정책 없음 · 그래프 훅 켬 — 옛 자기 그래프 훅이면 키트 훅으로 바꿔 끼울 것 · 서브에이전트 상한 훅은 어느 모양에나)대로 다시 돌려도 바뀌는 것이 없다 |
-| ⑤ `harness.json` | 형식 · 프로필 · 모드 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구 · 키트에서 지운 것을 가리키는 줄 0) · 빌드 · 테스트 단서가 있으면 `covers` 검사 1개 이상 또는 「테스트 없음」 선언 · 검사마다 `recipe`(목록에 있는 처방 id) 또는 `why` |
-| ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 · `ponytail-review` 가 고정 커밋에서 받은 그대로 |
+| ⑤ `harness.json` | 형식 · 프로필 · 모드 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구 · 키트에서 지운 것을 가리키는 줄 0) · 코드 영역(Java · JS/TS · Python)마다 그 소스를 덮는 `covers` 검사 또는 영역의 「테스트 없음」 선언(`area`) · 검사마다 `recipe`(목록에 있는 처방 id) 또는 `why` |
+| ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 설치(켬/끔 무관) · `ponytail-review` 가 고정 커밋에서 받은 그대로 · `/exec-cycle` 을 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) — superpowers 가 켜져 있으면 ⚠️(판정은 ✅) |
 | ⑦ 지시 파일 | Claude 지시 파일이 있고, `AGENTS.md` 가 있으면 import 한다(공유는 커밋되는 `CLAUDE.md` 가) |
 | ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 |
 | ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 — 또는 그 뒤 키트가 설치본에 얹는 것(`lib` · `tools` · `policy` · `templates`)이 그대로(문서만 바뀐 커밋은 다시 갱신하지 않는다 · 키트가 모르는 커밋 · `-dirty` 는 ⛔) |
@@ -301,13 +316,14 @@ node <kit>/tools/upgrade.mjs <대상>
 - `.harness/` 의 도구(그래프 도구 포함) · lib · 정책은 키트 것이라 덮어쓰고, 키트 커밋을 `.harness/kit-commit` 에 적는다(⑧-f ⑨). ⛔ 키트에 커밋 안 된 변경(`lib` · `tools` · `policy` · `templates`)이 있으면 아무것도 얹지 않고 exit 1 이다 — 미커밋 판이 커밋 이름으로 적힌다. 키트 세션이 커밋한 뒤 갱신한다(이식 검사도 키트가 더러우면 판정하지 않는다). 기록 · 기준선 · `harness.json` 은 건드리지 않는다(`--migrate-graph` 는 아래 그래프 이관만)
 - ⛔ `그래프 이관`(exit 1)이면 13차 전 「자기 그래프」 설치다(`harness.json` 의 `graph.tools`) — 키트 그래프 도구는 이미 `.harness/tools` 에 깔렸고 기록 · 규칙 · 옛 도구는 그대로다. 출력의 (a)(b) `--migrate-graph` 줄을 사용자에게 보여 주고 승인받아 돌린다 — `graph.store` 를 기존 기록 경로로 적고 `graph.tools` 를 걷고, 살아있는 기록의 files 칸에서 옛 도구 경로만 `.harness/tools/graph-*.mjs` 로 한 번 바꾸고(note · 대체된 기록은 그대로 · 기록은 옮기지 않는다), 규칙 · final-gate 를 키트 도구로 다시 깐다. (c) 「키트 밖 그래프 도구를 가리키는 곳」(파일:행 — 지시 파일 · 스킬 · 검사 명령)은 그 프로젝트의 파일이라 사용자에게 보여 주고 고친다. 옛 그래프 훅은 「다음」 2 의 정책 줄이 키트 훅으로 바꿔 끼운다. (d) 옛 `graph-*.mjs` 는 참조를 고친 뒤 프로젝트가 지운다 — 키트는 지우지 않는다(프로젝트 고유 도구는 그대로). 참조가 남아 있는 동안 갱신은 exit 1 · ⑧-f ⑤ ⛔ 이다
 - 키트에서 지운 도구 · lib · 문서 · 템플릿(`<kit>/policy/removed.json`)은 설치본에서 걷는다(`🧹 걷음` 줄). 지운 문서(`docs` — final-gate 스킬 · 구현/검증 에이전트 정의)는 키트 이력의 한 판과 같을 때만 지우고(빈 폴더도), 설치가 고친 것은 남기고 `⚠️ … 키트에서 지운 문서인데 설치가 고쳤다` 로 알린다 — 프로젝트가 필요한 내용만 `.claude/rules/project-*.md` 로 옮기고 지운다. 내용을 쓴 장부(`state` 의 옛 decisions · lessons)는 프로젝트 데이터라 남기고 `⚠️` 로 알린다. 설치 글(지시 파일 · 프로젝트 규칙 · 스킬 · 에이전트)이 지운 것의 이름을 말하면 `⚠️ 키트에서 지운 것을 가리키는 곳` 으로 파일:행을 낸다 — 그 줄을 지운다(남아 있는 동안 이식 검사 ⑤ · `--all` ⛔). 지운 도구의 allow 줄은 「다음」의 정책 줄이 걷는다
+- 스킬(`exec-cycle` · `exec-review`)은 키트 기본 부품이라 옛 설치에도 깐다(`✅ … 새로 깔았다` — 로컬 설치는 `.git/info/exclude` 에 숨긴다). 설치가 고쳤으면 규칙과 같은 방식이다 — ⛔ · `--own-rules` 가 고친 줄을 `.claude/rules/project-exec-cycle.md` 로 옮기고 키트 판을 다시 깐다. 이식 검사 ② 가 그 동일성을 본다. 정책 allow `Bash(node .harness/tools/cycle-skill.mjs *)` 는 「다음」 2 의 정책 줄이 넣는다
 - `⚠️ 그래프 기록이 지운 경로를 가리킨다` 줄이 나오면 **같은 턴에** 그 경로를 뺀 기록으로 `supersedes` 한다 — 그대로 두면 `graph-find --check` 가 빨강이고, 그것을 검사로 둔 설치는 verify 가 빨강이 된다
 - `⚠️ 그래프 기록이 옛 키트 판을 적었다(지금 <해시>)` 줄이 나오면 목록의 기록을 읽는다 — 「마지막 갱신 · 지금 설치본」처럼 **지금**으로 읽히면 판 대신 보는 명령(`cat .harness/kit-commit` · `install-check`)을 적은 기록으로 `supersedes` 한다. 그때 일을 적은 이력이면 둔다. 알림이라 exit 는 그대로다 — 해시 앞뒤 40자에 「현재 · 지금 · 마지막 · 설치본」이 있는 것만 나온다
-- ⛔ `빌드 · 테스트 단서(…)가 보이는데 covers 를 가진 검사가 없다`(exit 1)면 멈춘다 — ⑤ 대로 그 코드를 돌리는 테스트 검사에 `covers` 를 적고 갱신을 다시 돌린다. 테스트 소스가 없거나 이 PC 에서 테스트를 못 돌리면(⛔ 테스트 명령을 지어내지 않는다) 실제로 도는 검사 하나에 `"tests": "none"` + `"why": "<이유>"` 를 적어 「테스트 없음」을 선언한다(⑤ 「테스트 러너가 아직 없다」 행) — 멈춤이 풀리고, 이식 검사 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다. 테스트 소스가 생기면 `⚠️ 테스트가 생겼다` — junit 검사와 `covers` 를 더할 때다
+- ⛔ `코드 영역 <이름>(…)를 덮는 검사가 없다`(exit 1)면 멈춘다 — ⑤ 「코드 영역마다 덮는다」 대로 그 영역 소스에 `covers` 가 닿는 검사를 더하고(처방 후보는 출력에 있다) 갱신을 다시 돌린다. 이 PC 에서 못 돌리면(⛔ 테스트 명령을 지어내지 않는다) 실제로 도는 검사 하나에 `"tests": "none"` + `"area": "<영역 id>"` + `"why": "<이유>"` 를 적어 그 영역의 「테스트 없음」을 선언한다(⑤ 「테스트 러너가 아직 없다」 행) — 멈춤이 풀리고, 이식 검사 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다. 테스트 소스가 생기면 `⚠️ 테스트가 생겼다` — junit 검사와 `covers` 를 더할 때다
 - ⛔ `처방 · why 없는 검사 …` · `목록에 없는 처방 …` · `「테스트 없음」 선언에 why 없음 …`(exit 1)이면 도구 · 규칙은 이미 얹혔다 — `harness.json` 은 프로젝트 설정이라 키트가 쓰지 않는다. 그 프로젝트 세션이 출력의 「처방 후보」를 보고 검사마다 `"recipe": "<처방 id>"` 또는 `"why": "<처방에서 벗어난 이유>"` 를 적고(⑤ 「처방 목록」) 갱신을 다시 돌린다
 - 규칙은 설치본이 키트 이력의 한 버전(자리를 채운 것)과 같을 때만 바꾼다. `⛔ … 프로젝트가 고쳤다 +n −m` 이면(exit 1) 키트 파일을 손으로 병합하지 않는다 — 다른 줄을 사용자에게 보여 주고 그 줄 끝의 `node <kit>/tools/upgrade.mjs <대상> --own-rules` 를 돌린다. 고친 줄은 `.claude/rules/project-<이름>.md` 로 옮겨지고(더한 줄은 그 절 제목 아래 · 뺀 키트 줄은 「따르지 않는 키트 줄」 · 「키트 판과 어긋나면 이 파일이 이긴다」) 키트 파일은 키트 판으로 다시 깔린다. 만들어진 파일을 사용자에게 보여 준다 — 로컬 전용이면 그 파일도 `.git/info/exclude` 에 들어간다
 - 기록 규칙은 키트 `graph.md` 하나다. ⛔ 키트 `graph.md` 에 없는 일반 규칙은 설치 글에 두지 않는다 — 키트가 판정해 뺀 줄이고, 설치마다 남기면 그래프 쓰는 법이 갈라진다. 필요하면 키트에 제안한다. 이 저장소 사실(테이블 접두어 · 문서 이름)만 `.claude/rules/project-*.md` 로 — 설치 글(지시 파일 · 규칙 · 스킬 · 에이전트)이 키트 그래프 도구 이름 · `supersedes` · `⏸` 를 말하면 이식 검사 ⑤ · `--all` 이 ⛔
-- 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. 정책 줄은 옛 정책이 이 프로젝트에 쓴 플러그인 선언 · `PONYTAIL_DEFAULT_MODE` 를 걷고(출력의 `걷음:`), 키트 훅을 새 형식으로 바꿔 끼운다. ⛔ 이전을 먼저 한다 — 선언만 걷히고 PC 에 키트 마켓 플러그인이 없으면 superpowers 가 빠진다
+- 설정은 쓰지 않는다 — 출력의 「다음」을 그 순서로 한다. 첫 줄 `plugin-plan` 은 ⑥ 의 표대로 — 명령이 나오면 사용자에게 묻고 실행한다(그 PC 에서 한 번이면 다음 프로젝트부터 「옮길 것 없다」). 정책 반영 줄은 ⑥ 처럼 막히면 사용자가 `!` 로 돌린다. 정책 줄은 옛 정책이 이 프로젝트에 쓴 플러그인 선언 · `PONYTAIL_DEFAULT_MODE` 를 걷고(출력의 `걷음:`), 키트 훅을 새 형식으로 바꿔 끼운다. ⛔ 이전을 먼저 한다 — 선언만 걷히고 PC 에 키트 마켓 플러그인이 없으면 superpowers 가 빠진다. 갱신 출력은 「다음」 곁에 `/exec-cycle` 줄도 낸다 — ⛔ 는 설치 · update 명령, ⚠️ 는 superpowers 끄는 명령 한 줄(사용자 승인 몫)
 - 플러그인 판은 세션을 열 때 실린다 — 갱신 뒤 열려 있던 세션은 새로 연다
 - 옛 판으로 깐 공유 설치는 갱신 뒤 이식 검사 ⑤ 가 ⛔(기록 파일이 `merge=union` 이 아니다)를 낸다 — `node .harness/tools/install-mode.mjs share` 를 다시 돌린다
 - 끝나면 ⑧-a~⑧-d(도구 · 새 세션 규칙 로드 · PC 맞춤 · 플러그인 하나씩)를 다시 하고, 마지막에 ⑧-f 이식 검사(갱신 출력 「다음」의 3) — 보고에 출력 그대로 붙인다. ⛔ exit 0 이 아니면 「갱신 끝 · 이식 성공」이라고 쓰지 않는다
@@ -324,7 +340,7 @@ npm run bench -- --run --accept   # 의도한 변화면 기준 숫자를 덮는�
 시간 지표는 PC 부하에 흔들려 ⚠️ 만 낸다(exit 0) — 조용할 때 한 번 더 돌려 읽는다. 그다음 설치 현황:
 
 ```bash
-node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>   # 설치마다 ⑨ 판 · ① 동일만(verify 없이) — 뒤처지거나 다르면 exit 1
+node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>   # 설치마다 ⑨ 판 · ① 동일만(verify 없이) · 「사이클」 칸(이 PC 가 /exec-cycle 을 바로 쓸 수 있나) — 뒤처지거나 다르거나 사이클 ⛔ 면 exit 1
 ```
 
 ⛔ 행의 설치는 그 프로젝트 세션에 위 「갱신」을 맡긴다. 키트 저장소(자기 verify 용 `harness.json` 만 있는 클론)는 표에서 빠진다. 더 쓰지 않아 갱신하지 않기로 한 설치는 키트 저장소의 로컬 `.harness/harness.json` 에 `"installs": { "skip": ["<폴더 이름>"] }` 로 두면 표에 「제외」 줄로만 보이고 판정에서 빠진다 — 목록의 이름이 폴더에 없으면 ⚠️ 한 줄.

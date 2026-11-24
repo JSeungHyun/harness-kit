@@ -66,10 +66,8 @@ test('⭐ 리뷰 스킬은 고정 커밋에서 받은 그대로일 때만 맞다
   } finally { if (keep === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = keep; }
 });
 
-test('설치는 됐는데 꺼져 있으면 켠다 · 아무것도 없으면 superpowers 설치와 리뷰 스킬만', () => {
-  assert.deepEqual(plan([p('superpowers@harness-kit', 'user', false)], IDS, 'C:/kit', {}, OFF, true), [
-    'claude plugin enable superpowers@harness-kit',
-  ]);
+test('⭐ 설치는 됐는데 꺼져 있어도 맞다 — 켜라고 하지 않는다(/exec-cycle 이 파일로 읽고, 켜 두면 세션마다 시작 글이 붙는다 · 26차) · 아무것도 없으면 superpowers 설치와 리뷰 스킬만', () => {
+  assert.deepEqual(plan([p('superpowers@harness-kit', 'user', false)], IDS, 'C:/kit', {}, OFF, true), []);
   assert.deepEqual(plan([], IDS, 'C:/kit', {}, OFF, false), [
     SKILL,
     'claude plugin marketplace add C:/kit',

@@ -22,20 +22,25 @@ const fill = (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<le
 const CHECK = { id: 't', cmd: 'node -e "0"', kind: 'exit-code', covers: ['src/**'], why: '시험용 명령 — 처방 밖' };
 
 // ⑥ 은 PC 상태라 대상 밖이다 — 가짜 사용자 폴더에 고정 커밋에서 받은 리뷰 스킬을 둔다
-function pc(skill = '---\nname: ponytail-review\n---\n리뷰\n', sha = pin('ponytail').source.sha) {
+function pc(skill = '---\nname: ponytail-review\n---\n리뷰\n', sha = pin('ponytail').source.sha, { superpowers = true, enabled = false } = {}) {
   const dir = tmp('claudecfg-');
   put(dir, 'skills/ponytail-review/SKILL.md', skill);
+  // 사이클이 읽는 superpowers 스킬 — 설치 기록 + 스킬 파일(꺼 둔 상태가 기본)
+  const installPath = join(dir, 'plugins/cache/harness-kit/superpowers');
+  for (const s of ['brainstorming', 'writing-plans', 'executing-plans']) put(installPath, `skills/${s}/SKILL.md`, `${s}\n`);
+  put(dir, 'plugins/installed_plugins.json', JSON.stringify({ version: 2, plugins: superpowers ? { 'superpowers@harness-kit': [{ scope: 'user', installPath, version: pin('superpowers').version }] } : {} }));
+  if (enabled) put(dir, 'settings.json', JSON.stringify({ enabledPlugins: { 'superpowers@harness-kit': true } }));
   put(dir, 'skills/ponytail-review/.pinned.json', JSON.stringify({ sha, sha256: createHash('sha256').update(skill).digest('hex') }));
   return dir;
 }
 process.env.CLAUDE_CONFIG_DIR = pc();
-const PLUGINS = [{ id: 'superpowers@harness-kit', scope: 'user', enabled: true, version: pin('superpowers').version }];
+const PLUGINS = [{ id: 'superpowers@harness-kit', scope: 'user', enabled: false, version: pin('superpowers').version }];
 
 // SETUP ②~⑥ 대로 얹은 대상 — 키트 판 그대로
 function installed({ mode = 'local', profile = 'existing', checks = [CHECK], files = {}, state } = {}) {
   const dir = target({ profile, mode, ...(state ? { state } : {}), checks });
   for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
-  for (const [src, dst] of [['templates/rules/harness.md', '.claude/rules/harness.md'], ['templates/rules/graph.md', '.claude/rules/graph.md']]) {
+  for (const [src, dst] of [['templates/rules/harness.md', '.claude/rules/harness.md'], ['templates/rules/graph.md', '.claude/rules/graph.md'], ['templates/skills/exec-cycle/SKILL.md', '.claude/skills/exec-cycle/SKILL.md'], ['templates/skills/exec-review/SKILL.md', '.claude/skills/exec-review/SKILL.md']]) {
     put(dir, dst, fill(repoFile(src)));
   }
   const local = mode !== 'share';
@@ -494,7 +499,7 @@ test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why) — 단
   assert.equal(noWhy.ok, false);
   assert.match(noWhy.observed, /「테스트 없음」 선언에 why 없음 compile/);
 
-  const dir = installed({ checks: [{ ...compile, tests: 'none', why: '테스트 소스 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다' }], files: pom });
+  const dir = installed({ checks: [{ ...compile, tests: 'none', area: 'java', why: '테스트 소스 없음 — 첫 테스트 때 junit 검사와 covers 를 더한다' }], files: pom });
   assert.deepEqual(bad(check(dir)), []);
   assert.match(custom(dir), /^테스트 없음 — 코드 변경마다 \/code-review \(compile: 테스트 소스 없음/m);
   assert.doesNotMatch(custom(dir), /테스트가 생겼다/);
@@ -539,3 +544,21 @@ test('⭐ ④ 반대편 설정 파일 — 로컬 설치의 settings.json · 공�
   }
 });
 
+
+test('⭐ ⑤ 코드 영역마다 덮는 검사 — Java + JS 검사만이면 ⛔(영역 이름 · 처방) · Java 를 덮는 검사를 더하면 ✅ · 영역마다 「테스트 없음」 선언 (26차)', () => {
+  const files = { 'pom.xml': '<project/>', 'src/main/java/com/example/App.java': 'class App {}\n', 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }), 'tools/a.mjs': '0\n' };
+  const js = { ...CHECK, id: 'npm-test', covers: ['tools/**'], recipe: 'node-npm-test' };
+  const java = { id: 'compile', cmd: 'node -e "0"', kind: 'exit-code', covers: ['src/main/java/**'], recipe: 'java-javac-compile' };
+  const only = check(installed({ checks: [js], files }))['⑤'];
+  assert.equal(only.ok, false);
+  assert.ok(only.observed.includes('코드 영역 Java(pom.xml'), only.observed);
+  assert.ok(only.observed.includes('maven-compile'), only.observed);
+  assert.deepEqual(bad(check(installed({ checks: [js, java], files }))), []);
+  const none = { id: 'g', cmd: 'node -e "0"', kind: 'exit-code', recipe: 'graph-check', tests: 'none', why: 'javac 를 못 돌린다' };
+  assert.equal(check(installed({ checks: [js, none], files }))['⑤'].ok, false, 'area 없는 선언은 영역을 맡지 않는다');
+  assert.equal(check(installed({ checks: [js, { ...none, area: 'java' }], files }))['⑤'].ok, true);
+  // 빌드 파일 없는 Java — javac 검사의 covers 가 소스에 닿아야
+  const buildless = { 'src/com/example/A.java': 'class A {}\n' };
+  assert.equal(check(installed({ checks: [{ ...java, covers: ['lib/**'] }], files: buildless }))['⑤'].ok, false);
+  assert.equal(check(installed({ checks: [{ ...java, covers: ['src/**/*.java'] }], files: buildless }))['⑤'].ok, true);
+});
