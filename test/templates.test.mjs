@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from '../lib/config.mjs';
 import { target, repoFile } from './scene.mjs';
+import { DOCS, AGENTS } from '../lib/parts.mjs';
 
 const at = (rel) => new URL(`../${rel}`, import.meta.url);
 const SHIPPED = [
@@ -234,4 +235,21 @@ test('⭐ harness.md 에 구현 · 검증 위임 한 줄이 있다 — 구현은
   assert.match(line, /kit-verifier/);
   assert.match(line, /열 번/);
   assert.match(line, /병렬 디스패치는 쓰지 않는다/);
+});
+
+// 깔리는 규칙 · 스킬 · 에이전트 정의 — 설치마다 같은 판으로 실린다
+const INSTALLED = [...DOCS.map(([src]) => src), ...AGENTS.map(([src]) => src)];
+
+test('⛔ 깔리는 문서는 설치마다 다른 경로(기록 저장소 · 장부)를 박지 않는다 — graph.store · state 를 바꾼 설치에서 거짓 안내가 된다', () => {
+  for (const rel of INSTALLED) {
+    for (const p of ['.harness/graph/requests.jsonl', '.harness/state/decisions.md', '.harness/state/lessons.md']) assert.ok(!repoFile(rel).includes(p), `${rel} — ${p}`);
+  }
+});
+
+test('⛔ 깔리는 문서가 가리키는 「아래 …」 · 「N째 문」이 그 파일에 있다 — 덜어낸 절을 가리키는 문장이 남지 않게', () => {
+  for (const rel of INSTALLED) {
+    const s = repoFile(rel);
+    for (const m of s.matchAll(/아래 「([^」]+)」/g)) assert.ok(s.indexOf(m[1], m.index + m[0].length) > 0, `${rel} — ${m[0]}`);
+    for (const m of s.matchAll(/([둘셋넷])째 문/g)) assert.ok(s.includes(`**${m[1]}째 문`), `${rel} — ${m[0]} 정의 없음`);
+  }
 });
