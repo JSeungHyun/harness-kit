@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // UserPromptSubmit 훅 — 질문마다 graph-find 를 대신 돌려 과거 기록을 상한 걸린 양만 넣는다. 설계안.
 // ⭐ 탐색 1번 단계를 모델의 규율에 맡기지 않는 것이 목적이다. 실패는 조용히 통과 — 프롬프트를 막지 않는다.
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { load, scoreDetail, sup, tokenizeKo, tokenizeIds, ORIGIN } from './graph-find.mjs';
 
 const MAX = 2;   // 프롬프트마다 붙는 비용이므로 상위 2건만
@@ -41,47 +44,50 @@ function render(prompt) {
   const confident = top && (top.exact >= 1 || idHit || (top.s >= 5 && top.th >= TITLE_MIN));
   if (!confident) return fallbackIndex(recs, hits, toks);
 
-  // ⛔ 1단에도 탈출구를 둔다 — 「걸렸다」가 「답이다」는 아니다
   // 정본이 1위면 1장 — 절차 질의에서 정본 + 무관한 광역 카드로 7,128자가 나갔다. 바꾸려면 다시 잰다
   const take = /^정본:/.test(top.r.req) ? 1 : MAX;
-  const out = [`[그래프 자동조회] 유사 기록 ${hits.length}건 — 상위 ${Math.min(take, hits.length)}건만 표시.`,
-    `⚠️ 아래는 지난 작업의 단서다 — 어디를 볼지와 함정은 그대로 쓴다. 다만 사용자 말과 어긋나거나 단계·확인을 없애는 결론(「안 해도 된다」·「없다」·「거르지 않는다」)은 근거 위치를 한 번 열어 확인한다. 기록으로 답하면 답 끝에 기록 날짜와 「○○까지 볼까요?」를 붙인다.`,
-    `⛔ 값이 「제거됨」·「바뀜」으로 시작하면 그게 답이다. 코드에 안 보인다고 「모름」이라 하지 않는다.`,
-    `⭐ 다만 위 기록이 이 질문에 답하지 않으면 그렇다고 말하고 평소대로 코드를 탐색한다 — 걸린 것이 답이라는 뜻은 아니다.`];
-  // 2위 카드는 정본 · 사전만 전문 — 1위가 광역 사전이고 2위 정본이 실제 답인 경우가 1단의 12.9%(이슈 제목 실측)라 그 둘은 지키고, 작업 이력 · 조사는 제목 + 함정만
-  for (const [i, { r, s }] of hits.slice(0, take).entries()) {
-    const kind = kindOf(r);
-    out.push(`· [${kind} · ${s}점] ${r.date} ${r.req}`);
-    // 함정을 맨 앞에 — 카드 끝에 두면 묻혀서 모델이 추측으로 답한다
-    if (r.note) out.push(`    ⚠️ 함정: ${r.note}`);
-    if (i > 0 && !['절차', '사전'].includes(kind)) continue;
-    const { hit, rest } = splitTerms(r, ko, ids);
-    for (const [k, v] of hit) out.push(`    ${k} → ${clip(v)}`);
-    if (rest.length) out.push(`    … 이 질의와 안 걸린 항목 ${rest.length}개(키만): ${rest.map(([k]) => k).join(' · ')}`);
-    for (const f of (r.files || []).slice(0, 6)) out.push(`    ${f}`);
+  const shown = hits.slice(0, take);
+  const hubs = hubFiles(recs);
+  const out = [`[그래프 자동조회] 유사 기록 ${hits.length}건 — 상위 ${shown.length}건의 단서(제목 · 핵심 파일)다. 전문(용어 · 함정)은 \`${FIND} <키>\`로 조회해 읽는다 — 키 · 이름만 보이면 되묻지 말고 조회한다.`,
+    '기록으로 답하면 답 끝에 기록 날짜와 「○○까지 볼까요?」를 붙인다.'];
+  for (const { r, s } of shown) {
+    out.push(`· [${kindOf(r)} · ${s}점] ${r.date} ${r.req}`);
+    const { keep, gone } = cardFiles(r, hubs);
+    if (keep.length) out.push(`    ${keep.join(' · ')}`);
+    if (gone) out.push(`    (저장소에 없는 파일 ${gone}개 뺌)`);
+    out.push(`    전문: graph-find ${guideKey(r, ko, ids)}`);
   }
-  out.push(...openWork(recs, toks, hits.slice(0, take).map((h) => h.r)));
-  out.push(`더 볼 것: node .harness/tools/graph-find.mjs <어근>  (어근은 짧게, 여러 개)`);
+  out.push(...openWork(recs, toks, shown.map((h) => h.r)));
   return out.join('\n');
 }
 
-// 카드 용어는 채점 규칙 ③과 같다 — 한글 토큰은 키에만, 식별자는 값까지. 값까지 보면 2글자 어근이 광역 사전을 거의 다 펼쳤다(1단 바이트의 61%). 8줄 · 160자 — 바꾸려면 다시 잰다. ⛔ 기록 선택에 되먹이지 않는다
-const TERM_MAX = 8;
-const VALUE_MAX = 160;
-function splitTerms(rec, ko, ids) {
-  const pairs = Object.entries(Array.isArray(rec.terms) ? {} : rec.terms || {});
-  const norm = (s) => s.toLowerCase().replace(/\s+/g, '');
+// 카드는 길잡이 — 제목 · 핵심 파일 · 전문 명령뿐이다. 용어 · 함정 본문은 싣지 않는다(25차 — 주입이 질문의 74~76% · 용어 46% · 함정 30% 였다). 바꾸려면 다시 잰다
+const FIND = 'node .harness/tools/graph-find.mjs';
+const FILE_MAX = 3;
+const bare = (f) => String(f).replace(/:\d+(-\d+)?$/, '').replace(/\\/g, '/');
+// 허브 파일 — 살아 있는 기록의 10% 넘게(최소 5건 초과) 나오는 파일은 어느 주제에나 붙어 길잡이가 못 된다. 문턱은 흔한 낱말과 같은 값이다(근거: docs/proof.md 25차)
+function hubFiles(recs) {
+  const freq = new Map();
+  for (const r of recs) for (const f of new Set((r.files || []).map(bare))) freq.set(f, (freq.get(f) || 0) + 1);
+  const limit = Math.max(recs.length * COMMON_SHARE, COMMON_MIN);
+  return new Set([...freq].filter(([, n]) => n > limit).map(([f]) => f));
+}
+// 저장소 루트는 graph-find 와 같다 — 훅이 어느 작업 폴더에서 돌지 보장이 없다
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+function cardFiles(rec, hubs) {
+  const own = (rec.files || []).filter((f) => !hubs.has(bare(f)));
+  const live = own.filter((f) => existsSync(resolve(ROOT, bare(f))));
+  return { keep: live.slice(0, FILE_MAX), gone: own.length - live.length };
+}
+// 전문 조회 키 — 질문에 걸린 용어 키(정확일치 먼저), 없으면 질문 낱말 하나. 공백이 든 키는 따옴표로
+function guideKey(rec, ko, ids) {
+  const norm = (x) => x.toLowerCase().replace(/\s+/g, '');
   const koToks = [...ko].map(norm), idToks = ids.map((t) => t.toLowerCase());
-  const exact = [], partial = [];
-  for (const p of pairs) {
-    const [k, v] = p, key = norm(k), text = `${k} ${v}`.toLowerCase();
-    if (koToks.includes(key) || idToks.includes(k.toLowerCase())) exact.push(p);
-    else if (koToks.some((t) => key.includes(t)) || idToks.some((t) => text.includes(t))) partial.push(p);
-  }
-  // 키가 토큰과 정확히 같은 용어를 먼저 — 기록 순서로 뒤에 있어도 8줄 상한에 접히지 않는다. 하나도 안 걸리면 앞에서부터
-  const hits = [...exact, ...partial];
-  const hit = (hits.length ? hits : pairs).slice(0, TERM_MAX);
-  return { hit, rest: pairs.filter((p) => !hit.includes(p)) };
+  const keys = Array.isArray(rec.terms) ? rec.terms : Object.keys(rec.terms || {});
+  const exact = keys.find((k) => koToks.includes(norm(k)) || idToks.includes(k.toLowerCase()));
+  const partial = keys.find((k) => koToks.some((t) => norm(k).includes(t)));
+  const key = exact ?? partial ?? [...ko, ...ids][0] ?? rec.req;
+  return /\s/.test(key) ? `"${key}"` : key;
 }
 // 정확일치가 난 한글 낱말 중 살아 있는 기록의 10% 넘게(그리고 5건 넘게) 걸리는 것. 식별자는 세지 않는다 — 값까지 색인돼 흔해도 실체를 가리킨다
 function commonKo(recs, hits, ko) {
@@ -115,7 +121,7 @@ function kindOf(rec) {
   return '기타';
 }
 
-// 열린 작업(⏸)은 랭킹으로 닿지 않는다 — 점수가 아니라 상태로 붙인다. 표식은 note 맨 앞만, 문턱은 확신 판정과 같은 5
+// 열린 작업(⏸)은 랭킹으로 닿지 않는다 — 점수가 아니라 상태로 붙인다. 표식은 note 맨 앞만, 문턱은 확신 판정과 같은 5. 제목만 싣는다 — note 는 전문 조회로(25차)
 const OPEN_MIN = 5;
 // 질의와 가장 겹치는 3건만 — 원천 실입력 300 재생에서 ⏸ 부분 p90 5,902 → 1,319자 · 1단 1위 · 재개 질의 16/16 불변. 나머지는 건수와 --open 으로. 바꾸려면 다시 잰다
 const OPEN_SHOW = 3;
@@ -125,11 +131,7 @@ function openWork(recs, toks, shown = []) {
     .filter((x) => x.s >= OPEN_MIN).sort(order);
   if (!open.length) return [];
   const out = [`⏸ 열린 작업 ${open.length}건 — 이 주제에 **하다 만 기록**이 있다. 다시 조사하기 전에 이것부터 편다.`];
-  for (const { r } of open.slice(0, OPEN_SHOW)) {
-    out.push(`  ⏸ ${r.date} ${r.req}`);
-    // 앞머리만 — 「어디까지 했고 왜 멈췄나」가 note 앞에 온다
-    if (r.note) out.push(`     ⚠️ ${r.note.slice(0, 240)}${r.note.length > 240 ? ' …(전문: graph-find)' : ''}`);
-  }
+  for (const { r } of open.slice(0, OPEN_SHOW)) out.push(`  ⏸ ${r.date} ${r.req}`);
   if (open.length > OPEN_SHOW) out.push(`  … 나머지 ${open.length - OPEN_SHOW}건: node .harness/tools/graph-find.mjs --open`);
   return out;
 }

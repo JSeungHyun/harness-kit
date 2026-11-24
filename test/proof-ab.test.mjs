@@ -84,6 +84,23 @@ test('checkRun — 오염 종류마다 이름을 낸다 · 자기 세션 폴더�
   assert.deepEqual(run(false, { pattern: 'a' }, { init: { memory_paths: { auto: 'x' }, mcp_servers: [{ name: 'm' }] } }), ['메모리', 'MCP']);
 });
 
+test('⭐ checkRun — 팔 칸 hook 이 훅 이벤트 검사를, graph 가 그래프 도구 검사를 따로 정한다(그래프 도구만 있고 훅은 없는 팔)', () => {
+  const paths = { source: null, self: 'C:/T/ab/a', others: [], scratch: [] };
+  const run = (arm, hookEvent) => {
+    const raw = [line(INIT), ...(hookEvent ? [line({ type: 'system', subtype: 'hook_started', hook_event: 'UserPromptSubmit' })] : []),
+      line({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't', name: 'Bash', input: { command: 'node .harness/tools/graph-find.mjs 메일' } }] } }), line({ type: 'result', subtype: 'success', usage: {} })].join('\n');
+    return checkRun(parseRun(raw), raw, arm, paths);
+  };
+  // 도구는 있고 훅은 없다 — 훅 이벤트가 없어야 유효 · 있으면 오염
+  assert.deepEqual(run({ graph: true, hook: false }, false), []);
+  assert.deepEqual(run({ graph: true, hook: false }, true), ['훅 이벤트']);
+  // hook 을 안 적으면 graph 값을 따른다(옛 계획 그대로)
+  assert.deepEqual(run({ graph: true }, true), []);
+  assert.deepEqual(run({ graph: true }, false), ['훅 이벤트']);
+  // 그래프 도구 검사는 graph 로 — 훅만 켠 팔이 도구를 부르면 오염
+  assert.deepEqual(run({ graph: false, hook: true }, true), ['그래프 도구']);
+});
+
 test('사전 등록 → 실행 → 집계 — 짝 비율 · 판정이 나오고, 켠 쪽 규칙은 키트 graph.md 다', () => {
   // 켠 쪽: 도구 1 · 0.3 + 0.2초(result 둘) / 끈 쪽: 도구 2 · 1초
   const s = scene(['Q1', 'Q2'], () => Object.fromEntries(['Q1', 'Q2'].flatMap((q) => [[`${q}|on`, { ms: [300, 200] }], [`${q}|off`, { tools: [{ pattern: 'a' }, { pattern: 'b' }] }]])), { reps: 2 });

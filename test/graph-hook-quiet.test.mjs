@@ -50,15 +50,8 @@ test('제목에 닿은 낱말은 겹치는 토큰을 하나로 센다 — 「환
 
 test('⭐ 1단 머리말은 「단서」다 — 「실측 · 추측으로 대체하지 않는다」 단정을 쓰지 않는다', () => {
   const out = hook([{ req: '정본: 환불 절차', terms: { 환불: 'refund_flow' }, files: ['src/refund.mjs'] }], '환불 절차');
-  assert.match(out, /지난 작업의 단서다/);
-  assert.match(out, /근거 위치를 한 번 열어 확인한다/);
+  assert.match(out, /단서\(제목 · 핵심 파일\)다/);
   assert.doesNotMatch(out, /실측한 것이다|추측으로 대체하지 않는다/);
   assert.match(out, /기록으로 답하면 답 끝에 기록 날짜와 「○○까지 볼까요\?」/);
 });
 
-// 22차에 규칙 글(graph.md 1절)을 덜어냈다 — 이 예외 · 묻기는 훅 머리말이 혼자 말한다
-test('⭐ 훅 머리말이 말한다 — 단계를 없애는 결론은 근거 확인 · 답 끝에 「볼까요?」', () => {
-  const out = hook([{ req: '정본: 환불 절차', terms: { 환불: 'refund_flow' }, files: ['src/refund.mjs'] }], '환불 절차');
-  assert.match(out, /까지 볼까요\?/);
-  assert.match(out, /단계 ?· ?확인을 없애는 결론/);
-});

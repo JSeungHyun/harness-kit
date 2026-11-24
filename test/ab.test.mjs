@@ -96,6 +96,31 @@ test('기본값 — 새 칸을 안 쓴 계획은 금지 도구 · 권한 모드 
   assert.deepEqual(readdirSync(s.config), [], '세션 기록을 남기지 않는다');
 });
 
+const DB_DENY = ['mysql', 'mariadb', 'psql', 'sqlplus', 'sqlcmd', 'mongo', 'mongosh', 'redis-cli'].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`]);
+
+test('⛔ (25차) DB 접속 명령은 항상 막는다 — 기본 · 계획 deny · 빈 deny · 묶음 deny 어디서도 빠지지 않는다', () => {
+  const cases = [[{}, ['Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task']], [{ deny: ['WebFetch'] }, ['WebFetch']], [{ deny: [] }, []],
+    [{ sets: { R: { deny: ['Edit'] } } }, ['Edit']]];
+  for (const [extra, base] of cases) {
+    const s = scene([{ name: 'on', graph: true }, { name: 'off' }], [gold('Q1')], () => ({}), extra);
+    assert.equal(s.ab('prereg', s.plan).status, 0);
+    assert.equal(s.ab('run', s.plan, '--claude', FAKE).status, 0);
+    // settings 가 없는 팔의 인자 — --disallowedTools 뒤 끝까지가 금지 목록이다
+    const a = s.argv(s.log().find((r) => !s.argv(r.run).includes('--settings')).run);
+    assert.deepEqual(a.slice(a.indexOf('--disallowedTools') + 1), [...base, ...DB_DENY], JSON.stringify(extra));
+  }
+});
+
+test('⭐ (25차) 팔 칸 hook — 그래프 도구는 있고 훅은 없는 팔이 유효로 나온다', () => {
+  const s = scene([{ name: 'on', graph: true }, { name: 'tool', graph: true, hook: false }], [gold('Q1')], () => ({}));
+  // tool 팔은 훅 등록(settings) 없이 돈다 — 가짜 claude 는 settings 를 받은 팔에만 훅 이벤트를 낸다
+  writeFileSync(s.plan, JSON.stringify({ ...s.planObj, arms: s.planObj.arms.map((a) => (a.name === 'tool' ? { ...a, settings: undefined } : a)) }));
+  assert.equal(s.ab('prereg', s.plan).status, 0);
+  const run = s.ab('run', s.plan, '--claude', FAKE);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(s.log().map((r) => [r.arm, r.valid, r.bad]).sort(), [['on', true, []], ['tool', true, []]]);
+});
+
 test('사본을 바꾸는 과제 — 채점 → 초기화 → 대조 · 지표별 판정 · 계획의 금지 도구 · 권한 모드 · 세션 기록은 실행 뒤 지운다', () => {
   const judge = [{ set: 'C', pass: '덜어낸 판으로', fail: '되돌린다', metrics: { 거짓완료: { better: 'lower', slack: 0 }, 성공: { better: 'higher', slack: 1 } } },
     { set: 'C', pass: '범위 통과', fail: '범위 미달', metrics: { 요청밖: { better: 'lower', slack: 0 } } },
@@ -137,8 +162,8 @@ test('사본을 바꾸는 과제 — 채점 → 초기화 → 대조 · 지표�
 
   // 계획의 금지 도구 · 묶음의 권한 모드 · 세션 기록
   const c = s.argv(row('C1', 'on')[0].run).join(' '), r = s.argv(row('R1', 'on')[0].run).join(' ');
-  assert.ok(c.includes('--permission-mode acceptEdits --disallowedTools WebFetch WebSearch --settings'), c);
-  assert.ok(r.includes('--permission-mode default --disallowedTools WebFetch WebSearch --settings'), r);
+  assert.ok(c.includes(`--permission-mode acceptEdits --disallowedTools WebFetch WebSearch ${DB_DENY.join(' ')} --settings`), c);
+  assert.ok(r.includes(`--permission-mode default --disallowedTools WebFetch WebSearch ${DB_DENY.join(' ')} --settings`), r);
   assert.ok(!c.includes('--no-session-persistence'));
   assert.deepEqual(readdirSync(join(s.config, 'projects')), [], '그 실행의 세션 기록 파일 · 폴더를 지운다');
 

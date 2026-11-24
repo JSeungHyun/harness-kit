@@ -6,6 +6,7 @@
 //     [--reps N]  미리 적은 연장 규칙(「차 2~3 이면 연장」)일 때만 — 등록 반복보다 큰 N · 앞 회차는 그대로 두고 새 회차만 돈다
 //   node proof/ab.mjs agg <계획.json>                             집계 · 판정 — 숫자 · id 만
 //   node proof/ab.mjs recompute <표.md> [--plan <계획.json>]        질문별 표에서 짝 비율 · 판정을 다시 낸다
+// 팔 칸: graph(그래프 도구 사용 검사) · hook(프롬프트 훅 이벤트 검사 — 없으면 graph 값). DB 접속 명령은 계획 deny 와 무관하게 늘 막는다(25차).
 // 사전 등록 지문이 어긋나거나, 다시 돌려도 오염 · 무효가 남으면 exit 1.
 
 import { spawn, execFile, execFileSync } from 'node:child_process';
@@ -144,7 +145,8 @@ export function checkRun(parsed, raw, arm, paths) {
   if (refs.some((r) => !own || !r.startsWith(own))) bad.push('세션 기록');
   if (any((t) => paths.others.some((p) => mentions(t, p)))) bad.push('다른 팔');
   if (any((t) => paths.scratch.some((p) => mentions(t, p)))) bad.push('측정 자료');
-  if ((parsed.hookEvents || []).includes('UserPromptSubmit') !== !!arm.graph) bad.push('훅 이벤트');
+  // 훅 이벤트는 팔 칸 hook(없으면 graph)으로, 그래프 도구 사용은 graph 로 본다 — 도구는 있고 훅은 없는 팔이 유효하다
+  if ((parsed.hookEvents || []).includes('UserPromptSubmit') !== !!(arm.hook ?? arm.graph)) bad.push('훅 이벤트');
   if (parsed.init?.memory) bad.push('메모리');
   if (parsed.init?.mcp?.length) bad.push('MCP');
   return bad;
@@ -202,6 +204,8 @@ function restore(dir, b, full) {
 }
 
 const DENY = ['Edit', 'Write', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task'];
+// DB 접속 명령 — 계획 · 질문의 deny 가 덮어써도 항상 막는다(사본 설정이 원격 DB 를 가리킬 수 있다 · 25차). 규칙 모양은 키트 policy/settings.json 의 Bash 규칙과 같다
+const DB_DENY = ['mysql', 'mariadb', 'psql', 'sqlplus', 'sqlcmd', 'mongo', 'mongosh', 'redis-cli'].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`]);
 // 묶음별 값(sets.<묶음>) → 계획 값 → 기본값
 const opt = (plan, q, k, d) => plan.sets?.[q.set]?.[k] ?? plan[k] ?? d;
 
@@ -234,7 +238,7 @@ function loadPlan(file) {
     const copies = a.copies.map((c) => real(abs(c)));
     if (copies.some((c) => `${c}/`.startsWith(`${work}/`))) throw new Error('사본을 작업 폴더(work) 안에 두지 않는다 — 작업 폴더를 읽으면 오염이다');
     if (copies.some((c) => inClaudeTemp(c))) throw new Error('사본을 Claude 임시 폴더(<임시>/claude…) 밖에 둔다 — 그 안에서는 프로젝트 CLAUDE.md · 규칙이 안 실린다');
-    return { name: a.name, graph: !!a.graph, gate: a.gate ?? null, copies, settings: a.settings ? abs(a.settings) : null, prompt: [common, ...rules, task].filter(Boolean).join('\n\n') };
+    return { name: a.name, graph: !!a.graph, hook: a.hook ?? !!a.graph, gate: a.gate ?? null, copies, settings: a.settings ? abs(a.settings) : null, prompt: [common, ...rules, task].filter(Boolean).join('\n\n') };
   });
   if (arms.some((a) => a.copies.length !== arms[0].copies.length)) throw new Error('팔마다 사본 수가 같아야 한다');
   const parts = {
@@ -299,7 +303,7 @@ const dropped = (log, n) => [...pairs(log, n)].filter(([, v]) => !v.used && v.at
 function runOne(plan, claude, job, arm, slot, attempt) {
   const copy = arm.copies[slot];
   const q = plan.questions.find((x) => x.id === job.id);
-  const deny = opt(plan, q, 'deny', DENY);
+  const deny = [...new Set([...opt(plan, q, 'deny', DENY), ...DB_DENY])];
   // 세션 기록을 남기는 계획은 관문 훅이 그 기록을 읽게 하려는 것이다 — 실행 뒤 지운다
   const args = ['-p', q.q, '--append-system-prompt-file', join(plan.work, `prompt-${arm.name}.md`), '--model', plan.model,
     '--output-format', 'stream-json', '--verbose', '--include-hook-events', ...(plan.sessionPersistence ? [] : ['--no-session-persistence']), '--strict-mcp-config', '--max-turns', String(plan.maxTurns),
