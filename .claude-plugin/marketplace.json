@@ -12,7 +12,7 @@
     {
       "name": "ponytail",
       "version": "4.13.0",
-      "description": "과설계 리뷰 — final-gate 가 /ponytail-review 로만 부른다",
+      "description": "과설계 리뷰 — 사용자가 /ponytail-review 로 부른다",
       "source": { "source": "url", "url": "https://github.com/DietrichGebert/ponytail.git", "sha": "08e952d7a8057a57ce561ff1330d093fd92eec67" }
     }
   ]

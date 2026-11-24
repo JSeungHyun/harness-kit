@@ -5,11 +5,11 @@
 //   --own-rules: 프로젝트가 고친 줄을 .claude/rules/project-<이름>.md 로 옮기고 키트 판을 다시 깐다 — 키트 파일은 키트 판 그대로여야 이식 검사 ② ③ 이 맞다
 //   --migrate-graph: 옛 자기 그래프(graph.tools)를 키트 그래프 도구로 — 기록은 제자리(graph.store), 기록 files 의 옛 도구 경로만 한 번 바꾼다
 // ⛔ 설정은 쓰지 않는다 — 권한 설정은 사용자 확인 자리라 실행할 명령만 낸다.
-import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, rmSync, rmdirSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { loadConfig, cli, CONFIG } from '../lib/config.mjs';
-import { KIT, SHIPPED, COPIED, DOCS, AGENTS, graphOf } from '../lib/parts.mjs';
+import { KIT, SHIPPED, COPIED, DOCS, INSTRUCTIONS, graphOf } from '../lib/parts.mjs';
 import { load, sup } from './graph-find.mjs';
 import { testHints, testSources, RECIPES, recipeHints, recipeLine } from './detect.mjs';
 
@@ -40,10 +40,12 @@ export function shippedSame(sha) {
 export const list = (a) => `${a.slice(0, 4).map((p) => p.replace(/\\/g, '/')).join(', ')}${a.length > 4 ? ` 외 ${a.length - 4}` : ''}`;
 
 export const ownGraph = (raw) => graphOf(raw).tools !== '.harness/tools';
+// 옛 키트 판 문서의 <graph-rules> 자리 — 지금 문서는 쓰지 않아도 이력 비교에는 기본 값이 있어야 옛 설치가 「고쳤다」로 안 읽힌다
+const RULES_AT = '`.claude/rules/graph.md`';
 export function filler(raw) {
   const g = graphOf(raw);
   return (s) => nl(s).replaceAll('<decisions>', raw.state?.decisions ?? '<decisions>').replaceAll('<lessons>', raw.state?.lessons ?? '<lessons>')
-    .replaceAll('<graph-tools>', g.tools).replaceAll('<graph-rules>', g.rules);
+    .replaceAll('<graph-tools>', g.tools).replaceAll('<graph-rules>', RULES_AT);
 }
 
 // 키트가 git 저장소가 아니면(압축본) 이력이 없다 — 그러면 다른 규칙은 전부 「고쳤다」로 본다
@@ -56,30 +58,6 @@ function history(src) {
   const all = commits.flatMap((c) => { try { return [kitGit('show', `${c}:${src}`)]; } catch { return []; } });
   seen.set(src, all);
   return all;
-}
-
-// graph.rules 를 기본값으로 되돌린 설치 — 키트 문서가 <graph-rules> 자리만 다른 값인 키트 판이면 그 옛 값(22차).
-// 설정에서 지운 값은 설치본에만 남는다. 못 찾으면 그 줄이 「프로젝트가 고쳤다 +1 −1」로 읽히고 --own-rules 가 옛 자리를 프로젝트 규칙으로 옮긴다
-const SLOT = '\u0000graph-rules\u0000';
-export const withRules = (raw, rules) => ({ ...raw, graph: { ...raw.graph, rules } });
-export function rulesWas(dir, raw) {
-  const base = graphOf({}).rules;
-  if (graphOf(raw).rules !== base) return null;
-  const now = filler(raw);
-  const slot = filler(withRules(raw, SLOT));
-  for (const [src, dst] of DOCS) {
-    if (!existsSync(join(dir, dst))) continue;
-    const mine = nl(readFileSync(join(dir, dst), 'utf8'));
-    const tmpl = readFileSync(join(KIT, src), 'utf8');
-    if (mine === now(tmpl)) continue;
-    for (const v of [tmpl, ...history(src)]) {
-      const parts = slot(v).split(SLOT);
-      if (parts.length < 2 || !parts[1] || !mine.startsWith(parts[0])) continue;
-      const was = mine.slice(parts[0].length, mine.indexOf(parts[1], parts[0].length));
-      if (was && was !== base && !was.includes('\n') && parts.join(was) === mine) return was;
-    }
-  }
-  return null;
 }
 
 // 줄 단위 LCS — added 는 설치본 쪽 줄 번호(절 제목을 찾으려고), removed 는 빠진 키트 줄. 빈 줄은 세지 않는다
@@ -163,19 +141,6 @@ export function settingsShape(dir) {
   return { graphHook, only: !full };
 }
 
-// 키트 템플릿에서 지운 장부 줄 — 장부 본문은 프로젝트 것이라 그 줄과 같은 줄(앞뒤 공백 무시)만 본다. 갱신이 걷고 이식 검사 ① 이 남은 것을 본다
-export function ledgerLeft(dir, raw) {
-  const gone = new Set(Object.values(read(join(KIT, 'policy', 'removed.json')).lines).flat().map((l) => l.trim()));
-  const where = [];
-  const files = Object.values(raw.state ?? {}).filter((at) => existsSync(join(dir, at))).flatMap((at) => {
-    const lines = readFileSync(join(dir, at), 'utf8').split('\n');
-    const kept = [];
-    lines.forEach((l, i) => (gone.has(l.trim()) ? where.push(`${at}:${i + 1}`) : kept.push(l)));
-    return kept.length < lines.length ? [{ at, kept }] : [];
-  });
-  return { where, files };
-}
-
 // 빌드 · 테스트 단서가 있는데 코드를 덮는 검사가 없으면 그 단서 — 그때 verify 녹색은 코드 변경의 증거가 아니다. 「테스트 없음」 선언(tests: none)이면 그 자리는 /code-review 다
 export const coversGap = (dir, raw) => ((raw.checks ?? []).some((c) => c.covers?.length || c.tests === 'none') ? [] : testHints(dir));
 
@@ -199,13 +164,37 @@ export function grownTests(dir, raw) {
 
 // 키트 밖 그래프 도구(<폴더>/graph-*.mjs, .harness/tools 가 아닌 것)를 가리키는 줄 — 지시 파일 · 프로젝트 규칙 · 스킬 · harness.json.
 // 키트 문서는 ② ③ 이 보고, 설정의 훅은 정책 줄이 바꿔 끼운다. 남아 있으면 모델이 옛 도구를 불러 판이 다시 갈라진다
-export function graphRefs(dir) {
+// 프로젝트가 쓴 글(지시 파일 · 규칙 · 스킬 · 에이전트)의 줄마다 test 가 참이면 파일:행 — 키트가 까는 파일은 뺀다
+function projectLines(dir, test, extra = []) {
   const kitDocs = new Set(DOCS.map(([, dst]) => dst));
-  const listed = ['.claude/rules', '.claude/skills'].flatMap((d) => (existsSync(join(dir, d)) ? readdirSync(join(dir, d), { recursive: true }).map((f) => `${d}/${f.replace(/\\/g, '/')}`) : []));
-  return ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', '.harness/harness.json', ...listed]
+  const listed = ['.claude/rules', '.claude/skills', '.claude/agents'].flatMap((d) => (existsSync(join(dir, d)) ? readdirSync(join(dir, d), { recursive: true }).map((f) => `${d}/${f.replace(/\\/g, '/')}`) : []));
+  return [...INSTRUCTIONS, ...extra, ...listed]
     .filter((f) => !kitDocs.has(f) && existsSync(join(dir, f)) && statSync(join(dir, f)).isFile())
-    .flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n').flatMap((l, i) =>
-      ([...l.matchAll(/((?:[\w.${}-]+\/)+)graph-[\w-]+\.mjs/g)].some((m) => !m[1].endsWith('.harness/tools/')) ? [`${f}:${i + 1}`] : [])));
+    .flatMap((f) => readFileSync(join(dir, f), 'utf8').split('\n').flatMap((l, i) => (test(l) ? [`${f}:${i + 1}`] : [])));
+}
+export const graphRefs = (dir) => projectLines(dir, (l) => [...l.matchAll(/((?:[\w.${}-]+\/)+)graph-[\w-]+\.mjs/g)].some((m) => !m[1].endsWith('.harness/tools/')), ['.harness/harness.json']);
+// 그래프 쓰는 법은 키트 graph.md · 훅 하나 — 설치 글이 키트 그래프 도구 · 대체 · 하다 만 표식을 따로 말하면 설치마다 그래프가 갈라진다(11-24 원천 설치가 덜어낸 규칙을 제 파일에 남겼다)
+const GRAPH_USE = new RegExp(`(?<![\\w-])(?:${readdirSync(join(KIT, 'tools')).filter((f) => /^graph-[\w-]+\.mjs$/.test(f)).map((f) => f.slice(0, -4)).join('|')})(?![\\w-])|\\bsupersedes\\b|⏸`);
+export const graphRules = (dir) => projectLines(dir, (l) => GRAPH_USE.test(l));
+
+// 키트에서 지운 문서(policy/removed.json docs) — gone: 키트 이력의 한 판과 같아 걷을 것 · kept: 설치가 고쳐 남길 것. fill 은 그 설치의 자리 채움
+export function removedDocs(dir, fill) {
+  const out = { gone: [], kept: [] };
+  for (const [dst, src] of Object.entries(read(join(KIT, 'policy', 'removed.json')).docs ?? {})) {
+    if (!existsSync(join(dir, dst))) continue;
+    const now = nl(readFileSync(join(dir, dst), 'utf8'));
+    (history(src).some((v) => fill(v) === now) ? out.gone : out.kept).push(dst);
+  }
+  return out;
+}
+
+// 설치 글이 키트에서 지운 것의 이름(removed.json 의 files · docs 에서 뽑는다)을 말하는 줄 — 지운 것을 가리키는 안내는 거짓이다
+export function removedRefs(dir) {
+  const r = read(join(KIT, 'policy', 'removed.json'));
+  const names = new Set([...(r.files ?? []).map((f) => basename(f).replace(/\.\w+$/, '')),
+    ...Object.keys(r.docs ?? {}).map((d) => (basename(d) === 'SKILL.md' ? basename(dirname(d)) : basename(d, '.md')))]);
+  const re = new RegExp(`(?<![\\w-])(?:${[...names].join('|')})(?![\\w-])`);
+  return projectLines(dir, (l) => re.test(l), ['.harness/harness.json']);
 }
 
 // 살아있는 기록이 「지금」의 판으로 적은 키트 커밋 해시 중 지금 판이 아닌 것 — 판은 바뀌는 상태라 적은 다음 갱신부터 낡는다. 기록은 프로젝트 데이터라 알리기만 한다
@@ -263,9 +252,7 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   if (dirty.length && !process.env.HARNESS_KIT_DIRTY_OK) return { text: `⛔ 키트에 커밋 안 된 변경 — 커밋한 뒤 갱신한다(설치본에 미커밋 판이 커밋 이름으로 적힌다): ${list(dirty)}`, stop: true };
   loadConfig(dir);
   let raw = JSON.parse(readFileSync(join(dir, CONFIG), 'utf8'));
-  // 되돌린 설치는 설치본을 옛 값으로 판정하고 기본값으로 다시 깐다
-  const was = rulesWas(dir, raw);
-  const fill = filler(was ? withRules(raw, was) : raw);
+  const fill = filler(raw);
   const own = ownGraph(raw);
   const out = [];
   let stop = false;
@@ -286,12 +273,6 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
 
   for (const [src, dst, name] of DOCS) {
     const at = join(dir, dst);
-    if (!existsSync(at) && was && name === 'graph') {
-      writeFileSync(at, to(readFileSync(join(KIT, src), 'utf8')));
-      if (raw.mode !== 'share') hideLocal(dir, dst);
-      out.push(`✅ ${dst} — 깔았다(graph.rules 를 기본값으로 되돌린 설치)`);
-      continue;
-    }
     if (!existsSync(at)) { out.push(`· ${dst} — 없다(얹지 않은 모듈) · 그대로`); continue; }
     const now = nl(readFileSync(at, 'utf8'));
     const doc = docState(src, now, fill, to);
@@ -307,33 +288,18 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
         `   손대지 않았다. 고친 줄을 프로젝트 규칙 파일(.claude/rules/project-${name}.md)로 옮기고 키트 판을 다시 깐다: node ${KIT_PATH}/tools/upgrade.mjs ${dir.replace(/\\/g, '/')} --own-rules`);
     }
   }
-  // 서브에이전트 정의 — 없으면 깐다(옛 설치) · 키트 이력의 판이면 갱신 · 프로젝트가 고쳤으면 덮지 않는다(--own-rules 대상도 아니다 — 규칙 줄이 아니다)
-  for (const [src, dst] of AGENTS) {
-    const at = join(dir, dst);
-    const next = nl(readFileSync(join(KIT, src), 'utf8'));
-    if (!existsSync(at)) {
-      mkdirSync(dirname(at), { recursive: true });
-      writeFileSync(at, next);
-      if (raw.mode !== 'share') hideLocal(dir, dst);
-      out.push(`✅ ${dst} — 깔았다`);
-      continue;
-    }
-    const now = nl(readFileSync(at, 'utf8'));
-    const doc = docState(src, now, nl);
-    if (doc.state === 'same') out.push(`· ${dst} — 이미 지금 것`);
-    else if (doc.state === 'old') { writeFileSync(at, next); out.push(`✅ ${dst} — 갱신`); }
-    else {
-      stop = true;
-      out.push(`⛔ ${dst} — 프로젝트가 고쳤다 ${summary(doc.diff, now, 8)}`, '   손대지 않았다. 고친 내용은 다른 이름의 에이전트 파일로 옮기고 이 파일을 지운 뒤 갱신을 다시 돌린다 — 키트 파일은 키트 판 그대로여야 이식 검사 ③ 이 맞다');
-    }
-  }
-  // 옛 규칙 자리는 프로젝트 데이터라 알리기만 한다 — 두 벌이 남으면 모델이 둘 다 읽는다
-  if (was) out.push(`⚠️ 기록 규칙 — graph.rules 가 기본값으로 돌아왔다(옛 자리: ${was}) · 그 파일 · 스킬은 건드리지 않았다. 프로젝트가 한다: 키트 graph.md 에 없는 고유 줄만 .claude/rules/project-*.md 로 옮기고, 옛 자리의 기록 규칙과 그것을 가리키는 줄을 지운다`);
-
   // 키트에서 지운 것 — 복사는 덮어쓰기만 해서 설치본에 남고, 남은 도구를 가리키는 규칙 · allow 가 거짓이 된다
   const removed = read(join(KIT, 'policy', 'removed.json'));
   const dropped = removed.files.filter((f) => existsSync(join(dir, f)));
   for (const f of dropped) rmSync(join(dir, f));
+  // 키트에서 지운 문서 — 키트 이력의 한 판과 같을 때만 걷는다. 설치가 고친 것은 남기고 알린다
+  const docs = removedDocs(dir, fill);
+  for (const f of docs.gone) {
+    rmSync(join(dir, f));
+    dropped.push(f);
+    if (!readdirSync(dirname(join(dir, f))).length) rmdirSync(dirname(join(dir, f)));
+  }
+  for (const f of docs.kept) out.push(`⚠️ ${f} — 키트에서 지운 문서인데 설치가 고쳤다 · 남겼다. 프로젝트가 한다: 필요한 내용만 .claude/rules/project-*.md 로 옮기고 이 파일을 지운다 — 남아 있는 동안 이식 검사 ⑤ ⛔`);
   for (const [src, key] of Object.entries(removed.templates)) {
     const at = raw.state?.[key];
     if (!at || !existsSync(join(dir, at))) continue;
@@ -342,9 +308,6 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
     else out.push(`⚠️ ${at} — 키트에서 지운 ${src} 의 설치본인데 내용을 썼다 · 남겼다. harness.json 의 state.${key} 는 이제 아무 도구도 읽지 않는다`);
   }
   if (dropped.length) out.push(`🧹 걷음(키트에서 지운 것): ${dropped.join(', ')}`);
-  const ledger = ledgerLeft(dir, raw);
-  for (const f of ledger.files) writeFileSync(join(dir, f.at), f.kept.join('\n'));
-  if (ledger.where.length) out.push(`🧹 걷음(키트에서 지운 장부 줄): ${ledger.where.join(', ')}`);
   // 지운 경로를 살아있는 기록이 가리키면 --check 빨강 → verify 빨강 → 모든 코드 턴이 관문에 막힌다 — 같은 턴에 고치게 목록을 낸다
   const gonePaths = new Set([...removed.files, ...dropped]);
   const recs = load(join(dir, graphOf(raw).store));
@@ -352,6 +315,8 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   const pointing = recs.filter((r) => !dead.has(r.req))
     .flatMap((r) => (r.files ?? []).filter((f) => gonePaths.has(f.replace(/\\/g, '/').replace(/^\.\//, ''))).map((f) => `   ${f} ← ${r.req.slice(0, 50)}`));
   if (pointing.length) out.push('⚠️ 그래프 기록이 지운 경로를 가리킨다 — 같은 턴에 그 경로를 뺀 기록으로 supersedes 한다(그대로면 graph-find --check 빨강):', ...pointing);
+  const gonePointers = removedRefs(dir);
+  if (gonePointers.length) out.push(`⚠️ 키트에서 지운 것을 가리키는 곳 — 그 줄을 지운다(남아 있는 동안 이식 검사 ⑤ ⛔): ${list(gonePointers)}`);
   const stale = staleKit(dir, raw, commit);
   if (stale.length) out.push(`⚠️ 그래프 기록이 옛 키트 판을 적었다(지금 ${commit.slice(0, 7)}) — 「지금」으로 읽히면 판 대신 보는 명령(cat .harness/kit-commit)을 적은 기록으로 supersedes 한다 · 그때 일을 적은 이력이면 둔다:`, ...stale);
 

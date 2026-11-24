@@ -17,8 +17,6 @@ const KIT = fileURLToPath(new URL('..', import.meta.url));
 const LONG_TMP = realpathSync.native(tmpdir());
 const SHORT_TMP = tmpdir() !== LONG_TMP ? tmpdir() : null;
 const WITH_CLAUDE = process.argv.includes('--claude');
-const STATE = { decisions: 'docs/harness/decisions.md', lessons: 'docs/harness/lessons.md' };
-const LOCAL_STATE = { decisions: '.harness/state/decisions.md', lessons: '.harness/state/lessons.md' };
 const BUILD = [{ id: '빌드', cmd: 'node -e "0"', kind: 'exit-code' }];
 const rows = [];
 const row = (exp, condition, observed, expected) => rows.push({ exp, condition, observed, expected });
@@ -52,23 +50,19 @@ function plugins(dir) {
   return JSON.parse(out.slice(out.indexOf('['), out.lastIndexOf(']') + 1));
 }
 
-// SETUP ②~⑥ 과 같은 배치. rulesAt 으로 규칙 위치를 바꿔 지시 파일 방식과 견주고, state 로 장부 위치(공유 docs/harness · 로컬 .harness/state)를 고른다
-function install(dir, checks, rulesAt = '.claude/rules', state = STATE) {
+// SETUP ②~⑥ 과 같은 배치. rulesAt 으로 규칙 위치를 바꿔 지시 파일 방식과 견준다
+function install(dir, checks, rulesAt = '.claude/rules') {
   if (!existsSync(join(dir, '.git'))) sh('git init -q', dir);
   mkdirSync(join(dir, '.harness', 'graph'), { recursive: true });
   for (const d of ['lib', 'tools', 'policy']) cpSync(join(KIT, d), join(dir, '.harness', d), { recursive: true });
-  cpSync(join(KIT, 'templates', 'skills', 'final-gate'), join(dir, '.claude', 'skills', 'final-gate'), { recursive: true });
-  for (const f of ['decisions', 'lessons']) put(dir, state[f], readFileSync(join(KIT, 'templates', 'state', `${f}.md`), 'utf8'));
-  const harness = readFileSync(join(KIT, 'templates', 'rules', 'harness.md'), 'utf8')
-    .replaceAll('<decisions>', state.decisions)
-    .replaceAll('<lessons>', state.lessons);
+  const harness = readFileSync(join(KIT, 'templates', 'rules', 'harness.md'), 'utf8');
   const graph = readFileSync(join(KIT, 'templates', 'rules', 'graph.md'), 'utf8');
   if (rulesAt === 'AGENTS.md') put(dir, 'AGENTS.md', `# 에이전트 지시\n\n${harness}\n${graph}`);
   else {
     put(dir, '.claude/rules/harness.md', harness);
     put(dir, '.claude/rules/graph.md', graph);
   }
-  put(dir, '.harness/harness.json', { state, checks });
+  put(dir, '.harness/harness.json', { checks });
   return dir;
 }
 
@@ -165,19 +159,6 @@ function p7() {
     const v = sh(tool('verify'), dir);
     row('P7 output-match', `검증 쿼리가 rows=${rows0} 을 낸다 (기대 ^rows=0$)`, `명령 exit ${plain.code} → verify exit ${v.code} · ${why(v.out)}`, plain.code === 0 && v.code === (ok ? 0 : 1));
   }
-}
-
-// P5 — evidence 도구를 설치된 배치에서 CLI 로 돌린다
-function p5() {
-  const dir = install(scratch('state'), BUILD);
-  const decisions = readFileSync(join(dir, STATE.decisions), 'utf8')
-    .replace('# 1. 답변이 필요합니다', '# 1. 답변이 필요합니다\n\n## Q1 · 결제 실패 시 재시도를 3회로 가정했다\n');
-  put(dir, STATE.decisions, decisions);
-  const dc = sh(tool('decision-check'), dir);
-  row('P5 가정', '열린 질문 1건', `${first(dc.out, /열린 결정[^\n]*/)} · exit ${dc.code}`, dc.code === 0 && dc.out.includes('Q1 결제 실패'));
-
-  const diary = sh(tool('lesson-append'), dir, JSON.stringify({ symptom: '배포가 실패했다', cause: '', category: '검증 부족' }));
-  row('P5 교훈', '근본 원인 없이 적기', `exit ${diary.code} · ${line1(diary.out)}`, diary.code === 1);
 }
 
 // P8 — 그래프: 설치된 배치(.harness/tools · .harness/graph)에서 기록 → 조회 → 훅
@@ -289,7 +270,7 @@ function p9() {
       const work = () => ['src/a.mjs', 'src/b.mjs'].map((f) => readFileSync(join(wip, f), 'utf8')).join('\0');
       const before = porcelain();
       const mine = work();
-      install(wip, BUILD, '.claude/rules', LOCAL_STATE);
+      install(wip, BUILD);
       sh(`${tool('install-mode')} local`, wip, '', wenv);
       sh(`${tool('policy-apply')} --local`, wip, '', wenv);
       const after = porcelain();
@@ -363,7 +344,6 @@ p1();
 p1b();
 p6();
 p7();
-p5();
 p8();
 p9();
 p10();

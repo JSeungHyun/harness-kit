@@ -10,7 +10,7 @@ import { INSTRUCTIONS } from '../lib/parts.mjs';
 const SOURCE = /\.(c?[jt]sx?|m[jt]s|vue|svelte|java|kts?|scala|groovy|py|rb|go|rs|[ch]|cc|cpp|hpp|cs|php|swift|dart|sql|jsp|sh)$/i;
 const OTHER_RULES = ['.cursor/rules', '.cursorrules', '.github/copilot-instructions.md'];
 export const INSTALL_PROBES = ['.claude/rules/harness.md', '.harness/harness.json', 'AGENTS.md', 'CLAUDE.md'];
-const INSTALLED = ['.harness', '.claude/rules/harness.md', '.claude/skills/final-gate'];
+const INSTALLED = ['.harness', '.claude/rules/harness.md'];
 
 // quotepath=false — 한글 경로가 "\355…" 8진수 따옴표로 나오면 SOURCE 의 $ 앵커와 겹침 판정이 빗나간다. 모든 호출 공통
 function git(dir, ...args) {
@@ -77,7 +77,7 @@ export function suggest(f) {
     const hit = dirtyPaths(f.dirty).filter(rewritten);
     if (hit.length) warn.push(`설치가 고치고 git 에서 숨기는 경로에 미커밋 변경: ${hit.join(', ')} — 내용을 먼저 확인한다`);
   }
-  if (f.installed) stop.push('이미 설치됨 (.harness/ · rules/harness.md · skills/final-gate 중 하나가 있다) — 키트를 새 버전으로 올리는 것이면 SETUP 「갱신」(node <kit>/tools/upgrade.mjs <대상>), 아니면 사용자에게 묻는다');
+  if (f.installed) stop.push('이미 설치됨 (.harness/ · rules/harness.md 중 하나가 있다) — 키트를 새 버전으로 올리는 것이면 SETUP 「갱신」(node <kit>/tools/upgrade.mjs <대상>), 아니면 사용자에게 묻는다');
   if (f.nodeMajor < 22) stop.push(`Node ${f.nodeMajor} — 22 이상이 필요하다`);
   return {
     profile: isNew ? 'new' : 'existing',

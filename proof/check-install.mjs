@@ -26,21 +26,18 @@ export function checkInstall(dir, profile, mode) {
   const local = mode === 'local';
   const settingsRel = local ? '.claude/settings.local.json' : '.claude/settings.json';
   const settings = jsonOf(dir, settingsRel) ?? {};
-  const ledger = local ? '.harness/state' : 'docs/harness';
   const hadAgents = sh('git cat-file -e HEAD:AGENTS.md', dir).code === 0;
 
   // 키트와 같은가는 키트 도구가 판정한다 — 여기는 합성 대상에 지시한 값과 SETUP 이 만든 것만
   for (const r of sameAsKit(dir)) row('이식', `${r.n} ${r.what}`, r.observed, r.ok);
   row('공통', '프로필 · 모드가 지시대로', `profile ${cfg.profile} · mode ${cfg.mode}`, cfg.profile === profile && cfg.mode === mode);
-  row('공통', `장부 위치 (${ledger})`, `decisions ${cfg.state?.decisions} · lessons ${cfg.state?.lessons}`,
-    cfg.state?.decisions === `${ledger}/decisions.md` && cfg.state?.lessons === `${ledger}/lessons.md` && has(dir, `${ledger}/decisions.md`) && has(dir, `${ledger}/lessons.md`));
   const records = text(dir, '.harness/graph/requests.jsonl').split(/\r?\n/).filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
   const hook = settings.hooks?.UserPromptSubmit ?? jsonOf(dir, '.claude/settings.json')?.hooks?.UserPromptSubmit ?? jsonOf(dir, '.claude/settings.local.json')?.hooks?.UserPromptSubmit;
   row('공통', '그래프 훅 없음 (20건 미만)', `기록 ${records.length} · 훅 ${hook ? '있음' : '없음'}`, !hook && records.length < 20);
 
   // 모드 — git 이 무엇을 보나 · 지시 파일
   if (local) {
-    const probes = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/final-gate/SKILL.md', '.claude/settings.local.json', 'CLAUDE.local.md'];
+    const probes = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/settings.local.json', 'CLAUDE.local.md'];
     const seen = probes.filter((p) => !ignored(dir, p));
     row('로컬', '설치 경로가 무시됨 · settings.json 을 만들지 않음', seen.length ? `보임: ${seen.join(', ')}` : `전부 무시됨 · settings.json ${has(dir, '.claude/settings.json') ? '있음' : '없음'}`,
       !seen.length && !has(dir, '.claude/settings.json'));
@@ -49,7 +46,7 @@ export function checkInstall(dir, profile, mode) {
     row('로컬', `CLAUDE.local.md — ${want} · CLAUDE.md 를 만들지 않음`, `CLAUDE.local.md ${has(dir, 'CLAUDE.local.md') ? (imports(text(dir, 'CLAUDE.local.md')) ? '@AGENTS.md' : '있음') : '없음'}${PLACEHOLDER.test(text(dir, 'CLAUDE.local.md')) ? ' (자리표시 남음)' : ''} · CLAUDE.md ${has(dir, 'CLAUDE.md') ? '있음' : '없음'}`,
       ok && !has(dir, 'CLAUDE.md'));
   } else {
-    const probes = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/final-gate/SKILL.md', '.claude/settings.json', 'AGENTS.md', 'CLAUDE.md', 'docs/harness/decisions.md'];
+    const probes = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/settings.json', 'AGENTS.md', 'CLAUDE.md'];
     const hidden = probes.filter((p) => ignored(dir, p));
     row('공유', '설치 경로가 추적 가능 · settings.local.json 은 무시', hidden.length ? `무시됨: ${hidden.join(', ')}` : '전부 추적 가능',
       !hidden.length && ignored(dir, '.claude/settings.local.json'));
@@ -64,11 +61,9 @@ export function checkInstall(dir, profile, mode) {
   }
 
   // 프로필 — 소급 · 기준선 · verify
-  const lessonRows = text(dir, cfg.state?.lessons ?? `${ledger}/lessons.md`).split(/\r?\n/).filter((l) => /^\|\s*L\d+\s*\|/.test(l));
   const v = sh('node .harness/tools/verify.mjs', dir);
   const why = (v.out.match(/(?<=— ).*/) ?? [''])[0].trim();
   if (profile === 'new') {
-    row('신규', 'lessons 소급 없음', `행 ${lessonRows.length}`, lessonRows.length === 0);
     const seeds = records.filter((r) => /설계 용어/.test(r.note ?? ''));
     const keys = seeds.flatMap((r) => Object.keys(r.terms ?? {})).map((k) => k.replace(/\s+/g, ''));
     row('신규', '그래프 시드 — 스펙 용어 3 · 「설계 용어」 표기', `시드 ${seeds.length} · 용어 ${keys.join(', ') || '없음'}`,
@@ -80,8 +75,6 @@ export function checkInstall(dir, profile, mode) {
     const base = has(dir, '.harness/baseline') ? readdirSync(join(dir, '.harness', 'baseline')).flatMap((f) => text(dir, `.harness/baseline/${f}`).split(/\r?\n/)).filter((l) => l.trim() && !l.startsWith('#')) : [];
     row('기존', '기준선에 원래 실패 1', `${base.length}건 ${base.join(' · ')}`, base.length === 1 && /옛 반올림 규칙/.test(base[0]));
     row('기존', 'verify exit 0', `exit ${v.code} · ${why}`, v.code === 0 && /기준선 실패 1/.test(why));
-    const rooted = lessonRows.filter((l) => (l.split('|')[4] ?? '').trim().length > 5);
-    row('기존', 'lessons 소급 ≥ 2 (근본 원인 있음)', `행 ${lessonRows.length} · 근본 원인 ${rooted.length}`, rooted.length >= 2);
     // 기록 단위는 「같은 질문에서 함께 필요한가」(design §6) — 건수가 아니라 인수인계 용어 5개를 주제 기록들이 덮는지 본다
     const HANDOVER = ['주문서', '출고대기', '재고실사', '적립금소멸', '반품회수'];
     const keys = new Set(records.flatMap((r) => (Array.isArray(r.terms) ? [] : Object.keys(r.terms ?? {}))).map((k) => k.replace(/\s+/g, '')));

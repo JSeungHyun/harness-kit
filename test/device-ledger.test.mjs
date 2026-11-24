@@ -1,10 +1,10 @@
 // 장치 장부(docs/devices.md) — 키트가 설치에 얹는 장치마다 근거 · 측정일 · 걷기 조건이 한 행. 장치를 더하거나 지우면 장부도 같이 바뀌어야 한다
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { repoFile } from './scene.mjs';
 
-const ls = (dir) => readdirSync(new URL(`../${dir}`, import.meta.url)).map((f) => `${dir}/${f}`);
+const ls = (dir) => (existsSync(new URL(`../${dir}`, import.meta.url)) ? readdirSync(new URL(`../${dir}`, import.meta.url)) : []).map((f) => `${dir}/${f}`);
 
 // 장치 하나 = 키 묶음. 훅은 정책 파일과 그것이 띄우는 도구가 한 장치다
 function devices() {

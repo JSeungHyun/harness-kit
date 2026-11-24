@@ -1,5 +1,5 @@
 {
-  "_note": "키트에서 지운 것 — 복사는 덮어쓰기만 해서 설치본에 남는다. upgrade 가 files 와 손대지 않은 templates 를 걷고 장부에서 lines(템플릿에서 지운 줄과 같은 줄)를 걷고, policy-apply 가 allow 줄을 걷는다. 지울 때 여기에 더한다 — test/upgrade.test.mjs 가 키트에 남은 것이 없는지 본다. 설계안.",
+  "_note": "키트에서 지운 것 — 복사는 덮어쓰기만 해서 설치본에 남는다. upgrade 가 files · 손대지 않은 docs · templates 를 걷고, policy-apply 가 allow 줄을 걷는다. docs 는 {설치 경로: 키트 템플릿 경로} — 키트 이력의 한 판과 같을 때만 지운다. 지울 때 여기에 더한다 — test/upgrade.test.mjs 가 키트에 남은 것이 없는지 본다. 설계안.",
   "files": [
     ".harness/tools/state-check.mjs",
     ".harness/tools/lesson-promote.mjs",
@@ -9,21 +9,23 @@
     ".harness/tools/graph-read-hook.mjs",
     ".harness/policy/graph-read-hook.json",
     ".harness/tools/gate-hook.mjs",
-    ".harness/policy/gate-hook.json"
+    ".harness/policy/gate-hook.json",
+    ".harness/tools/decision-check.mjs",
+    ".harness/tools/lesson-append.mjs"
   ],
   "templates": {
-    "templates/state/current.md": "current"
-  },
-  "lines": {
-    "templates/state/lessons.md": [
-      "| 승격 후보 | `node .harness/tools/lesson-promote.mjs` |"
-    ],
-    "templates/state/decisions.md": [
-      "항목을 더하거나 옮길 때마다 갱신일을 바꾼다."
-    ]
+    "templates/state/current.md": "current",
+    "templates/state/decisions.md": "decisions",
+    "templates/state/lessons.md": "lessons"
   },
   "allow": [
     "Bash(node .harness/tools/state-check.mjs)",
-    "Bash(node .harness/tools/lesson-promote.mjs)"
-  ]
+    "Bash(node .harness/tools/lesson-promote.mjs)",
+    "Bash(node .harness/tools/decision-check.mjs)"
+  ],
+  "docs": {
+    ".claude/skills/final-gate/SKILL.md": "templates/skills/final-gate/SKILL.md",
+    ".claude/agents/kit-implementer.md": "templates/agents/kit-implementer.md",
+    ".claude/agents/kit-verifier.md": "templates/agents/kit-verifier.md"
+  }
 }

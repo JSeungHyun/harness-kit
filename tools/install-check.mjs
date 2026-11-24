@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 이식 동일성 — 설치본이 키트와 같은지 ①~⑨ 체크리스트로 판정한다. 설계안.
 //   node <kit>/tools/install-check.mjs <대상> [--json]
-//   node <kit>/tools/install-check.mjs --all <폴더>   # 그 아래 설치마다 ⑨ 판 · ① 동일만 — 키트를 고친 뒤 이 PC 설치가 모두 같은 판인가
+//   node <kit>/tools/install-check.mjs --all <폴더>   # 그 아래 설치마다 ⑨ 판 · ① 동일 · 설치 글의 그래프 쓰는 법(⑤ 일부) — 키트를 고친 뒤 이 PC 설치가 모두 같은 판인가
 // 키트 소유 · 프로젝트 설정 · 프로젝트 데이터의 자리는 lib/parts.mjs 한 곳 — 설정 · 데이터는 판정 줄 아래 「프로젝트 맞춤」에 보이고 판정하지 않는다.
 // ⛔ 하나라도 ⛔ 면 exit 1 — 「이식 성공」은 이 도구의 판정 줄로만 쓴다(설치 세션의 글이 아니라).
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -9,8 +9,8 @@ import { spawnSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
-import { KIT, DOCS, AGENTS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
-import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, ledgerLeft, graphRefs, rulesWas, withRules } from './upgrade.mjs';
+import { KIT, DOCS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
+import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, graphRefs, graphRules, removedDocs, removedRefs } from './upgrade.mjs';
 import { applyPolicy, dropGone, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
 import { isUnion } from './install-mode.mjs';
@@ -26,16 +26,16 @@ const node = (cwd, script, args = []) => {
 };
 
 // ① 키트 도구 · lib · 정책 — 갱신이 복사하는 것 그대로(그래프 도구 포함 — 예외 없음) · 프로젝트가 더한 도구는 보지 않는다
-function sameFiles(dir, raw) {
+function sameFiles(dir, fill) {
   const files = kitFiles();
   const at = (f) => join(dir, '.harness', f);
   const missing = files.filter((f) => !existsSync(at(f)));
   const changed = files.filter((f) => existsSync(at(f)) && nl(readFileSync(at(f), 'utf8')) !== nl(readFileSync(join(KIT, f), 'utf8')));
   const left = JSON.parse(readFileSync(join(KIT, 'policy', 'removed.json'), 'utf8')).files.filter((f) => existsSync(join(dir, f)));
-  const { where: lines } = ledgerLeft(dir, raw);
+  left.push(...removedDocs(dir, fill).gone);
   return {
-    observed: [missing.length && `없음 ${list(missing)}`, changed.length && `다름 ${list(changed)}`, left.length && `지운 것 남음 ${list(left)}`, lines.length && `지운 장부 줄 남음 ${list(lines)} — upgrade 가 걷는다`].filter(Boolean).join(' · ') || `${files.length}개 같음`,
-    ok: !missing.length && !changed.length && !left.length && !lines.length,
+    observed: [missing.length && `없음 ${list(missing)}`, changed.length && `다름 ${list(changed)}`, left.length && `지운 것 남음 ${list(left)}`].filter(Boolean).join(' · ') || `${files.length}개 같음`,
+    ok: !missing.length && !changed.length && !left.length,
   };
 }
 
@@ -62,16 +62,17 @@ export function checkAll(root, config = join(KIT, CONFIG)) {
   const names = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
     // 키트 저장소(이 레포 · 다른 클론)는 자기 verify 용 harness.json 만 있다 — 설치가 아니다
     .filter((n) => existsSync(join(root, n, CONFIG)) && !existsSync(join(root, n, 'templates', 'rules', 'harness.md')));
-  const all = names.filter((n) => !skip.includes(n)).map((n) => ({ name: n, ver: sameCommit(join(root, n)), files: sameFiles(join(root, n), readJson(join(root, n, CONFIG))) }));
+  const all = names.filter((n) => !skip.includes(n)).map((n) => ({ name: n, ver: sameCommit(join(root, n)), files: sameFiles(join(root, n), filler(readJson(join(root, n, CONFIG)))), rules: graphRules(join(root, n)), gone: removedRefs(join(root, n)) }));
   const cell = (s) => s.replace(/\|/g, '\\|');
-  const bad = all.filter((a) => !a.ver.ok || !a.files.ok).map((a) => a.name);
+  const same = (a) => a.ver.ok && a.files.ok && !a.rules.length && !a.gone.length;
+  const bad = all.filter((a) => !same(a)).map((a) => a.name);
   const gone = skip.filter((n) => !names.includes(n));
   const dirty = dirtyKit();
   return {
     ok: all.length > 0 && !bad.length && !dirty,
-    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 맞나 |', '|---|---|---|---|',
-      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | — |`),
-      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.ver.ok && a.files.ok ? '✅' : '⛔'} |`),
+    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 맞나 |', '|---|---|---|---|---|---|',
+      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | | | — |`),
+      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.rules.length ? `설치 글에 따로 ${list(a.rules)}` : '키트 graph.md 하나'} | ${a.gone.length ? `설치 글이 지운 것을 가리킴 ${list(a.gone)}` : '없음'} | ${same(a) ? '✅' : '⛔'} |`),
       ...(gone.length ? ['', `⚠️ installs.skip 에 있는데 이 폴더에 설치가 없다: ${gone.join(' · ')} — 목록이 낡았다`] : []),
       ...(dirty ? [] : ['', !all.length ? '⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
         : `✅ 설치 ${all.length}곳 모두 키트 판 (${kitCommit()?.slice(0, 7)})`])].join('\n'),
@@ -87,13 +88,11 @@ export function checkInstall(dir, { plugins } = {}) {
   const own = ownGraph(raw);
   const graph = graphOf(raw);
 
-  const same = sameFiles(dir, raw);
-  row('①', '키트 도구 · lib · 정책(그래프 도구 포함)이 키트 판과 같다 · 키트에서 지운 것 0 (장부의 지운 템플릿 줄 포함)', same.observed, same.ok);
+  const fill = filler(raw);
+  const same = sameFiles(dir, fill);
+  row('①', '키트 도구 · lib · 정책(그래프 도구 포함)이 키트 판과 같다 · 키트에서 지운 것 0', same.observed, same.ok);
 
   // ② ③ 키트 소유 문서 — 장부 경로 · 그래프 자리를 채운 키트 판과 같아야 한다. 프로젝트 규칙은 .claude/rules/ 의 별도 파일에
-  const fill = filler(raw);
-  // graph.rules 를 기본값으로 되돌리고 아직 갱신하지 않은 설치 — 옛 자리 채움은 프로젝트가 고친 줄이 아니다
-  const was = rulesWas(dir, raw);
   const docs = (n, what, picked) => {
     const notes = picked.map(([src, dst]) => {
       const name = basename(dst);
@@ -102,17 +101,15 @@ export function checkInstall(dir, { plugins } = {}) {
       const d = docState(src, now, fill);
       if (d.state === 'same') return [true, `${name} 같음`];
       if (d.state === 'old') return [false, `${name} 옛 키트 판 — upgrade 로 갱신한다`];
-      if (was && docState(src, now, filler(withRules(raw, was))).state !== 'mine') return [false, `${name} 옛 graph.rules 자리 채움(${was}) — upgrade 로 갱신한다`];
-      // 에이전트 정의는 규칙 줄이 아니라 --own-rules 대상이 아니다 — upgrade 가 낸 안내와 같은 처방
-      const fix = AGENTS.some(([, to]) => to === dst) ? '고친 내용은 다른 이름의 에이전트 파일로 옮기고 이 파일을 지운 뒤 upgrade 를 다시 돌린다' : 'upgrade --own-rules 로 그 줄을 프로젝트 규칙 파일로 옮긴다';
-      return [false, `${name} 프로젝트가 고쳤다 ${summary(d.diff, now)} — ${fix}`];
+      return [false, `${name} 프로젝트가 고쳤다 ${summary(d.diff, now)} — upgrade --own-rules 로 그 줄을 프로젝트 규칙 파일로 옮긴다`];
     });
     row(n, what, notes.map(([, s]) => s).join(' · '), notes.every(([ok]) => ok));
   };
-  // 기록 규칙 자리를 지시 파일 · 스킬로 정한 설치(graph.rules)는 graph.md 를 얹지 않는다
-  const rulesElsewhere = graph.rules !== graphOf({}).rules;
-  docs('②', `규칙 ${rulesElsewhere ? 'harness.md' : 'harness.md · graph.md'} 가 키트 판(자리 채움)과 같다`, DOCS.filter(([src]) => src.startsWith('templates/rules/') && !(rulesElsewhere && src.endsWith('graph.md'))));
-  docs('③', '스킬 final-gate · 에이전트 정의 kit-implementer · kit-verifier 가 키트 판(자리 채움)과 같다', [...DOCS.filter(([src]) => src.includes('/skills/')), ...AGENTS]);
+  docs('②', '규칙 harness.md · graph.md 가 키트 판(자리 채움)과 같다', DOCS.filter(([src]) => src.startsWith('templates/rules/')));
+  // ③ 키트에서 지운 문서(스킬 · 에이전트 정의) — 손대지 않은 판은 갱신이 걷고(① 도 본다), 고친 판은 설치가 정리한다
+  const rd = removedDocs(dir, fill);
+  row('③', '키트에서 지운 문서(policy/removed.json docs — final-gate · kit-implementer · kit-verifier)가 설치본에 0',
+    [rd.gone.length && `손대지 않은 판 남음 ${list(rd.gone)} — upgrade 가 걷는다`, rd.kept.length && `고친 채 남음 ${list(rd.kept)} — 필요한 내용만 프로젝트 규칙으로 옮기고 지운다`].filter(Boolean).join(' · ') || '없음', !rd.gone.length && !rd.kept.length);
 
   // ④ 정책 — policy-apply 를 그 설치 모양대로 다시 돌려도 바뀌는 것이 없어야 한다(빠진 권한 · 옛 훅 형식 · 걷을 옛 항목)
   const local = raw.mode !== 'share';
@@ -135,7 +132,6 @@ export function checkInstall(dir, { plugins } = {}) {
   try { loadConfig(dir); } catch (e) { probs.push(e.message.split('\n')[0]); }
   if (!['new', 'existing'].includes(raw.profile)) probs.push(`profile ${raw.profile}`);
   if (!['local', 'share'].includes(raw.mode)) probs.push(`mode ${raw.mode}`);
-  for (const k of ['decisions', 'lessons']) if (!raw.state?.[k] || !existsSync(join(dir, raw.state[k]))) probs.push(`장부 ${k} 없음 (${raw.state?.[k] ?? '경로 없음'})`);
   // 그래프 — 도구는 .harness/tools 한 벌. 옛 자기 그래프는 이관 미완, 옛 도구를 가리키는 줄이 남으면 모델이 그것을 불러 판이 갈라진다
   if (own) probs.push(`옛 자기 그래프(graph.tools ${graph.tools}) — 이관 미완: node <kit>/tools/upgrade.mjs <대상> --migrate-graph`);
   if (raw.graph?.store && !existsSync(join(dir, raw.graph.store))) probs.push(`graph.store 없음 (${raw.graph.store})`);
@@ -145,10 +141,14 @@ export function checkInstall(dir, { plugins } = {}) {
   }
   const refs = graphRefs(dir);
   if (refs.length) probs.push(`키트 밖 그래프 도구를 가리키는 곳 ${list(refs)} — .harness/tools/graph-*.mjs 로 고친다`);
+  const apart = graphRules(dir);
+  if (apart.length) probs.push(`그래프 쓰는 법을 설치 글에 따로 적은 곳 ${list(apart)} — 키트 graph.md · 훅 하나가 정본이다: 일반 규칙은 키트에 제안하고 지운다 · 이 저장소 사실만 남기되 키트 그래프 도구 이름 · supersedes · ⏸ 를 쓰지 않는다`);
+  const gone = removedRefs(dir);
+  if (gone.length) probs.push(`키트에서 지운 것을 가리키는 곳 ${list(gone)} — 그 줄을 지운다`);
   const gap = coversGap(dir, raw);
   if (gap.length) probs.push(`빌드 · 테스트 단서(${gap.join(' · ')})가 있는데 covers 를 가진 검사도 「테스트 없음」 선언도 없다 (SETUP ⑤)`);
   probs.push(...recipeGap(raw));
-  row('⑤', 'harness.json — 형식 · 프로필 · 모드 · 장부 · 그래프(이관 · 기록 위치 · 키트 밖 도구 참조) · 단서가 있으면 covers 검사 또는 「테스트 없음」 선언 · 검사마다 처방 또는 why',
+  row('⑤', 'harness.json — 형식 · 프로필 · 모드 · 그래프(이관 · 기록 위치 · 키트 밖 도구 참조 · 설치 글에 따로 적은 쓰는 법 · 키트에서 지운 것을 가리키는 곳) · 단서가 있으면 covers 검사 또는 「테스트 없음」 선언 · 검사마다 처방 또는 why',
     probs.join(' · ') || `검사 ${raw.checks?.length ?? 0} (covers ${(raw.checks ?? []).filter((c) => c.covers?.length).length}) · ${raw.profile} · ${raw.mode}`, !probs.length);
 
   // ⑥ PC — 대상 밖이다. plugin-plan 의 판정을 그대로 쓴다
@@ -204,7 +204,6 @@ export function custom(dir) {
     ...(raw.checks ?? []).filter((c) => c.tests === 'none').map((c) => `테스트 없음 — 코드 변경마다 /code-review (${c.id}: ${c.why?.trim() ?? ''})`),
     ...(grown ? [grown] : []),
     `그래프 — graph.names ${names} · graph.store ${g.store} · 기록 ${count(g.store)}건`,
-    ...(g.rules !== graphOf({}).rules ? [`⚠️ 기록 규칙 graph.rules ${g.rules} — 키트 graph.md 를 얹지 않아 ② 가 비교하지 않는다(두 벌이 갈라져도 판정에 안 뜬다)`] : []),
     `프로젝트 규칙 ${rules.join(' · ') || '없음'}`,
     `장부 ${ledgers ? `${ledgers} (빈 줄 뺀 수)` : '없음'}`].join('\n');
 }

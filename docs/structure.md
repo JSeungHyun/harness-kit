@@ -9,7 +9,7 @@
 
 | 모듈 | 하는 일 | 구성 |
 |---|---|---|
-| 증거 | 완료를 도구로 판정 · 보고 직전 관문 | `verify` · `final-gate` 스킬 · 장부 |
+| 증거 | 완료를 도구로 판정 | `verify` · 규칙의 `/code-review` 한 줄 |
 | 그래프 | 요구 → 용어 · 파일 · 함정 기록과 조회 | `graph-*` 도구 · 기록 파일 · 그래프 훅(조건부) |
 
 **한 턴의 흐름**
@@ -18,8 +18,7 @@
 사용자 질문
   └ [그래프 훅] 관련 기록을 찾아 붙인다 (기록이 쌓인 뒤에만 켠다)
 작업 — 흐름은 superpowers (설계 → TDD · 서브에이전트 → 디버깅)
-  └ verify           「끝났다」를 도구가 판정
-  └ final-gate 스킬   범위 검토 · 과설계 리뷰 · 증거 · 파일 목록 · 기록
+  └ verify           「끝났다」를 도구가 판정 (검사가 덮지 않은 코드면 /code-review)
 ```
 
 **키트가 아닌 것** — superpowers · ponytail 의 훅과 스킬, 프로젝트가 더한 훅은 §8 에 따로 둔다. §1~§4 는 키트 것만 다룬다.
@@ -32,8 +31,8 @@
 | 그래프 훅 `graph-hook.mjs` (30초) | `UserPromptSubmit` — 질문을 칠 때 | 프롬프트로 그래프를 조회해 카드 1~2장 · 후보 색인 · 침묵 중 하나를 넣는다 (§6.4) | ⛔ 조건부 — 기록이 쌓인 뒤 (§6.4) |
 
 - `Stop` 관문 훅(`gate-hook`)은 22차에 걷었다 — 덜어낸 판(관문 훅 끔 + 규칙 두 파일 덜기)이 코드 비용 0.48 · 시간 0.60 · 나쁜 실행 3/36 대 1/36 · 질문 적중 24 대 24 로 미리 적은 기준을 넘었다(`docs/proof.md` 「23차」). 갱신이 설치본의 도구 · 정책 파일을, `policy-apply` 가 훅 등록을 걷는다
-- 이 밖에 git `pre-commit` 훅이 하나 있다 — `scan-shared.mjs`, **공유 모드만**. 커밋되는 기록 · 장부 · 규칙에 민감 정보 패턴이 있으면 막는다
-- 나머지는 훅이 아니라 규칙이 「언제 무엇을 부르라」고 시킨다. 관문(`final-gate`)은 규칙과 스킬 설명이 부른다(design §3)
+- 이 밖에 git `pre-commit` 훅이 하나 있다 — `scan-shared.mjs`, **공유 모드만**. 커밋되는 기록 · 규칙에 민감 정보 패턴이 있으면 막는다
+- 나머지는 훅이 아니라 규칙이 「언제 무엇을 부르라」고 시킨다(`harness.md` — 완료는 증거로)
 - 설정은 `policy-apply` 가 `.claude/settings.json`(공유) 또는 `settings.local.json`(로컬)에 병합한다 — ⛔ 덮어쓰지 않는다. 권한은 합집합이고 프로젝트가 더한 훅은 그대로 둔다(예: §8.2)
 - 훅은 셸 없이 node 를 바로 띄운다(exec 형식 `"command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/…"]`) — Windows 에서 Git Bash 를 거치지 않아 한 번에 약 0.5초 덜 든다. 옛 셸 형식 등록은 `policy-apply` 가 바꿔 끼우고, 갱신(`upgrade`)이 그 명령을 낸다
 - 훅이 실패하면 조용히 통과한다 — 프롬프트와 종료를 막지 않는다
@@ -54,21 +53,9 @@
 
 원래 있던 테스트 실패는 기준선(`verify --baseline`, ⛔ 사용자가 확인한 뒤에만)으로 적어 두고, 그 밖의 실패만 실패로 친다.
 
-### 2.2 `final-gate` — 끝냈다고 보고하기 직전, 매번 (계획이 있든 없든)
+### 2.2 (걷음) `final-gate` · 장부 도구
 
-1. 코드를 바꿨으면 범위 검토(사용자 말 원문 + 이번 diff 만 받은 서브에이전트가 요청 밖 변경을 찾는다) → `/ponytail-review`(과설계만 본다) → 바꾼 코드를 덮는 검사(`covers`)가 없으면 `/code-review`. 걷어냈으면 2 를 그 뒤에 돈다
-2. 완료 증거 — 작업 종류별
-
-   | 작업 | 증거 |
-   |---|---|
-   | 코드 변경 | `verify` exit 0 (§2.1) |
-   | 기록 변경 | `graph-find --check` exit 0 — 기록을 고친 **뒤에** 돌린다 |
-   | 운영 데이터 · 설정 | 실행 · 확인 쿼리와 전/후 결과 |
-   | 조사 · 측정 | 정답 라벨 n건 대조 + 검증한 범위 |
-
-3. 보고 한 세트 — 작업 파일 목록 · 기록(`graph-append` · decisions → `decision-check` · `lesson-append`) · 증거 출력 그대로 · 못 한 것은 `⏸`
-   - 남길 게 없으면 그 판단을 한 줄로 밝힌다 — 그래프는 줄 맨 앞에 `그래프: 기록 안 함 — <이유>` · 낡은 기록은 그 자리에서 고친다(`supersedes`)
-4. 브랜치를 마무리하는 보고(merge · PR 직전)면 `/security-review` 1회 → superpowers `finishing-a-development-branch`
+25차에 걷었다 — 호출 0/36 · 위임 0/24(`docs/devices.md`). 완료 증거는 규칙 `harness.md` 의 verify · `/code-review` 한 줄이, 기록 끝 확인은 `graph.md` 3 · 7절이 맡는다. 옛 설치에서는 갱신이 지운다(`policy/removed.json`).
 
 ### 2.3 `graph-find --check` — 기록의 무결성
 
@@ -79,10 +66,8 @@
 | 층 | 무엇 | 언제 |
 |---|---|---|
 | 매 세션 로드 | 지시 파일(로컬 `CLAUDE.local.md` · 공유 `AGENTS.md` + `CLAUDE.md`) · `.claude/rules/harness.md` · `.claude/rules/graph.md` | 세션을 열 때 Claude Code 가 읽는다 |
-| 스킬 | `final-gate` | 규칙과 스킬 설명이 부르게 한다 (§2.2) |
-| 에이전트 | `.claude/agents/kit-implementer.md`(sonnet · effort medium · 편집 도구) · `kit-verifier.md`(opus · effort high · 읽기 + Bash) | 규칙 한 줄(harness.md 의 서브에이전트 줄)이 부르게 한다 · 둘 동시에 띄우지 않는다 |
 | 도구 | `.harness/tools/*.mjs` | 모델이 Bash 로 부른다 |
-| 데이터 | 그래프 `.harness/graph/requests.jsonl` · 장부 · 기준선 | 도구로만 읽고 쓴다 (§6 · §7) |
+| 데이터 | 그래프 `.harness/graph/requests.jsonl` · 기준선 | 도구로만 읽고 쓴다 (§6 · §7) |
 | 권한 정책 | `permissions` 의 allow · deny · ask | 도구를 부를 때마다 (아래) |
 | 플러그인 | superpowers 를 키트 마켓의 커밋으로 고정 · ponytail 은 그 커밋의 리뷰 스킬 `ponytail-review` 만 — 둘 다 PC(사용자 범위)에서 한 번, 로컬 설치는 프로젝트에 선언하지 않는다 | PC 맞추기 · 설치 · 갱신 때 (`plugin-plan` · SETUP) |
 
@@ -90,7 +75,7 @@
 
 | | 무엇 |
 |---|---|
-| allow | 읽기 · 키트 점검 도구(`verify` · `decision-check` · `graph-find`) · 읽기 전용 셸 — 키트에서 지운 도구의 allow 는 `policy-apply` 가 걷는다(`policy/removed.json`) |
+| allow | 읽기 · 키트 점검 도구(`verify` · `graph-find`) · 읽기 전용 셸 — 키트에서 지운 도구의 allow 는 `policy-apply` 가 걷는다(`policy/removed.json`) |
 | deny | `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` — `rm` · `rmdir` 은 두지 않는다: PC(전역)가 정한다. 프로젝트 deny 는 전역 allow 를 이긴다 |
 | ask | `--force` · `git restore` · `stash drop·clear` |
 
@@ -104,7 +89,7 @@
 | 공유 / 로컬 | `install-mode` — 공유는 팀이 같이 커밋하고, 로컬은 설치 경로를 git 에서 숨긴다 · 공유는 기록 파일을 `.gitattributes` 에 `merge=union` 으로 둔다(따로 이어 쓴 기록이 충돌 없이 합쳐진다 — 이식 검사 ⑤ 가 본다) |
 | 옛 context-graph 기록이 있는 프로젝트 | 키트 그래프 모듈을 얹고 `harness.json` `graph.store` 가 기존 기록을 제자리에서 잇는다 — 그래프 도구는 모든 설치가 키트 판 하나(13차). 옛 도구(`graph.tools`)로 설치된 곳은 `upgrade` 가 ⛔ 이관 안내 → `upgrade --migrate-graph`(기록 files 의 옛 도구 경로를 한 번 바꿈) · 참조 · 훅은 그 프로젝트가 고친다 |
 | 키트가 새 버전이 되면 | `upgrade` — ⛔ 키트에 커밋 안 된 변경이 있으면 아무것도 얹지 않고 exit 1(설치본에 미커밋 판이 커밋 이름으로 적히지 않게) · 도구 · 정책 · 손대지 않은 규칙을 올리고 키트 커밋을 `.harness/kit-commit` 에 적는다 · 프로젝트가 고친 키트 규칙 · 스킬은 ⛔ exit 1 + 다른 줄 요약 — `--own-rules` 가 고친 줄을 `.claude/rules/project-<이름>.md` 로 옮기고 키트 판을 다시 깐다 · 키트에서 지운 것(`policy/removed.json`)을 걷는다(쓴 대장은 남긴다) · 지운 경로를 가리키는 그래프 기록을 알린다 · 빌드 · 테스트 단서가 있는데 `covers` 검사도 「테스트 없음」 선언(`"tests": "none"` + why)도 없으면 ⛔ exit 1(선언 뒤 테스트 소스가 생기면 ⚠️) · 검사마다 처방 id(`recipe`) 또는 `why` 가 없거나 목록에 없는 처방이면 도구 · 규칙은 얹고 ⛔ exit 1 — `harness.json` 은 프로젝트 설정이라 쓰지 않고 적을 줄과 처방 후보만 낸다 · `plugin-plan` — PC 마다 한 번 플러그인을 키트 마켓으로 옮기는 명령(리뷰 스킬은 받은 커밋 · 해시를 옆에 적어 고정 커밋 그대로인지 본다) · 살아있는 그래프 기록이 옛 키트 판을 「지금」으로 적었으면 파일:행 목록(알림만 — 20차) |
-| 설치 · 갱신의 끝 | `install-check` — 키트와 같은가 ①~⑨(도구 · 규칙 · 스킬 · 정책 · `harness.json` · PC · 지시 파일 import · 동작 · 판). 자리는 `lib/parts.mjs` 의 세 갈래 하나로 정한다 — 키트 소유(같아야 한다 ① ② ③ ⑨) · 프로젝트 설정(모양과 출처만 ⑤ — 검사마다 처방 id 또는 why) · 프로젝트 데이터(무결성만 ⑧). 설정 · 데이터는 판정 줄 아래 「프로젝트 맞춤」 절에 보인다(판정 아님 · 숨기지 않음 — 「테스트 없음」 선언도 여기). ⛔ 하나라도 있으면 exit 1 — 「이식 성공」은 이 판정 줄로만. 키트가 더러우면 판정하지 않는다. ⑨ 는 설치본 커밋 뒤 키트가 문서만 바꿨으면(`lib` · `tools` · `policy` · `templates` 그대로) 같은 판으로 본다 |
+| 설치 · 갱신의 끝 | `install-check` — 키트와 같은가 ①~⑨(도구 · 규칙 · 지운 문서 · 정책 · `harness.json` · PC · 지시 파일 import · 동작 · 판). 자리는 `lib/parts.mjs` 의 세 갈래 하나로 정한다 — 키트 소유(같아야 한다 ① ② ⑨) · 프로젝트 설정(모양과 출처만 ⑤ — 검사마다 처방 id 또는 why) · 프로젝트 데이터(무결성만 ⑧). 설정 · 데이터는 판정 줄 아래 「프로젝트 맞춤」 절에 보인다(판정 아님 · 숨기지 않음 — 「테스트 없음」 선언도 여기). ⛔ 하나라도 있으면 exit 1 — 「이식 성공」은 이 판정 줄로만. 키트가 더러우면 판정하지 않는다. ⑨ 는 설치본 커밋 뒤 키트가 문서만 바꿨으면(`lib` · `tools` · `policy` · `templates` 그대로) 같은 판으로 본다 |
 | 키트를 고친 뒤 | `install-check --all <폴더>` — 그 아래 설치마다 ⑨ 판 · ① 동일만 한 표로, 뒤처진 설치가 있으면 exit 1. 키트 저장소 로컬 `.harness/harness.json` `installs.skip` 의 설치는 「제외」 줄 — exit 0 이 키트 개선의 끝 · 그래프 도구 · 훅 · 규칙을 고쳤으면 그 앞에 `npm run bench -- --run`(§6.5) |
 
 절차는 SETUP.md 가 정본이다. 설치에 가는 것은 `lib` · `tools` · `policy` · `templates` 뿐이다(`lib/parts.mjs`) — `proof/` 는 키트에 남아 사본을 겨눈다.
@@ -113,14 +98,12 @@
 
 | 단계 | 무엇을 | 시키는 곳 |
 |---|---|---|
-| ① 요구가 오면 | 그래프 훅이 켜졌으면 카드가 이미 들어와 있다. 빈손이면 새 영역 — 평소대로 코드를 본다 | 그래프 훅(graph.md §8) — 「그래프부터」 글(§1)은 22차에 뺐다 |
+| ① 요구가 오면 | 그래프 훅이 켜졌으면 카드가 이미 들어와 있다. 빈손이면 새 영역 — 평소대로 코드를 본다 | 그래프 훅(§6.4) — 「그래프부터」 글(§1)은 22차에 뺐다 |
 | ② 사용자의 말이 0건 | `graph-alias <사용자의 말> "<실체>"` — 도구는 남고 시키는 글은 없다 | 없음 — 22차에 뺐다(§2) |
 | ③ 설계 · 계획 | superpowers 가 정한 대로(`brainstorming` · `writing-plans`) | superpowers 플러그인 — 키트의 「흐름」 절은 22차에 뺐다 |
-| ④ 구현 | superpowers 의 TDD · 디버깅. 도구 호출 열 번 넘는 구현은 `kit-implementer` 하나 · 끝 검증은 `kit-verifier` 하나 | superpowers · harness.md |
-| ⑤ 묻지 않고 정했다 | decisions 1절에 가정을 적고 진행 | final-gate 3-2 |
-| ⑥ 실패를 고쳤다 | `lesson-append` — 근본 원인이 없으면 거부한다 | final-gate 3-2 |
-| ⑦ 끝냈다고 보고하기 직전 | ⭐ `final-gate` 스킬 (§2.2) | harness.md 맨 위 ⭐ 줄 · 스킬 설명 |
-| ⑧ 브랜치를 마무리 | `/security-review` 1회 → superpowers `finishing-a-development-branch` | final-gate 4 |
+| ④ 구현 | superpowers 의 TDD · 디버깅. 서브에이전트는 동시에 둘 넘게 안 띄운다 | superpowers · harness.md · `agent-cap` 훅 |
+| ⑤ 끝냈다고 보고하기 직전 | `verify` exit 0 · 검사가 덮지 않은 코드 변경이면 `/code-review` · 기록을 고쳤으면 `graph-find --check` | harness.md 맨 위 ⭐ 줄 · graph.md 7절 |
+| ⑥ 브랜치를 마무리 | superpowers `finishing-a-development-branch` (`/security-review` 는 사용자가 부른다) | superpowers |
 
 ## 6. 그래프 상세
 
@@ -150,7 +133,7 @@
 | 언제 | 무엇으로 |
 |---|---|
 | 대화 중 사용자의 말 → 실체를 알아낸 그 턴 | `graph-alias <말> "<실체>" [--file 경로]… [--note 함정]` — 알아내기 전에는 적지 않는다 |
-| 작업 끝 — `final-gate` 의 기록 단계 | `graph-append` (stdin JSON). 첫째 문 「이 저장소의 지식인가」 — 도구 · 훅 · 하네스 사용법이면 적지 않고 그 판단을 `그래프: 기록 안 함 — <이유>` 한 줄로. 파일 · 테이블이 다 비고 면제 머리말(`정본` · `용어 사전` · `용어 학습` · `공백 채움` · `공백 목록` · `정정` · `원문`)도 `scope:"meta"` 도 없는 기록은 도구가 거부한다(exit 1) |
+| 작업 끝 — `graph.md` 3절 | `graph-append` (stdin JSON). 첫째 문 「이 저장소의 지식인가」 — 도구 · 훅 · 하네스 사용법이면 적지 않고 그 판단을 `그래프: 기록 안 함 — <이유>` 한 줄로. 파일 · 테이블이 다 비고 면제 머리말(`정본` · `용어 사전` · `용어 학습` · `공백 채움` · `공백 목록` · `정정` · `원문`)도 `scope:"meta"` 도 없는 기록은 도구가 거부한다(exit 1) |
 | 기록이 낡았다 | 전체면 새 기록에 `supersedes` · 같은 주제 2건 이상이면 `정본: ` 1건으로 통합 · 한 대목만이면 그 문장을 직접 고친다 |
 | 하다 만 것 | `note` 를 `⏸` 로 시작한다 — 끝내면 `supersedes` 로 무효화 |
 | 적은 뒤 | `graph-find --check` exit 0(기록을 고친 뒤에) + 방금 넣은 용어로 조회해 엉뚱한 게 1위가 아닌지 |
@@ -214,19 +197,17 @@
 | `node proof/bench.mjs --snapshot <설치…>｜--all <폴더>` (`npm run bench -- --snapshot …`) | 상시 측정 묶음(19차 · 키트에서만 돈다) — 설치마다 입력을 저장소 밖(`~/.claude/harness-bench/<폴더 이름>-<경로 해시>/`)에 얼린다: 그래프 기록 · `harness.json` · 턴을 연 입력 최근 300. 이미 얼린 설치는 `--force` 없이 덮지 않는다(기준 숫자가 같이 사라진다). 스냅숏에는 질문 원문이 들어 있고 PC 마다 따로 뜬다 — 숫자는 PC 끼리 견주지 못한다 |
 | `node proof/bench.mjs --run [--accept] [--tools <도구 폴더>]` (`npm run bench -- --run`) | 얼린 입력을 지금 키트 도구로 돌려 기준 숫자(`baseline.json`)와 견준다 — 프롬프트 훅 p90 · 주입률 · 주입 평균 · p90 · 규칙 글자 · 1단 · 침묵 · 자기검색 1위 · `--check` exit · 훅 출력 같음. 첫 실행이 기준 숫자를 쓰고 그 뒤로는 `--accept` 일 때만 덮는다. 주입 평균이 늘거나 자기검색 −1%p · 1단 −2%p 를 넘게 떨어지면 exit 1 · 시간 p90 +15% · 규칙 글자 증가 · `--check` exit 변화는 ⚠️(exit 0 — 시간은 같은 조건 재실행에서도 −46% ~ +16% 흔들렸다) · 도구가 못 돌면 exit 2 · 출력이 다르면 입력 id 만. 지표를 더하는 자리는 `METRICS` 배열 하나 |
 
-## 7. 장부 — 성격마다 하나
+## 7. 데이터 — 성격마다 하나
 
-| 장부 | 무엇 | 도구 | 위치 — 공유 / 로컬 |
+| 데이터 | 무엇 | 도구 | 위치 |
 |---|---|---|---|
 | 그래프 | 사실 · 함정 · 용어 · 기각한 대안 · 하다 만 것 | `graph-*` | `.harness/graph/requests.jsonl` |
-| decisions | 묻지 않고 정한 가정 | `decision-check` — 답을 기다리는 1절 목록, exit 0 고정 | `docs/harness/` / `.harness/state/` |
-| lessons | 반복 실패 + 근본 원인 | `lesson-append` — 근본 원인이 없으면 거부한다 | 같음 |
 | 기준선 | 원래 있던 테스트 실패 | `verify --baseline` — ⛔ 사용자가 확인한 뒤에만 | `.harness/baseline/<검사 id>.txt` |
 | 규칙 · 지도 | 행동을 바꿔야 하는 것 | — 매 세션 로드 | `.claude/rules/` · 지시 파일 |
 
-**승격은 한 방향 — 그래프 · lessons → 규칙.** 「다음 세션이 이걸 안 읽으면 같은 실수를 하나」 → 그러면 규칙이다.
+**승격은 한 방향 — 그래프 → 규칙.** 「다음 세션이 이걸 안 읽으면 같은 실수를 하나」 → 그러면 규칙이다.
 
-키트가 얹는 장치(훅 · 도구 · 규칙 절 · 스킬 · 권한 묶음 · 장부 템플릿)마다 무슨 결과로 넣었고 언제 · 어떤 모델에서 쟀나는 [devices.md](devices.md) 에 한 행씩 있다 — 덜어낼 때 여기서 고른다.
+키트가 얹는 장치(훅 · 도구 · 규칙 절 · 권한 묶음)마다 무슨 결과로 넣었고 언제 · 어떤 모델에서 쟀나는 [devices.md](devices.md) 에 한 행씩 있다 — 덜어낼 때 여기서 고른다.
 
 ## 8. 키트 밖에서 같이 도는 것
 

@@ -37,7 +37,7 @@ test('⭐ 로컬 — 설치 경로를 .git/info/exclude 로 숨기고 .gitignore
   const repo = gitRepo({ 'a.txt': 'x' });
   const r = run(repo, 'local');
   assert.equal(r.status, 0, r.stdout);
-  for (const p of ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/final-gate/SKILL.md', '.claude/settings.local.json', 'CLAUDE.local.md']) {
+  for (const p of ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/settings.local.json', 'CLAUDE.local.md']) {
     assert.equal(ignored(repo, p), true, p);
   }
   assert.equal(existsSync(join(repo.dir, '.gitignore')), false);

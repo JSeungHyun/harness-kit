@@ -23,7 +23,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 ### 플러그인을 올릴 때 — 이 레포에서
 
 1. `node tools/plugin-plan.mjs --upstream` — 고정 커밋과 각 플러그인 저장소의 최신 커밋을 비교하고, 새 버전과 바뀐 것 링크를 낸다
-2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `ponytail-review` 스킬 한 파일 · final-gate 가 부르는 스킬 이름)이 그대로인가, 이득이 있나. 사전 시험은 `--plugin-dir` 로 새 판을 싣고 `--settings` 로 설치본을 끈 세션
+2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `ponytail-review` 스킬 한 파일 · 규칙이 부르는 `/code-review` 스킬 이름)이 그대로인가, 이득이 있나. 사전 시험은 `--plugin-dir` 로 새 판을 싣고 `--settings` 로 설치본을 끈 세션
 3. 올리면 `marketplace.json` 의 `sha` · `version` 을 바꾸고 `node proof/run.mjs --claude` → 커밋 · push
 4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update … --scope user` 명령을 낸다(ponytail 고정을 올렸으면 리뷰 스킬을 새 커밋 것으로 받는 `--review-skill` 도 — 받은 커밋 · 내용 해시를 스킬 옆 `.pinned.json` 에 적어 비교한다) — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
 
@@ -37,25 +37,25 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 
 - `tools/plugin-plan.mjs` 가 그 PC 의 플러그인을 읽어 키트 마켓에 맞출 명령을 낸다. 세션이 사용자에게 묻고 실행한다 — PC 마다 한 번이고, 다음 프로젝트부터는 「옮길 것 없다」
 - `tools/upgrade.mjs` 가 도구 · 정책 · 손대지 않은 규칙을 올리고, 설정에 넣을 명령(권한 · 그래프 훅 — 옛 플러그인 선언 · 키트에서 지운 도구의 훅 등록은 걷는다)을 낸다. 프로젝트가 키트 규칙을 고쳤으면 ⛔ 로 멈추고, `--own-rules` 가 고친 줄을 `.claude/rules/project-<이름>.md` 로 옮긴 뒤 키트 판을 다시 깐다 — 키트 파일은 키트 판 그대로 둔다
-- 끝에 `tools/install-check.mjs` 가 키트와 같은지 ①~⑨ 표로 판정한다 — 그래프 데이터 · 장부 본문 · 검사 명령 같은 프로젝트 고유 내용만 다를 수 있고, 하나라도 ⛔ 면 exit 1 이라 「이식 성공」이 아니다
+- 끝에 `tools/install-check.mjs` 가 키트와 같은지 ①~⑨ 표로 판정한다 — 그래프 데이터 · 검사 명령 같은 프로젝트 고유 내용만 다를 수 있고, 하나라도 ⛔ 면 exit 1 이라 「이식 성공」이 아니다
 - 키트가 플러그인 구성을 바꿨으면 그 PC 에서 먼저 SETUP 「PC 맞추기」를 한 번 한다 — 그 PC 의 Claude Code 에게 `<이 레포 경로>/SETUP.md 의 「PC 맞추기」를 따라 이 PC 를 맞춰줘`
 
 ## 두 모듈
 
 | 모듈 | 막는 실패 | 도구 (`.harness/tools/`) |
 |---|---|---|
-| **evidence** | 완료를 거짓 보고한다 · 묻지 않고 넘어간 가정이 묵는다 · 같은 실패를 반복한다 | `verify` · `decision-check` · `lesson-append` · `policy-apply` |
+| **evidence** | 완료를 거짓 보고한다 | `verify` · `policy-apply` |
 | **graph** | 같은 것을 두 번 조사한다 · 사용자의 말과 코드의 이름 사이 다리가 없다 | `graph-find` · `graph-append` · `graph-alias` · `graph-hook` · `graph-measure` |
 | 설치 | 설치 · 갱신이 키트와 달라진 채 「끝」으로 보고된다 | `detect` · `install-mode` · `scan-shared` · `plugin-plan` · `upgrade` · `install-check` |
 
-자동 로드되는 층은 `.claude/rules/harness.md` · `.claude/rules/graph.md` 둘뿐이다(22차에 두 파일을 측정한 묶음으로 덜어내고 관문 훅을 걷었다 — 근거 `docs/proof.md` 「23차」). 관문은 `final-gate` 스킬 — **작업을 끝냈다고 보고하기 직전에 매번** 돈다(계획 유무와 무관).
+자동 로드되는 층은 `.claude/rules/harness.md` · `.claude/rules/graph.md` 둘뿐이다(22차에 두 파일을 측정한 묶음으로 덜어내고 관문 훅을 걷었다 — 근거 `docs/proof.md` 「23차」). 관문 스킬(`final-gate`)은 25차에 걷었다 — 완료 증거는 규칙의 verify · `/code-review` 한 줄이다.
 
 ## 신규 구축 / 기존 이식 · 설치 모드
 
 | | 신규 (커밋 < 20 · 소스 < 50) | 기존 |
 |---|---|---|
 | 지시 파일 | 없으면 지도 골격을 만든다 — 공유면 `AGENTS.md` + `CLAUDE.md`(`@AGENTS.md`), 로컬이면 `CLAUDE.local.md` | ⛔ 내용을 고치지 않는다 — 필요하면 import 한 줄 |
-| 소급 | 없음 — 스펙 용어를 「설계 용어」로 시드 | 이슈 > 인수인계 문서 > 담당자 > 커밋 이력 순으로 lessons 2~3 · 그래프 3~5 |
+| 소급 | 없음 — 스펙 용어를 「설계 용어」로 시드 | 이슈 > 인수인계 문서 > 담당자 > 커밋 이력 순으로 그래프 3~5 |
 | 테스트 | junit 검사가 있으면 첫 테스트 전 verify 실패(테스트 0개)가 정상 · 러너 전이면 타입 검사 같은 exit-code 검사로 시작 | 원래 있던 실패는 사용자 확인 뒤 기준선 (`verify --baseline`) |
 
 설치 모드는 **둘 다 로컬 전용이 기본**이다(`.git/info/exclude` · `settings.local.json`). **팀 공유는 사용자가 명시적으로 고른다** — 기록에는 사번 · 실명 · 이슈 번호 · 내부 URL 이 쌓이기 때문이다. 공유를 고르면 `.gitignore` 부정 규칙으로 이 PC 의 전역 무시(`.claude/` · `AGENTS.md` · `CLAUDE.md`)를 이기고, `pre-commit` 이 커밋 전마다 `scan-shared` 로 민감 정보 패턴(`.harness/scan.json`)을 검사한다.
@@ -69,11 +69,9 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | 파일 목록 · 동반변경 · 언제 바뀌었나 | ✅ git | 그래프의 값이 아니다 |
 | **완료의 결정론적 증거** | ❌ 종료코드·러너 요약은 테스트 0개를 통과시킨다 | ⭐ `verify` — 이번 실행이 쓴 XML 의 testcase 를 센다 |
 | **원래 있던 실패와 새 실패의 구분** | ❌ 러너는 늘 exit 1 | ⭐ 기준선 — 기준선 밖 실패만 실패 |
-| **검사가 돌리지 않는 코드** | ❌ verify 녹색은 검사 목록만 증명한다(Java 를 바꿨는데 검사는 `npm test`) | ⭐ 검사의 `covers` — 덮이지 않은 코드 변경은 final-gate 가 `/code-review` 를 부르게 한다 |
-| **묻지 않은 가정 · 반복 실패의 적립** | ❌ | ⭐ `decision-check`(답을 기다리는 목록) · `lesson-append`(근본 원인 없으면 거부) |
+| **검사가 돌리지 않는 코드** | ❌ verify 녹색은 검사 목록만 증명한다(Java 를 바꿨는데 검사는 `npm test`) | ⭐ 검사의 `covers` — 덮이지 않은 코드 변경은 규칙이 `/code-review` 를 부르게 한다 |
 | **현업 용어 → 코드 식별자 · 함정 한 줄** | ❌ 어디에도 없다 | ⭐ 그래프 `terms` · `note` |
-| **작업 끝 기록을 미루다 빠뜨림** | ❌ 「기록해라」만 있으면 「커밋 뒤에」로 미룬다(원천 재생: 같은 지식을 4턴 내리) | ⭐ 규칙 · final-gate 가 시킨다 — 코드를 바꾼 턴은 그래프 기록(뒤에 `--check`) 또는 `그래프: 기록 안 함 — <이유>` 한 줄 · 되돌리던 관문 훅은 22차에 걷었다 |
-| **요청하지 않은 변경** | ❌ verify 는 통과하고, 과설계 리뷰는 범위를 안 본다 | ⭐ 범위 검토 — 사용자 말 원문 + diff 만 받은 서브에이전트(final-gate) |
+| **작업 끝 기록을 미루다 빠뜨림** | ❌ 「기록해라」만 있으면 「커밋 뒤에」로 미룬다(원천 재생: 같은 지식을 4턴 내리) | ⭐ 규칙(graph.md 3절)이 시킨다 — 코드를 바꾼 턴은 그래프 기록(뒤에 `--check`) 또는 `그래프: 기록 안 함 — <이유>` 한 줄 · 되돌리던 관문 훅은 22차에 걷었다 |
 
 ## ⛔ 도입하지 말아야 할 때
 

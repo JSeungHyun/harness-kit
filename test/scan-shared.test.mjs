@@ -14,8 +14,8 @@ const installed = (extra = {}, scan = repoFile('templates/scan.json')) => target
   '.harness/scan.json': scan,
   '.claude/rules/harness.md': repoFile('templates/rules/harness.md'),
   '.claude/rules/graph.md': repoFile('templates/rules/graph.md'),
-  'docs/harness/decisions.md': repoFile('templates/state/decisions.md'),
-  'docs/harness/lessons.md': repoFile('templates/state/lessons.md'),
+  'docs/harness/decisions.md': '# 확인 필요 사항\n',
+  'docs/harness/lessons.md': '# 교훈\n',
   ...extra,
 });
 const rec = (r) => `${JSON.stringify({ date: '2026-09-01', recorded: '2026-09-01', files: [], ...r })}\n`;
@@ -75,7 +75,7 @@ test('⛔ 걸리면 exit 1 이고, 값은 가려서 파일:줄 과 함께 보여
       rec({ req: '접속', note: 'wiki.corp 에 절차가 있다 · postgres://app:pw@db.example.com:5432/shop' }),
       rec({ req: '티켓 원문', note: 'SHOP-1234 에서 시작 · 첨부 보고서_김철수.xlsx · 연락처 010-1234-5678' }),
     ].join(''),
-    'docs/harness/lessons.md': `${repoFile('templates/state/lessons.md')}| L001 | 검증 부족 | api_key = sk-test-000 | 비밀값을 그대로 적었다 | ⛔ 아직 없다 |\n`,
+    'docs/harness/lessons.md': `# 교훈\n| L001 | 검증 부족 | api_key = sk-test-000 | 비밀값을 그대로 적었다 | ⛔ 아직 없다 |\n`,
   });
   const r = run(dir);
   assert.equal(r.status, 1);

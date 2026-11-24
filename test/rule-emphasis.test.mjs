@@ -6,7 +6,6 @@ import { repoFile } from './scene.mjs';
 const CAP = {
   'templates/rules/harness.md': 3,
   'templates/rules/graph.md': 1,
-  'templates/skills/final-gate/SKILL.md': 0,
 };
 
 test('⛔ 규칙 파일의 ⛔ 는 상한 안 — 늘리려면 되돌리기 어렵거나 파괴적인 금지인지 보고 이 상한을 고친다', () => {

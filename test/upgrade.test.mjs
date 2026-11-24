@@ -25,7 +25,6 @@ const GATE_STOP = { Stop: [{ hooks: [{ type: 'command', command: 'node', args: [
 function installed(rule = oldRule, settings = { permissions: { allow: KIT_ALLOWS }, enabledPlugins: { 'ponytail@ponytail': true, 'superpowers@claude-plugins-official': false } }) {
   return target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] }, {
     '.claude/rules/harness.md': rule,
-    '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')),
     '.claude/settings.local.json': JSON.stringify(settings),
     '.harness/lib/evidence.mjs': '// 옛 판정',
   });
@@ -88,8 +87,8 @@ test('⭐ --own-rules — 고친 줄을 .claude/rules/project-harness.md 로 옮
 test('⛔ --own-rules 가 만든 파일도 로컬 전용이면 git 에서 숨긴다 — 로컬 설치는 아무것도 git 에 보이지 않는다', () => {
   const { dir, env, git } = gitRepo({});
   for (const [rel, body] of Object.entries({ '.harness/harness.json': JSON.stringify({ profile: 'existing', mode: 'local', state: STATE, checks: [] }),
-    '.claude/rules/harness.md': edited().mine, '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')) })) put(dir, rel, body);
-  put(dir, '.git/info/exclude', '/.harness/\n/.claude/rules/harness.md\n/.claude/skills/final-gate/\n');
+    '.claude/rules/harness.md': edited().mine })) put(dir, rel, body);
+  put(dir, '.git/info/exclude', '/.harness/\n/.claude/rules/harness.md\n');
   const r = spawnSync(process.execPath, [TOOL, dir, '--own-rules'], { encoding: 'utf8', env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(existsSync(join(dir, '.claude/rules/project-harness.md')));
@@ -226,14 +225,13 @@ test('⭐ 그래프 훅을 건 설치에는 --with graph-hook 도 낸다 — 옛
 });
 
 // 옛 자기 그래프 설치 — 그래프 도구 · 기록이 tools/ 아래, 규칙 · 지시 파일 · 검사 명령이 그 도구를 가리킨다
-const OWN = { tools: 'tools', rules: '`AGENTS.md` 의 그래프 기록 절' };
-const fillWith = (graph) => (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons).replaceAll('<graph-tools>', graph.tools).replaceAll('<graph-rules>', graph.rules);
+const OWN = { tools: 'tools' };
+const fillWith = (graph) => (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<lessons>', STATE.lessons).replaceAll('<graph-tools>', graph.tools);
 const rec = (req, files, extra = {}) => JSON.stringify({ date: '2026-10-01', recorded: '2026-10-01', req, files, ...extra });
 function ownGraph() {
   const fill = fillWith(OWN);
   return target({ profile: 'existing', mode: 'local', graph: OWN, state: STATE, checks: [{ id: 'graph-check', cmd: 'node tools/graph-find.mjs --check', kind: 'exit-code', recipe: 'graph-check' }] }, {
     '.claude/rules/harness.md': fill(repoFile(RULE)),
-    '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')),
     'AGENTS.md': '# 지도\n\n- 요구가 오면 `node tools/graph-find.mjs <어근>`\n',
     'tools/graph-find.mjs': '// 옛 그래프 도구',
     'tools/graph-hook.mjs': '// 옛 그래프 훅',
@@ -262,17 +260,15 @@ test('⛔ 옛 자기 그래프(graph.tools ≠ .harness/tools) — 키트 그래
   assert.match(r.stdout, /AGENTS\.md:3/);
   assert.match(r.stdout, /\.harness\/harness\.json:1/);
   assert.match(r.stdout, /키트가 지우지 않는다/);
-  // 증거 표는 final-gate 한 곳(20차) — <graph-tools> 자리는 스킬에만 있다
-  assert.match(read(dir, '.claude/skills/final-gate/SKILL.md'), /node tools\/graph-find\.mjs --check/);
   assert.equal(readFileSync(join(dir, 'tools/graph/requests.jsonl'), 'utf8'), before);
   assert.ok(existsSync(join(dir, 'tools/graph-find.mjs')));
 });
 
-test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.tools 를 걷고 · 살아있는 기록 files 의 옛 도구 경로만 한 번 바꾼다(note · 대체된 기록 · 프로젝트 도구는 그대로) · 규칙이 키트 도구를 가리킨다', () => {
+test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.tools 를 걷고 · 살아있는 기록 files 의 옛 도구 경로만 한 번 바꾼다(note · 대체된 기록 · 프로젝트 도구는 그대로)', () => {
   const dir = ownGraph();
   const r = spawnSync(process.execPath, [TOOL, dir, '--migrate-graph'], { encoding: 'utf8' });
   assert.equal(JSON.parse(read(dir, '.harness/harness.json')).graph.tools, undefined);
-  assert.deepEqual(JSON.parse(read(dir, '.harness/harness.json')).graph, { rules: OWN.rules, store: 'tools/graph/requests.jsonl' });
+  assert.deepEqual(JSON.parse(read(dir, '.harness/harness.json')).graph, { store: 'tools/graph/requests.jsonl' });
   const [a, old, now, trace] = graphLines(dir);
   assert.deepEqual(a.files, ['.harness/tools/graph-find.mjs', 'src/a.mjs']);
   assert.equal(a.note, 'tools/graph-find.mjs 의 문턱을 고쳤다');
@@ -280,7 +276,6 @@ test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.t
   assert.deepEqual(now.files, ['.harness/tools/graph-hook.mjs']);
   assert.deepEqual(trace.files, ['tools/trace.mjs']);
   assert.match(r.stdout, /기록 2건의 files/);
-  assert.match(read(dir, '.claude/skills/final-gate/SKILL.md'), /node \.harness\/tools\/graph-find\.mjs --check/);
   // 참조는 프로젝트가 고친다 — 남아 있는 동안 exit 1
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stdout, /AGENTS\.md:3/);
@@ -291,71 +286,6 @@ test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.t
   assert.equal(done.status, 0, done.stdout);
   const chk = spawnSync(process.execPath, [join(dir, '.harness/tools/graph-find.mjs'), '--check'], { cwd: dir, encoding: 'utf8' });
   assert.equal(chk.status, 0, chk.stdout);
-});
-
-// 기록 규칙을 프로젝트 자기 지시 파일 절 · 스킬로 돌린 설치 — 그래프 도구는 키트 것, graph.md 는 얹지 않았다
-const ELSEWHERE = '`AGENTS.md` 「기록 절」 · `own-skill` 스킬';
-const DEFAULT_RULES = { tools: '.harness/tools', rules: '`.claude/rules/graph.md`' };
-const rulesConf = (graph) => ({ profile: 'existing', mode: 'local', ...(graph ? { graph } : {}), state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] });
-const OWN_FILES = { 'AGENTS.md': '# 지도\n\n## 기록 절\n- 이 프로젝트의 기록 규칙\n', '.claude/skills/own-skill/SKILL.md': '---\nname: own-skill\n---\n이 프로젝트의 기록 절차\n' };
-function rulesInstall(rules) {
-  const f = fillWith({ ...DEFAULT_RULES, rules });
-  return target(rulesConf(rules === DEFAULT_RULES.rules ? null : { rules }), {
-    '.claude/rules/harness.md': f(repoFile(RULE)), '.claude/skills/final-gate/SKILL.md': f(repoFile('templates/skills/final-gate/SKILL.md')), ...OWN_FILES });
-}
-const projectRules = (dir) => readdirSync(join(dir, '.claude/rules')).filter((f) => f.startsWith('project-'));
-
-test('⭐ graph.rules 를 기본값으로 되돌린 설치 — 갱신이 graph.md 를 깔고 규칙 · final-gate 의 자리 채움을 기본값으로 다시 깐다(exit 0) · 옛 규칙 파일 · 스킬은 그대로 두고 ⚠️ 로 알린다 · --own-rules 도 그 줄을 옮기지 않는다(22차)', () => {
-  for (const flags of [[], ['--own-rules']]) {
-    const dir = rulesInstall(ELSEWHERE);
-    const before = run(dir);
-    assert.equal(before.status, 0, before.stdout);
-    assert.match(before.stdout, /graph\.md — 없다/);
-    assert.doesNotMatch(before.stdout, /기본값으로 돌아왔다/);
-
-    put(dir, '.harness/harness.json', JSON.stringify(rulesConf(null)));
-    const r = spawnSync(process.execPath, [TOOL, dir, ...flags], { encoding: 'utf8' });
-    assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.doesNotMatch(r.stdout, /프로젝트가 고쳤다/);
-    const now = fillWith(DEFAULT_RULES);
-    for (const [src, dst] of [[RULE, '.claude/rules/harness.md'], ['templates/rules/graph.md', '.claude/rules/graph.md'], ['templates/skills/final-gate/SKILL.md', '.claude/skills/final-gate/SKILL.md']]) {
-      assert.equal(read(dir, dst), now(repoFile(src)).replace(/\r\n/g, '\n'), dst);
-    }
-    assert.match(r.stdout, /^✅ \.claude\/rules\/graph\.md — 깔았다/m);
-    assert.match(r.stdout, /^⚠️ 기록 규칙 — graph\.rules 가 기본값으로 돌아왔다\(옛 자리: `AGENTS\.md` 「기록 절」 · `own-skill` 스킬\).*건드리지 않았다.*\.claude\/rules\/project-\*\.md.*지운다/m);
-    // 프로젝트 데이터는 그대로 — 옛 자리를 가리키던 줄을 프로젝트 규칙 파일로 옮기지도 않는다
-    for (const [rel, body] of Object.entries(OWN_FILES)) assert.equal(read(dir, rel), body, rel);
-    assert.deepEqual(projectRules(dir), []);
-    const again = spawnSync(process.execPath, [TOOL, dir, ...flags], { encoding: 'utf8' });
-    assert.equal(again.status, 0, again.stdout);
-    assert.match(again.stdout, /graph\.md — 이미 지금 것/);
-    assert.doesNotMatch(again.stdout, /기본값으로 돌아왔다/);
-  }
-});
-
-test('⛔ 되돌린 설치라도 프로젝트가 따로 고친 줄은 지금처럼 ⛔ — 자리 채움 줄은 「고친 줄」로 세지 않는다', () => {
-  const dir = rulesInstall(ELSEWHERE);
-  put(dir, '.claude/rules/harness.md', `${read(dir, '.claude/rules/harness.md')}\n- 이 프로젝트가 승격한 규칙\n`);
-  put(dir, '.harness/harness.json', JSON.stringify(rulesConf(null)));
-  const r = run(dir);
-  assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /⛔ \.claude\/rules\/harness\.md — 프로젝트가 고쳤다 \+1 −0/);
-  assert.match(r.stdout, /final-gate\/SKILL\.md — 갱신/);
-});
-
-test('회귀 — 반대 방향(기본 → 다른 자리)은 지금처럼: graph.rules 만 바꾸고 갱신하면 ⛔(exit 1) · 규칙 · graph.md 는 그대로', () => {
-  const dir = rulesInstall(DEFAULT_RULES.rules);
-  const graph = fillWith(DEFAULT_RULES)(repoFile('templates/rules/graph.md'));
-  put(dir, '.claude/rules/graph.md', graph);
-  const rule = read(dir, '.claude/rules/harness.md');
-  put(dir, '.harness/harness.json', JSON.stringify(rulesConf({ rules: ELSEWHERE })));
-  const r = run(dir);
-  assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /harness\.md — 이미 지금 것/);
-  assert.match(r.stdout, /⛔ \.claude\/skills\/final-gate\/SKILL\.md — 프로젝트가 고쳤다 \+1 −1/);
-  assert.doesNotMatch(r.stdout, /기본값으로 돌아왔다/);
-  assert.equal(read(dir, '.claude/rules/harness.md'), rule);
-  assert.equal(read(dir, '.claude/rules/graph.md'), graph.replace(/\r\n/g, '\n'));
 });
 
 test('⛔ 새 예외를 막는다 — 프로필 전부(신규 · 기존 · 기록 위치를 따로 둔 · 옛 자기 그래프)에서 갱신 뒤 키트가 배포하는 lib · tools · policy 가 하나도 빠짐없이 바이트 같다', () => {
@@ -417,22 +347,6 @@ test('⭐ 지운 템플릿은 손대지 않은 설치본만 걷는다 — 쓴 �
   assert.ok(existsSync(join(used, '.harness/state/current.md')));
 });
 
-test('⭐ 키트 템플릿에서 지운 장부 줄은 설치본 장부에서도 걷는다 — 같은 줄만(줄바꿈 · 앞뒤 공백 무시) · 사용자 줄은 그대로 · 다시 돌려도 같다', () => {
-  const [gone] = JSON.parse(repoFile('policy/removed.json')).lines['templates/state/lessons.md'];
-  const old = execFileSync('git', ['-C', KIT, 'show', `${deleted}^:templates/state/lessons.md`], { encoding: 'utf8' }).replace(/\r\n/g, '\n');
-  const mine = '- 예전엔 `node .harness/tools/lesson-promote.mjs` 로 승격 후보를 봤다';
-  const ledger = `${old.replace(gone, `${gone}  `)}| L1 | 검증 부족 | 증상 | 원인 | 테스트 |\n${mine}\n`.replace(/\n/g, '\r\n');
-  const dir = installed();
-  put(dir, STATE.lessons, ledger);
-  const r = run(dir);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /🧹 걷음\(키트에서 지운 장부 줄\): \.harness\/state\/lessons\.md:10/);
-  const after = readFileSync(join(dir, STATE.lessons), 'utf8');
-  assert.equal(after, ledger.replace(`${gone}  \r\n`, ''));
-  assert.doesNotMatch(run(dir).stdout, /장부 줄/);
-  assert.equal(readFileSync(join(dir, STATE.lessons), 'utf8'), after);
-});
-
 test('⛔ 빌드 · 테스트 단서가 보이는데 covers 를 가진 검사가 없으면 갱신 보고를 ⛔ 로 멈춘다(exit 1)', () => {
   const pkg = { 'package.json': JSON.stringify({ scripts: { test: 'node --test' } }) };
   const bare = target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'exit-code' }] }, pkg);
@@ -478,11 +392,7 @@ test('⭐ 살아있는 그래프 기록이 옛 키트 판(키트 이력의 커�
 test('⛔ 「지운 것」 목록이 키트와 맞는다 — 지운 도구 · 템플릿이 키트에 남거나 allow 가 정책에 남으면 갱신이 다시 넣는다', () => {
   const removed = JSON.parse(repoFile('policy/removed.json'));
   for (const f of removed.files) assert.ok(!existsSync(join(KIT, f.replace(/^\.harness\//, ''))), f);
-  for (const src of Object.keys(removed.templates)) assert.ok(!existsSync(join(KIT, src)), src);
-  for (const [src, lines] of Object.entries(removed.lines)) {
-    const now = repoFile(src).split(/\r?\n/).map((l) => l.trim());
-    for (const l of lines) assert.ok(!now.includes(l.trim()), `${src}: ${l}`);
-  }
+  for (const src of [...Object.keys(removed.templates), ...Object.values(removed.docs)]) assert.ok(!existsSync(join(KIT, src)), src);
   const allow = JSON.parse(repoFile('policy/settings.json')).permissions.allow;
   for (const a of removed.allow) assert.ok(!allow.includes(a), a);
 });
@@ -517,47 +427,4 @@ test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why)이면 c
   assert.equal(grown.status, 0, grown.stdout);
   assert.match(grown.stdout, /^⚠️ 테스트가 생겼다 — junit 검사와 covers 를 더할 때 \(src\/test\)$/m);
   assert.equal(run(target(conf({ tests: 'none' }), pom)).status, 1);
-});
-
-const AGENT_FILES = ['kit-implementer', 'kit-verifier'];
-
-test('⭐ 옛 설치(에이전트 정의 없음) 갱신 — 두 정의가 .claude/agents/ 에 키트 판 그대로 깔린다 · 두 번째는 이미 지금 것', () => {
-  const dir = installed();
-  const r = run(dir);
-  assert.equal(r.status, 0, r.stdout);
-  for (const n of AGENT_FILES) {
-    assert.equal(read(dir, `.claude/agents/${n}.md`), repoFile(`templates/agents/${n}.md`).replace(/\r\n/g, '\n'));
-    assert.match(r.stdout, new RegExp(`\.claude/agents/${n}\.md — 깔았다`));
-  }
-  const again = run(dir);
-  assert.equal(again.status, 0, again.stdout);
-  assert.match(again.stdout, /kit-verifier\.md — 이미 지금 것/);
-});
-
-test('⛔ 프로젝트가 고친 에이전트 정의는 덮지 않고 ⛔(exit 1) — 안 고친 다른 정의는 깐다', () => {
-  const dir = installed();
-  const mine = `${repoFile('templates/agents/kit-verifier.md').replace(/\r\n/g, '\n')}\n- 이 프로젝트의 검증 규칙\n`;
-  put(dir, '.claude/agents/kit-verifier.md', mine);
-  const r = run(dir);
-  assert.equal(r.status, 1, r.stdout);
-  assert.equal(read(dir, '.claude/agents/kit-verifier.md'), mine);
-  assert.match(r.stdout, /⛔ \.claude\/agents\/kit-verifier\.md — 프로젝트가 고쳤다 \+1 −0/);
-  assert.ok(existsSync(join(dir, '.claude/agents/kit-implementer.md')));
-});
-
-test('키트가 이력에서 쓴 옛 판의 정의는 갱신이 지금 판으로 바꾼다', () => {
-  const dir = installed(fill(repoFile(RULE)));
-  const now = repoFile('templates/agents/kit-implementer.md').replace(/\r\n/g, '\n');
-  const kit = kitRepo();
-  put(kit.dir, 'templates/agents/kit-implementer.md', `${now}\n옛 판 줄\n`);
-  kit.git('add', '-A');
-  kit.git('commit', '-q', '-m', '옛 판');
-  put(kit.dir, 'templates/agents/kit-implementer.md', now);
-  kit.git('add', '-A');
-  kit.git('commit', '-q', '-m', '지금 판');
-  put(dir, '.claude/agents/kit-implementer.md', `${now}\n옛 판 줄\n`);
-  const r = spawnSync(process.execPath, [join(kit.dir, 'tools', 'upgrade.mjs'), dir], { encoding: 'utf8', env: kit.env });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(read(dir, '.claude/agents/kit-implementer.md'), now);
-  assert.match(r.stdout, /kit-implementer\.md — 갱신/);
 });
