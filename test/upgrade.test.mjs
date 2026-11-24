@@ -19,7 +19,10 @@ const deleted = execFileSync('git', ['-C', KIT, 'rev-list', '-n', '1', 'HEAD', '
 const CURRENT = execFileSync('git', ['-C', KIT, 'show', `${deleted}^:templates/state/current.md`], { encoding: 'utf8' });
 const oldRule = fill(execFileSync('git', ['-C', KIT, 'show', `${first}:${RULE}`], { encoding: 'utf8' }));
 
-function installed(rule = oldRule, settings = { enabledPlugins: { 'ponytail@ponytail': true, 'superpowers@claude-plugins-official': false } }) {
+// 정책 전체를 받은 설치는 키트 도구 허용 규칙이 서로 다른 둘 이상 있다 — 아니면 키트 정책을 받지 않은 설치(옛 --only)로 읽는다
+const KIT_ALLOWS = JSON.parse(repoFile('policy/settings.json')).permissions.allow.filter((r) => r.includes('.harness/tools/'));
+const GATE_STOP = { Stop: [{ hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/gate-hook.mjs'], timeout: 10 }] }] };
+function installed(rule = oldRule, settings = { permissions: { allow: KIT_ALLOWS }, enabledPlugins: { 'ponytail@ponytail': true, 'superpowers@claude-plugins-official': false } }) {
   return target({ profile: 'existing', mode: 'local', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] }, {
     '.claude/rules/harness.md': rule,
     '.claude/skills/final-gate/SKILL.md': fill(repoFile('templates/skills/final-gate/SKILL.md')),
@@ -35,7 +38,7 @@ test('⭐ 옛 설치 — 도구는 지금 것으로, 손대지 않은 규칙은 
   const r = run(dir);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(read(dir, '.harness/lib/evidence.mjs'), repoFile('lib/evidence.mjs').replace(/\r\n/g, '\n'));
-  assert.ok(existsSync(join(dir, '.harness/tools/gate-hook.mjs')));
+  assert.ok(existsSync(join(dir, '.harness/tools/verify.mjs')));
   assert.equal(read(dir, '.claude/rules/harness.md'), fill(repoFile(RULE)).replace(/\r\n/g, '\n'));
   assert.match(r.stdout, /harness\.md — 갱신/);
   assert.match(r.stdout, /graph\.md — 없다/);
@@ -133,24 +136,92 @@ test('⭐ 설정은 쓰지 않는다 — 옛 플러그인 정리 · 정책 반�
   const r = run(dir);
   assert.equal(read(dir, '.claude/settings.local.json'), before);
   // 옛 id 선언(ponytail@ponytail: true)은 policy-apply 가 걷는다 — --off 를 내지 않는다
-  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --with gate-hook$/m);
+  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local$/m);
 });
 
-test('⛔ 관문 훅만 건 설치(--only gate-hook)에는 정책 전체를 안내하지 않는다 — 받지 않은 권한 · ponytail 끄기 · 플러그인이 들어간다', () => {
-  const dir = installed(oldRule, { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.harness/tools/gate-hook.mjs"' }] }] } });
+test('⛔ 키트 정책을 받지 않은 설치(옛 --only gate-hook — 지시 파일이 흐름 · 권한을 정한 프로젝트)에는 정책 전체를 안내하지 않는다 — 걷기만(--clean) · 그래프 훅이 있으면 --only graph-hook (22차)', () => {
+  const dir = installed(oldRule, { hooks: GATE_STOP });
   const r = run(dir);
-  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --only gate-hook$/m);
-  assert.doesNotMatch(r.stdout, /--with gate-hook/);
+  assert.match(r.stdout, /node \.harness\/tools\/policy-apply\.mjs --local --clean$/m);
+  assert.doesNotMatch(r.stdout, /--with/);
   // 그 대상이 ponytail 을 스스로 켜 두어도(지시 파일의 모드) 정책 전체 설치로 읽지 않는다
-  const own = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, env: { PONYTAIL_DEFAULT_MODE: 'lite' }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/gate-hook.mjs'] }] }] } }));
-  assert.match(own.stdout, /policy-apply\.mjs --local --only gate-hook$/m);
+  const own = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, env: { PONYTAIL_DEFAULT_MODE: 'lite' }, hooks: GATE_STOP }));
+  assert.match(own.stdout, /policy-apply\.mjs --local --clean$/m);
+  const graph = { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"' }] }] };
+  assert.match(run(installed(oldRule, { hooks: { ...GATE_STOP, ...graph } })).stdout, /policy-apply\.mjs --local --only graph-hook$/m);
+  // 안내한 명령은 관문 훅 등록만 걷고 받지 않은 권한 · 플러그인을 들이지 않는다
+  const clean = spawnSync(process.execPath, [join(dir, '.harness/tools/policy-apply.mjs'), dir, '--local', '--clean'], { encoding: 'utf8' });
+  assert.equal(clean.status, 0, clean.stderr);
+  const after = JSON.parse(read(dir, '.claude/settings.local.json'));
+  // 받지 않은 권한 · 플러그인은 없고 늘 거는 서브에이전트 상한 훅만 있다
+  assert.deepEqual(Object.keys(after), ['hooks']);
+  assert.deepEqual(Object.keys(after.hooks).sort(), ['PreToolUse', 'SubagentStart', 'SubagentStop']);
+});
+
+// 갱신이 낸 「2.」 줄 그대로 — 그 설치 폴더에서 돌린다
+const guided = (dir, text) => {
+  const [script, ...args] = text.match(/^2\. node (.+)$/m)[1].split(' ');
+  const p = spawnSync(process.execPath, [script, ...args], { cwd: dir, encoding: 'utf8' });
+  assert.equal(p.status, 0, p.stderr);
+  return p;
+};
+
+test('⭐ 관문 훅 걷기 — 갱신이 설치본의 관문 도구 · 정책 파일을 지우고, 안내한 policy-apply 줄 하나가 settings.local.json · settings.json 두 파일 모두의 Stop 훅 등록을 걷는다 · 다른 훅 · 권한은 그대로(22차)', () => {
+  const other = { type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/scripts/mine.mjs'] };
+  const dir = installed(oldRule, { permissions: { allow: KIT_ALLOWS }, hooks: GATE_STOP });
+  put(dir, '.claude/settings.json', JSON.stringify({ hooks: { Stop: [{ hooks: [...GATE_STOP.Stop[0].hooks, other] }] } }));
+  put(dir, '.harness/tools/gate-hook.mjs', '// 옛 관문 훅');
+  put(dir, '.harness/policy/gate-hook.json', '{}');
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stdout);
+  assert.ok(!existsSync(join(dir, '.harness/tools/gate-hook.mjs')) && !existsSync(join(dir, '.harness/policy/gate-hook.json')));
+  assert.match(r.stdout, /걷음\(키트에서 지운 것\): .*gate-hook\.mjs/);
+  guided(dir, r.stdout);
+  assert.doesNotMatch(read(dir, '.claude/settings.local.json'), /gate-hook/);
+  const shared = JSON.parse(read(dir, '.claude/settings.json'));
+  assert.deepEqual(shared.hooks.Stop, [{ hooks: [other] }]);
+  assert.ok(JSON.parse(read(dir, '.claude/settings.local.json')).permissions.allow.includes(KIT_ALLOWS[0]));
+});
+
+test('⭐ 반대편 설정 파일 — 공유 설치의 settings.local.json 에 남은 관문 훅 · 지운 도구 allow 도 안내 줄 하나로 걷힌다 · 반대편이 없으면 만들지 않는다 · 병합 · 플러그인 · env 는 모드 쪽에만', () => {
+  const stale = { hooks: GATE_STOP, permissions: { allow: ['Bash(node .harness/tools/state-check.mjs)', 'Bash(npm test)'] }, env: { MINE: '1' } };
+  const dir = installed(oldRule, { permissions: { allow: KIT_ALLOWS } });
+  put(dir, '.harness/harness.json', JSON.stringify({ profile: 'existing', mode: 'share', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] }));
+  put(dir, '.claude/settings.json', JSON.stringify({ permissions: { allow: KIT_ALLOWS }, hooks: GATE_STOP }));
+  put(dir, '.claude/settings.local.json', JSON.stringify(stale));
+  const r = run(dir);
+  assert.match(r.stdout, /^2\. node \.harness\/tools\/policy-apply\.mjs$/m);
+  guided(dir, r.stdout);
+  const local = JSON.parse(read(dir, '.claude/settings.local.json'));
+  assert.doesNotMatch(JSON.stringify(local), /gate-hook|state-check/);
+  assert.deepEqual(local.permissions.allow, ['Bash(npm test)']);
+  assert.deepEqual(local.env, { MINE: '1' });
+  assert.equal(local.enabledPlugins, undefined);
+  assert.equal(local.hooks, undefined);
+  assert.doesNotMatch(read(dir, '.claude/settings.json'), /gate-hook/);
+  // 반대편 파일이 없으면 만들지 않는다
+  const solo = installed(oldRule, { permissions: { allow: KIT_ALLOWS }, hooks: GATE_STOP });
+  guided(solo, run(solo).stdout);
+  assert.ok(!existsSync(join(solo, '.claude/settings.json')));
+});
+
+test('⭐ 정책 전체 판별 — 키트 도구 allow 가 서로 다른 둘 이상일 때만(한 파일이든 두 파일의 합이든) · 프로젝트가 verify allow 하나만 둔 설치는 정책 없는 설치(--clean)', () => {
+  const verify = 'Bash(node .harness/tools/verify.mjs)';
+  const line = (dir) => run(dir).stdout.match(/^2\. node (.+)$/m)[1];
+  assert.match(line(installed(oldRule, { permissions: { allow: [verify] }, hooks: GATE_STOP })), /policy-apply\.mjs --local --clean$/);
+  assert.match(line(installed(oldRule, { permissions: { allow: [verify, verify] }, hooks: GATE_STOP })), /--clean$/);
+  assert.match(line(installed(oldRule, { permissions: { allow: KIT_ALLOWS }, hooks: GATE_STOP })), /policy-apply\.mjs --local$/);
+  // 두 파일의 합
+  const split = installed(oldRule, { permissions: { allow: [KIT_ALLOWS[0]] } });
+  put(split, '.claude/settings.json', JSON.stringify({ permissions: { allow: [KIT_ALLOWS[1]] } }));
+  assert.match(line(split), /policy-apply\.mjs --local$/);
 });
 
 test('⭐ 그래프 훅을 건 설치에는 --with graph-hook 도 낸다 — 옛 셸 형식 · 옛 자기 그래프 훅(tools/graph-hook.mjs)을 키트 훅으로 바꿔 끼운다', () => {
   const hook = (cmd) => ({ UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd }] }] });
   for (const cmd of ['node "$CLAUDE_PROJECT_DIR/.harness/tools/graph-hook.mjs"', 'node "$CLAUDE_PROJECT_DIR/tools/graph-hook.mjs"']) {
-    const r = run(installed(oldRule, { enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook(cmd) }));
-    assert.match(r.stdout, /policy-apply\.mjs --local --with gate-hook --with graph-hook$/m, cmd);
+    const r = run(installed(oldRule, { permissions: { allow: KIT_ALLOWS }, enabledPlugins: { 'ponytail@harness-kit': true }, hooks: hook(cmd) }));
+    assert.match(r.stdout, /policy-apply\.mjs --local --with graph-hook$/m, cmd);
   }
 });
 
@@ -220,6 +291,71 @@ test('⭐ --migrate-graph — graph.store 를 기존 기록 경로로 · graph.t
   assert.equal(done.status, 0, done.stdout);
   const chk = spawnSync(process.execPath, [join(dir, '.harness/tools/graph-find.mjs'), '--check'], { cwd: dir, encoding: 'utf8' });
   assert.equal(chk.status, 0, chk.stdout);
+});
+
+// 기록 규칙을 프로젝트 자기 지시 파일 절 · 스킬로 돌린 설치 — 그래프 도구는 키트 것, graph.md 는 얹지 않았다
+const ELSEWHERE = '`AGENTS.md` 「기록 절」 · `own-skill` 스킬';
+const DEFAULT_RULES = { tools: '.harness/tools', rules: '`.claude/rules/graph.md`' };
+const rulesConf = (graph) => ({ profile: 'existing', mode: 'local', ...(graph ? { graph } : {}), state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] });
+const OWN_FILES = { 'AGENTS.md': '# 지도\n\n## 기록 절\n- 이 프로젝트의 기록 규칙\n', '.claude/skills/own-skill/SKILL.md': '---\nname: own-skill\n---\n이 프로젝트의 기록 절차\n' };
+function rulesInstall(rules) {
+  const f = fillWith({ ...DEFAULT_RULES, rules });
+  return target(rulesConf(rules === DEFAULT_RULES.rules ? null : { rules }), {
+    '.claude/rules/harness.md': f(repoFile(RULE)), '.claude/skills/final-gate/SKILL.md': f(repoFile('templates/skills/final-gate/SKILL.md')), ...OWN_FILES });
+}
+const projectRules = (dir) => readdirSync(join(dir, '.claude/rules')).filter((f) => f.startsWith('project-'));
+
+test('⭐ graph.rules 를 기본값으로 되돌린 설치 — 갱신이 graph.md 를 깔고 규칙 · final-gate 의 자리 채움을 기본값으로 다시 깐다(exit 0) · 옛 규칙 파일 · 스킬은 그대로 두고 ⚠️ 로 알린다 · --own-rules 도 그 줄을 옮기지 않는다(22차)', () => {
+  for (const flags of [[], ['--own-rules']]) {
+    const dir = rulesInstall(ELSEWHERE);
+    const before = run(dir);
+    assert.equal(before.status, 0, before.stdout);
+    assert.match(before.stdout, /graph\.md — 없다/);
+    assert.doesNotMatch(before.stdout, /기본값으로 돌아왔다/);
+
+    put(dir, '.harness/harness.json', JSON.stringify(rulesConf(null)));
+    const r = spawnSync(process.execPath, [TOOL, dir, ...flags], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.doesNotMatch(r.stdout, /프로젝트가 고쳤다/);
+    const now = fillWith(DEFAULT_RULES);
+    for (const [src, dst] of [[RULE, '.claude/rules/harness.md'], ['templates/rules/graph.md', '.claude/rules/graph.md'], ['templates/skills/final-gate/SKILL.md', '.claude/skills/final-gate/SKILL.md']]) {
+      assert.equal(read(dir, dst), now(repoFile(src)).replace(/\r\n/g, '\n'), dst);
+    }
+    assert.match(r.stdout, /^✅ \.claude\/rules\/graph\.md — 깔았다/m);
+    assert.match(r.stdout, /^⚠️ 기록 규칙 — graph\.rules 가 기본값으로 돌아왔다\(옛 자리: `AGENTS\.md` 「기록 절」 · `own-skill` 스킬\).*건드리지 않았다.*\.claude\/rules\/project-\*\.md.*지운다/m);
+    // 프로젝트 데이터는 그대로 — 옛 자리를 가리키던 줄을 프로젝트 규칙 파일로 옮기지도 않는다
+    for (const [rel, body] of Object.entries(OWN_FILES)) assert.equal(read(dir, rel), body, rel);
+    assert.deepEqual(projectRules(dir), []);
+    const again = spawnSync(process.execPath, [TOOL, dir, ...flags], { encoding: 'utf8' });
+    assert.equal(again.status, 0, again.stdout);
+    assert.match(again.stdout, /graph\.md — 이미 지금 것/);
+    assert.doesNotMatch(again.stdout, /기본값으로 돌아왔다/);
+  }
+});
+
+test('⛔ 되돌린 설치라도 프로젝트가 따로 고친 줄은 지금처럼 ⛔ — 자리 채움 줄은 「고친 줄」로 세지 않는다', () => {
+  const dir = rulesInstall(ELSEWHERE);
+  put(dir, '.claude/rules/harness.md', `${read(dir, '.claude/rules/harness.md')}\n- 이 프로젝트가 승격한 규칙\n`);
+  put(dir, '.harness/harness.json', JSON.stringify(rulesConf(null)));
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /⛔ \.claude\/rules\/harness\.md — 프로젝트가 고쳤다 \+1 −0/);
+  assert.match(r.stdout, /final-gate\/SKILL\.md — 갱신/);
+});
+
+test('회귀 — 반대 방향(기본 → 다른 자리)은 지금처럼: graph.rules 만 바꾸고 갱신하면 ⛔(exit 1) · 규칙 · graph.md 는 그대로', () => {
+  const dir = rulesInstall(DEFAULT_RULES.rules);
+  const graph = fillWith(DEFAULT_RULES)(repoFile('templates/rules/graph.md'));
+  put(dir, '.claude/rules/graph.md', graph);
+  const rule = read(dir, '.claude/rules/harness.md');
+  put(dir, '.harness/harness.json', JSON.stringify(rulesConf({ rules: ELSEWHERE })));
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /harness\.md — 이미 지금 것/);
+  assert.match(r.stdout, /⛔ \.claude\/skills\/final-gate\/SKILL\.md — 프로젝트가 고쳤다 \+1 −1/);
+  assert.doesNotMatch(r.stdout, /기본값으로 돌아왔다/);
+  assert.equal(read(dir, '.claude/rules/harness.md'), rule);
+  assert.equal(read(dir, '.claude/rules/graph.md'), graph.replace(/\r\n/g, '\n'));
 });
 
 test('⛔ 새 예외를 막는다 — 프로필 전부(신규 · 기존 · 기록 위치를 따로 둔 · 옛 자기 그래프)에서 갱신 뒤 키트가 배포하는 lib · tools · policy 가 하나도 빠짐없이 바이트 같다', () => {
@@ -381,4 +517,47 @@ test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why)이면 c
   assert.equal(grown.status, 0, grown.stdout);
   assert.match(grown.stdout, /^⚠️ 테스트가 생겼다 — junit 검사와 covers 를 더할 때 \(src\/test\)$/m);
   assert.equal(run(target(conf({ tests: 'none' }), pom)).status, 1);
+});
+
+const AGENT_FILES = ['kit-implementer', 'kit-verifier'];
+
+test('⭐ 옛 설치(에이전트 정의 없음) 갱신 — 두 정의가 .claude/agents/ 에 키트 판 그대로 깔린다 · 두 번째는 이미 지금 것', () => {
+  const dir = installed();
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stdout);
+  for (const n of AGENT_FILES) {
+    assert.equal(read(dir, `.claude/agents/${n}.md`), repoFile(`templates/agents/${n}.md`).replace(/\r\n/g, '\n'));
+    assert.match(r.stdout, new RegExp(`\.claude/agents/${n}\.md — 깔았다`));
+  }
+  const again = run(dir);
+  assert.equal(again.status, 0, again.stdout);
+  assert.match(again.stdout, /kit-verifier\.md — 이미 지금 것/);
+});
+
+test('⛔ 프로젝트가 고친 에이전트 정의는 덮지 않고 ⛔(exit 1) — 안 고친 다른 정의는 깐다', () => {
+  const dir = installed();
+  const mine = `${repoFile('templates/agents/kit-verifier.md').replace(/\r\n/g, '\n')}\n- 이 프로젝트의 검증 규칙\n`;
+  put(dir, '.claude/agents/kit-verifier.md', mine);
+  const r = run(dir);
+  assert.equal(r.status, 1, r.stdout);
+  assert.equal(read(dir, '.claude/agents/kit-verifier.md'), mine);
+  assert.match(r.stdout, /⛔ \.claude\/agents\/kit-verifier\.md — 프로젝트가 고쳤다 \+1 −0/);
+  assert.ok(existsSync(join(dir, '.claude/agents/kit-implementer.md')));
+});
+
+test('키트가 이력에서 쓴 옛 판의 정의는 갱신이 지금 판으로 바꾼다', () => {
+  const dir = installed(fill(repoFile(RULE)));
+  const now = repoFile('templates/agents/kit-implementer.md').replace(/\r\n/g, '\n');
+  const kit = kitRepo();
+  put(kit.dir, 'templates/agents/kit-implementer.md', `${now}\n옛 판 줄\n`);
+  kit.git('add', '-A');
+  kit.git('commit', '-q', '-m', '옛 판');
+  put(kit.dir, 'templates/agents/kit-implementer.md', now);
+  kit.git('add', '-A');
+  kit.git('commit', '-q', '-m', '지금 판');
+  put(dir, '.claude/agents/kit-implementer.md', `${now}\n옛 판 줄\n`);
+  const r = spawnSync(process.execPath, [join(kit.dir, 'tools', 'upgrade.mjs'), dir], { encoding: 'utf8', env: kit.env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(read(dir, '.claude/agents/kit-implementer.md'), now);
+  assert.match(r.stdout, /kit-implementer\.md — 갱신/);
 });

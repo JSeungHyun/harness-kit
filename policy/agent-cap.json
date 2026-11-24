@@ -1,0 +1,21 @@
+{
+  "_note": "서브에이전트 동시 상한 2 — Agent · Task 호출 때만 돈다(질문당 주입 0). policy-apply 가 모든 설치에 병합한다(--only · --clean 포함 — 그래프 훅 · 키트 정책을 받지 않은 설치도). 설계안.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/agent-cap.mjs"], "timeout": 10 }]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/agent-cap.mjs"], "timeout": 10 }]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/.harness/tools/agent-cap.mjs"], "timeout": 10 }]
+      }
+    ]
+  }
+}

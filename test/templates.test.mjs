@@ -41,21 +41,28 @@ test('⛔ SETUP 이 복사하라는 것이 실재한다', () => {
   assert.match(repoFile('SETUP.md').split(/\r?\n/).find((l) => l.startsWith('| Node (vitest) |')) ?? '', /--reporter=junit --outputFile\.junit=test-results\/junit\.xml/);
 });
 
-test('규칙 파일이 완료 명령과 관문을 지시하고, SETUP 이 채울 자리를 둔다', () => {
+test('규칙 파일이 완료 명령과 final-gate 를 지시한다', () => {
   const rules = repoFile('templates/rules/harness.md');
   assert.match(rules, /node \.harness\/tools\/verify\.mjs/);
   assert.match(rules, /보고하기 직전에 매번 `final-gate`/);
-  assert.match(rules, /<decisions>/);
-  assert.match(rules, /<lessons>/);
 });
 
-test('그래프 규칙 — 조회 먼저 · 판단 규칙 상위 5 · 기록 단위 · 개인 식별자 금지 · 훅 조건 · 120줄 안', () => {
+test('⭐ 덜어낸 판(22차) — 측정한 묶음에서 뺀 절 · 구절이 다시 들어오지 않았다', () => {
+  const h = repoFile('templates/rules/harness.md');
   const g = repoFile('templates/rules/graph.md');
-  assert.match(g, /node \.harness\/tools\/graph-find\.mjs <어근/);
-  // docs/graph-port.md §3 — 예시 낱말 금지는 원문 그대로
-  assert.match(g, /\*\*예시 낱말을 어느 필드에도 넣지 않는다 — 전 필드가 색인된다\.\*\*/);
-  assert.match(g, /자기점검: 기록을 넣은 뒤 그 낱말로 조회해 엉뚱한 게 1위면 오염된 것이다/);
-  for (const re of [/행동은 지침, 사실은 그래프/, /원천 3분류/, /⚠️ 미확정/, /정본 1건으로 통합/, /같은 질문에서 함께 필요한가/, /커밋에서 만든 기록은 `terms` 를 채워야/]) assert.match(g, re);
+  assert.doesNotMatch(h, /^## (흐름|장부|플러그인)/m);
+  assert.doesNotMatch(g, /^## (1|2|4|5|6)\. /m);
+  assert.doesNotMatch(h, /Stop 훅/);
+  assert.doesNotMatch(g, /살아있는 기록 20건 이상/);
+  // 관문 훅은 걷었다 — 규칙이 그 훅을 있다고 말하지 않는다
+  assert.doesNotMatch(h + g, /관문|gate-hook/);
+});
+
+test('그래프 규칙 — 기록 단계 · 기록 단위 · 개인 식별자 금지 · 끝내기 전 확인 · 120줄 안', () => {
+  const g = repoFile('templates/rules/graph.md');
+  assert.match(g, /graph-find\.mjs --check/);
+  assert.match(g, /같은 질문에서 함께 필요한가/);
+  assert.match(g, /커밋에서 만든 기록은 `terms` 를 채워야/);
   assert.match(g, /개인 식별자/);
   // 형식 판정만으로는 도구 사용법 조사가 통과한다 — 주제 판정이 먼저, 「한 세트」가 그 문을 건너뛰지 않는다
   assert.match(g, /첫째 문 — 이 저장소의 지식인가/);
@@ -65,27 +72,17 @@ test('그래프 규칙 — 조회 먼저 · 판단 규칙 상위 5 · 기록 단
   const refuse = repoFile('tools/graph-append.mjs').split(/\r?\n/).find((l) => l.includes('offRepo(out)'));
   for (const text of [door, refuse]) assert.ok(text.indexOf('기록하지 않는다') >= 0 && text.indexOf('기록하지 않는다') < text.indexOf('"scope":"meta"'), text);
   assert.match(door, /상관없는 파일을 넣지 않는다/);
-  // 훅 조건 — 건수는 대리 지표, 조건은 상위3 점유 (design §5·§6)
-  assert.match(g, /20건 이상 \+ `--check` exit 0 \+ 상위3 점유 < 50%/);
-  assert.match(g, /graph-measure\.mjs \. --tickets/);
-  assert.match(g, /독점 미측정/);
-  assert.match(g, /20건 42%.*켠 뒤에도 잰다/);
-  assert.doesNotMatch(g, /측정된 값이 아니다/);
-  // 근거 등급 — 피해가 가장 크다 · 새 원천도 단일 증거 · 확인차 재조회의 예외
-  assert.match(g, /빈도순 — 피해는 ④가 가장 크다\(거짓이 사실로 유통된다\)/);
-  assert.match(g, /새 원천\(문서 · DB 코멘트 · 담당자 답변 · 지난 세션 기록\)도 단일 증거다/);
-  assert.match(g, /확인차.*다시 보지 않는다.*단, 새 원천이 기존 기록과 다른 값을 말하면 그때는 다시 본다/);
   assert.ok(g.split(/\r?\n/).length <= 120);
   assert.doesNotMatch(g, /PostgreSQL|pg_description|writing-plans|--promote|graph-view/);
 });
 
-test('훅 조건이 graph.md · SETUP · graph-hook 정책에서 같다', () => {
-  for (const rel of ['templates/rules/graph.md', 'SETUP.md', 'policy/graph-hook.json']) assert.match(repoFile(rel), /상위3 점유 < 50%/, rel);
+test('훅 조건이 SETUP · graph-hook 정책에서 같다', () => {
+  for (const rel of ['SETUP.md', 'policy/graph-hook.json']) assert.match(repoFile(rel), /상위3 점유 < 50%/, rel);
 });
 
-test('⭐ 조건 전에 그래프 훅을 켜는 사용자 결정이 graph.md · SETUP · graph-hook 정책에서 같다 — 20건을 넘기면 점유를 다시 잰다(10차: 맡긴 설치가 「⛔ 20건 전 훅」과 부딪혀 사용자에게 다시 물었다)', () => {
-  for (const rel of ['templates/rules/graph.md', 'SETUP.md', 'policy/graph-hook.json']) assert.match(repoFile(rel), /사용자가 조건 전에 켜기로 정/, rel);
-  for (const rel of ['templates/rules/graph.md', 'SETUP.md']) assert.match(repoFile(rel), /20건을 넘기면 점유/, rel);
+test('⭐ 조건 전에 그래프 훅을 켜는 사용자 결정이 SETUP · graph-hook 정책에서 같다 — 20건을 넘기면 점유를 다시 잰다(10차: 맡긴 설치가 「⛔ 20건 전 훅」과 부딪혀 사용자에게 다시 물었다)', () => {
+  for (const rel of ['SETUP.md', 'policy/graph-hook.json']) assert.match(repoFile(rel), /사용자가 조건 전에 켜기로 정/, rel);
+  assert.match(repoFile('SETUP.md'), /20건을 넘기면 점유/);
   assert.match(repoFile('SETUP.md'), /^\| 사용자가 정하지 않았는데 그래프 20건 전에 훅 \|/m);
 });
 
@@ -96,10 +93,13 @@ test('⭐ 테스트 없는 기존 대상도 ⑤ 「테스트 러너가 아직 �
   assert.match(row, /빌드/);
 });
 
-test('SETUP ④ 표 — import 없는 `CLAUDE.md` 단독도 「그대로」 행이다 · ⑦ lesson 필드는 규칙 파일의 예시를 가리킨다(10차)', () => {
+test('SETUP ④ 표 — import 없는 `CLAUDE.md` 단독도 「그대로」 행이다 · ⑦ lesson 필드는 final-gate 의 예시를 가리킨다(10차 · 22차에 규칙에서 옮김)', () => {
   const setup = repoFile('SETUP.md');
   assert.match(setup, /^\| `CLAUDE\.md` 만 \(import 유무와 무관\)/m);
-  assert.match(setup, /lesson-append\.mjs`[^\n]*\.claude\/rules\/harness\.md/);
+  assert.match(setup, /lesson-append\.mjs`[^\n]*\.claude\/skills\/final-gate\/SKILL\.md/);
+  // 도구가 읽는 필드 이름이 예시에 그대로 있다
+  const gate = repoFile('templates/skills/final-gate/SKILL.md');
+  for (const k of ['symptom', 'cause', 'category', 'guard']) assert.match(gate, new RegExp(`lesson-append[^\\n]*"${k}"`));
 });
 
 test('final-gate 스킬의 이름이 디렉터리 이름과 같고, 보고 직전에 매번 쓰인다', () => {
@@ -129,10 +129,9 @@ test('⛔ 지도 골격의 <…> 는 채울 자리뿐이다 — 명령 인자를
 });
 
 test('⛔ 플러그인은 plugin-plan 을 거쳐 사용자 범위로 — 키트 마켓 경로는 PC 마다 달라 프로젝트 설정에 넣지 않는다', () => {
-  for (const [rel, s] of [['harness.md', repoFile('templates/rules/harness.md')], ['SETUP.md', repoFile('SETUP.md')]]) {
-    assert.match(s, /tools\/plugin-plan\.mjs/, rel);
-    assert.doesNotMatch(s, /claude plugin (install|marketplace add) [^\n`]*--scope/, rel);
-  }
+  const s = repoFile('SETUP.md');
+  assert.match(s, /tools\/plugin-plan\.mjs/);
+  assert.doesNotMatch(s, /claude plugin (install|marketplace add) [^\n`]*--scope/);
 });
 
 test('⑧-b 규칙 로드는 sonnet · --strict-mcp-config 로 잰다 — haiku 는 규칙이 실려도 「모름」으로 빠지고, --tools "" 는 MCP 를 막지 않는다', () => {
@@ -151,10 +150,8 @@ test('final-gate 는 바꾼 코드가 verify 의 테스트로 돌지 않을 때�
 test('⛔ 이전은 정책 반영보다 먼저 — 거꾸로면 옛 선언은 걷히고 새 플러그인은 없다 · 플러그인은 PC 에서 켜고 ponytail 은 리뷰 스킬만', () => {
   const setup = repoFile('SETUP.md');
   assert.ok(setup.indexOf('tools/plugin-plan.mjs') < setup.indexOf('node .harness/tools/policy-apply.mjs'));
-  for (const [rel, s] of [['SETUP.md', setup], ['harness.md', repoFile('templates/rules/harness.md')]]) {
-    assert.match(s, /사용자 스킬 `ponytail-review`/, rel);
-    assert.match(s, /선언하지 않는다/, rel);
-  }
+  assert.match(setup, /사용자 스킬 `ponytail-review`/);
+  assert.match(setup, /선언하지 않는다/);
 });
 
 test('⛔ 이 레포의 템플릿이 커밋에서 빠지지 않는다 — 전역 gitignore 가 AGENTS.md · CLAUDE.md 를 무시하는 PC 가 있다', () => {
@@ -197,4 +194,44 @@ test('⭐ SETUP 의 「테스트 없음」 선언은 검사의 "tests": "none" +
   assert.match(row, /"tests": "none"/);
   const stop = setup.split(/\r?\n/).find((l) => l.includes('covers 를 가진 검사가 없다`')) ?? '';
   assert.match(stop, /"tests": "none"/);
+});
+
+// 서브에이전트 정의 — frontmatter 한 줄씩. 키 · 도구 · 모델이 어긋나면 구현 · 검증 분리가 조용히 풀린다
+const agentDef = (name) => {
+  const s = repoFile(`templates/agents/${name}.md`).replace(/\r\n/g, '\n');
+  const m = s.match(/^---\n([\s\S]*?)\n---\n/);
+  assert.ok(m, `${name} frontmatter`);
+  return Object.fromEntries(m[1].split('\n').map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 1).trim()]));
+};
+
+test('⭐ kit-implementer — sonnet · effort medium · 하위 에이전트를 못 만든다(Agent · Task 없음)', () => {
+  const d = agentDef('kit-implementer');
+  assert.deepEqual([d.name, d.model, d.effort, d.tools], ['kit-implementer', 'sonnet', 'medium', 'Read, Grep, Glob, Edit, Write, Bash']);
+});
+
+test('⭐ kit-verifier — opus · effort high · 파일을 못 고친다(Edit · Write 없음)', () => {
+  const d = agentDef('kit-verifier');
+  assert.deepEqual([d.name, d.model, d.effort, d.tools], ['kit-verifier', 'opus', 'high', 'Read, Grep, Glob, Bash']);
+});
+
+test('두 정의의 description 은 한 줄 · 합 300자 안 — 세션마다 도구 설명에 실린다', () => {
+  const [a, b] = ['kit-implementer', 'kit-verifier'].map((n) => agentDef(n).description);
+  assert.ok(a && b && !a.includes('\n'));
+  assert.ok(a.length + b.length <= 300, `${a.length + b.length}자`);
+});
+
+test('verifier 본문 — 구현자의 설명을 요구하지 않고 실행으로 증명된 발견만 보고한다 · implementer 본문 — 지시서 밖 변경 금지', () => {
+  const v = repoFile('templates/agents/kit-verifier.md');
+  assert.match(v, /반증/);
+  assert.match(v, /반증 못 함/);
+  assert.match(v, /재현 명령/);
+  assert.match(v, /셸/);
+  assert.match(repoFile('templates/agents/kit-implementer.md'), /지시서 밖/);
+});
+
+test('⭐ harness.md 에 구현 · 검증 위임 한 줄이 있다 — 구현은 kit-implementer 하나 · 끝 검증은 kit-verifier 하나 · 병렬 디스패치 안 씀', () => {
+  const line = repoFile('templates/rules/harness.md').split(/\r?\n/).find((l) => l.includes('kit-implementer')) ?? '';
+  assert.match(line, /kit-verifier/);
+  assert.match(line, /열 번/);
+  assert.match(line, /병렬 디스패치는 쓰지 않는다/);
 });

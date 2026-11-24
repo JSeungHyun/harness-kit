@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mergeSettings, POLICY, readJson } from '../tools/policy-apply.mjs';
+import { mergeSettings, applyPolicy, POLICY, readJson } from '../tools/policy-apply.mjs';
 import { target } from './scene.mjs';
 
 const APPLY = fileURLToPath(new URL('../tools/policy-apply.mjs', import.meta.url));
@@ -110,7 +110,7 @@ test('⭐ 옛 자기 그래프의 훅(tools/graph-hook.mjs)도 키트 그래프 
 
 test('훅 정책은 셸 없이 node 를 바로 띄운다(exec 형식) — 이 PC 실측 bash 경유 1.61초 → 1.13초', () => {
   const hook = (name, event) => readJson(fileURLToPath(new URL(`../policy/${name}.json`, import.meta.url))).hooks[event][0].hooks[0];
-  for (const [name, event, timeout] of [['graph-hook', 'UserPromptSubmit', 30], ['gate-hook', 'Stop', 10]]) {
+  for (const [name, event, timeout] of [['graph-hook', 'UserPromptSubmit', 30]]) {
     const h = hook(name, event);
     assert.equal(h.command, 'node');
     assert.deepEqual(h.args, [`\${CLAUDE_PROJECT_DIR}/.harness/tools/${name}.mjs`]);
@@ -144,7 +144,8 @@ test('⭐ CLI: 기존 설정을 보존하며 반영하고, 다시 돌려도 같�
   assert.equal(spawnSync(process.execPath, [APPLY, dir]).status, 0);
   const once = readFileSync(path, 'utf8');
   const s = JSON.parse(once);
-  assert.deepEqual(s.hooks, { Stop: [] });
+  assert.deepEqual(s.hooks.Stop, []);
+  assert.deepEqual(Object.keys(s.hooks).sort(), ['PreToolUse', 'Stop', 'SubagentStart', 'SubagentStop']);
   assert.ok(s.permissions.allow.includes('Bash(npm test)'));
   assert.deepEqual(s.enabledPlugins, { 'superpowers@harness-kit': true });
   assert.equal(spawnSync(process.execPath, [APPLY, dir]).status, 0);
@@ -192,16 +193,44 @@ test('⭐ 키트에서 지운 도구의 allow 줄(policy/removed.json)을 걷는
   for (const g of gone) assert.ok(!allow.includes(g), g);
 });
 
-test('⭐ 키트에서 지운 훅 도구의 등록을 걷는다 — 남으면 없는 파일을 Read 마다 띄운다 · 프로젝트 훅은 둔다 · --only 설치도', () => {
+test('⭐ 손으로 건 꼴도 걷는다 — 앞 / 없는 상대 경로 · 역슬래시 · 따옴표 · 인자 꼴 / 이름만 비슷한 다른 도구 · 확장자가 더 붙은 것은 남는다', () => {
+  const cmd = (command, args) => ({ Stop: [{ hooks: [{ type: 'command', command, ...(args ? { args } : {}) }] }] });
+  for (const gone of [
+    cmd('node .harness/tools/gate-hook.mjs'),
+    cmd('node %CLAUDE_PROJECT_DIR%\\.harness\\tools\\gate-hook.mjs'),
+    cmd('node "$CLAUDE_PROJECT_DIR/.harness/tools/gate-hook.mjs"'),
+    cmd('node', ['.harness\\tools\\gate-hook.mjs']),
+    cmd('.harness/tools/gate-hook.mjs'),
+  ]) {
+    const { settings, gone: names } = applyPolicy({ hooks: gone }, { local: true, only: true });
+    assert.equal(settings.hooks.Stop, undefined, JSON.stringify(gone));
+    assert.match(names.join(), /hooks\.Stop: gate-hook\.mjs/);
+  }
+  for (const kept of [cmd('node .harness/tools/gate-hook-x.mjs'), cmd('node ./my.harness/tools/gate-hook.mjs'), cmd('node .harness/tools/xgate-hook.mjs'), cmd('node .harness/tools/gate-hook.mjs.bak')]) {
+    assert.deepEqual(applyPolicy({ hooks: kept }, { local: true, only: true }).settings.hooks.Stop, kept.Stop, JSON.stringify(kept));
+  }
+});
+
+test('⭐ 키트에서 지운 훅 도구의 등록을 걷는다 — 남으면 없는 파일을 이벤트마다 띄운다 · 프로젝트 훅은 둔다 · 훅이 안 남은 이벤트 · hooks 칸은 비우지 않고 지운다 · --clean · --only 설치도', () => {
   const ours = { matcher: 'Edit', hooks: [{ type: 'command', command: 'node tools/graph-read-hook.mjs' }] };
-  const hooks = { PostToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/graph-read-hook.mjs'], timeout: 10 }] }, ours] };
-  for (const flags of [['--local'], ['--local', '--only', 'gate-hook']]) {
+  const gate = { Stop: [{ hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/gate-hook.mjs'], timeout: 10 }] }] };
+  const hooks = { PostToolUse: [{ matcher: 'Read', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PROJECT_DIR}/.harness/tools/graph-read-hook.mjs'], timeout: 10 }] }, ours], ...gate };
+  for (const flags of [['--local'], ['--local', '--clean'], ['--local', '--only', 'graph-hook']]) {
     const dir = target(null, { '.claude/settings.local.json': JSON.stringify({ hooks }) });
     const r = apply(dir, ...flags);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /걷음.*hooks\.PostToolUse: graph-read-hook\.mjs/);
-    assert.deepEqual(readJson(join(dir, '.claude', 'settings.local.json')).hooks.PostToolUse, [ours]);
+    assert.match(r.stdout, /걷음.*hooks\.Stop: gate-hook\.mjs/);
+    const s = readJson(join(dir, '.claude', 'settings.local.json'));
+    assert.deepEqual(s.hooks.PostToolUse, [ours]);
+    assert.equal(s.hooks.Stop, undefined);
   }
+  // 걷고 남은 훅이 없으면 빈 hooks 칸도 남기지 않는다
+  const only = target(null, { '.claude/settings.local.json': JSON.stringify({ hooks: gate }) });
+  assert.equal(apply(only, '--local', '--clean').status, 0);
+  // 걷고 남는 것은 늘 거는 서브에이전트 상한 훅뿐이다
+  assert.deepEqual(Object.keys(readJson(join(only, '.claude', 'settings.local.json'))), ['hooks']);
+  assert.deepEqual(Object.keys(readJson(join(only, '.claude', 'settings.local.json')).hooks).sort(), ['PreToolUse', 'SubagentStart', 'SubagentStop']);
 });
 
 test('⭐ CLI 공유: settings.json 에는 팀원 PC 용으로 superpowers 만 선언하고 ponytail 선언 · 모드는 걷는다', () => {
@@ -212,25 +241,25 @@ test('⭐ CLI 공유: settings.json 에는 팀원 PC 용으로 superpowers 만 �
   assert.equal(s.env, undefined);
 });
 
-test('⛔ CLI --only gate-hook 은 걷지 않는다 — 지시 파일이 ponytail 모드 · 플러그인을 정한 대상이다', () => {
+test('⛔ CLI --clean 은 정책을 얹지 않는다 · 플러그인 · ponytail 모드를 걷지 않는다 — 지시 파일이 정한 대상이다', () => {
   const dir = target(null, { '.claude/settings.local.json': JSON.stringify(OLD_SETTINGS) });
-  assert.equal(apply(dir, '--local', '--only', 'gate-hook').status, 0);
+  assert.equal(apply(dir, '--local', '--clean').status, 0);
   const s = readJson(join(dir, '.claude', 'settings.local.json'));
   assert.deepEqual(s.enabledPlugins, OLD_SETTINGS.enabledPlugins);
   assert.deepEqual(s.env, OLD_SETTINGS.env);
 });
 
-test('⭐ CLI --only gate-hook: 관문 훅만 건다 — 기존 체계(권한 · ponytail 모드 · 플러그인)를 지켜야 하는 대상', () => {
+test('⭐ CLI --only graph-hook: 그래프 훅만 건다 — 기존 체계(권한 · ponytail 모드 · 플러그인)를 지켜야 하는 대상', () => {
   const before = { permissions: { allow: ['Read'] }, env: { MINE: '1' }, hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node guard.mjs' }] }] } };
   const dir = target(null, { '.claude/settings.local.json': JSON.stringify(before) });
-  const r = apply(dir, '--local', '--only', 'gate-hook');
+  const r = apply(dir, '--local', '--only', 'graph-hook');
   assert.equal(r.status, 0, r.stderr);
   const s = readJson(join(dir, '.claude', 'settings.local.json'));
   assert.deepEqual(s.permissions, before.permissions);
   assert.deepEqual(s.env, before.env);
   assert.equal(s.enabledPlugins, undefined);
-  assert.deepEqual(s.hooks.PreToolUse, before.hooks.PreToolUse);
-  assert.match(JSON.stringify(s.hooks.Stop), /gate-hook\.mjs/);
+  assert.deepEqual(s.hooks.PreToolUse[0], before.hooks.PreToolUse[0]);
+  assert.match(JSON.stringify(s.hooks.UserPromptSubmit), /graph-hook\.mjs/);
 });
 
 test('⛔ CLI: 대상 설정이 깨진 JSON 이면 덮어쓰지 않고 실패한다', () => {

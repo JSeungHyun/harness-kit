@@ -17,8 +17,7 @@ test('⛔ 규칙 파일의 ⛔ 는 상한 안 — 늘리려면 되돌리기 어�
   }
 });
 
-test('남은 ⛔ 는 그 금지 자리에 있다 — 기준선 · 키트 파일 · 개인 식별자와 비밀값', () => {
+test('남은 ⛔ 는 그 금지 자리에 있다 — 기준선 · 개인 식별자와 비밀값', () => {
   assert.match(repoFile('templates/rules/harness.md'), /^⛔ `node \.harness\/tools\/verify\.mjs --baseline`/m);
-  assert.match(repoFile('templates/rules/harness.md'), /⛔ 키트 파일\(/);
   assert.match(repoFile('templates/rules/graph.md'), /⛔ \*\*개인 식별자/);
 });

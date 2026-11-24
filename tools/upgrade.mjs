@@ -5,11 +5,11 @@
 //   --own-rules: 프로젝트가 고친 줄을 .claude/rules/project-<이름>.md 로 옮기고 키트 판을 다시 깐다 — 키트 파일은 키트 판 그대로여야 이식 검사 ② ③ 이 맞다
 //   --migrate-graph: 옛 자기 그래프(graph.tools)를 키트 그래프 도구로 — 기록은 제자리(graph.store), 기록 files 의 옛 도구 경로만 한 번 바꾼다
 // ⛔ 설정은 쓰지 않는다 — 권한 설정은 사용자 확인 자리라 실행할 명령만 낸다.
-import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, rmSync, readdirSync, statSync, mkdirSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { loadConfig, cli, CONFIG } from '../lib/config.mjs';
-import { KIT, SHIPPED, COPIED, DOCS, graphOf } from '../lib/parts.mjs';
+import { KIT, SHIPPED, COPIED, DOCS, AGENTS, graphOf } from '../lib/parts.mjs';
 import { load, sup } from './graph-find.mjs';
 import { testHints, testSources, RECIPES, recipeHints, recipeLine } from './detect.mjs';
 
@@ -47,11 +47,39 @@ export function filler(raw) {
 }
 
 // 키트가 git 저장소가 아니면(압축본) 이력이 없다 — 그러면 다른 규칙은 전부 「고쳤다」로 본다
+const seen = new Map();
 function history(src) {
+  if (seen.has(src)) return seen.get(src);
   let commits;
   try { commits = kitGit('rev-list', 'HEAD', '--', src).split('\n').filter(Boolean); } catch { return []; }
   // 지운 템플릿은 지운 커밋에 없다
-  return commits.flatMap((c) => { try { return [kitGit('show', `${c}:${src}`)]; } catch { return []; } });
+  const all = commits.flatMap((c) => { try { return [kitGit('show', `${c}:${src}`)]; } catch { return []; } });
+  seen.set(src, all);
+  return all;
+}
+
+// graph.rules 를 기본값으로 되돌린 설치 — 키트 문서가 <graph-rules> 자리만 다른 값인 키트 판이면 그 옛 값(22차).
+// 설정에서 지운 값은 설치본에만 남는다. 못 찾으면 그 줄이 「프로젝트가 고쳤다 +1 −1」로 읽히고 --own-rules 가 옛 자리를 프로젝트 규칙으로 옮긴다
+const SLOT = '\u0000graph-rules\u0000';
+export const withRules = (raw, rules) => ({ ...raw, graph: { ...raw.graph, rules } });
+export function rulesWas(dir, raw) {
+  const base = graphOf({}).rules;
+  if (graphOf(raw).rules !== base) return null;
+  const now = filler(raw);
+  const slot = filler(withRules(raw, SLOT));
+  for (const [src, dst] of DOCS) {
+    if (!existsSync(join(dir, dst))) continue;
+    const mine = nl(readFileSync(join(dir, dst), 'utf8'));
+    const tmpl = readFileSync(join(KIT, src), 'utf8');
+    if (mine === now(tmpl)) continue;
+    for (const v of [tmpl, ...history(src)]) {
+      const parts = slot(v).split(SLOT);
+      if (parts.length < 2 || !parts[1] || !mine.startsWith(parts[0])) continue;
+      const was = mine.slice(parts[0].length, mine.indexOf(parts[1], parts[0].length));
+      if (was && was !== base && !was.includes('\n') && parts.join(was) === mine) return was;
+    }
+  }
+  return null;
 }
 
 // 줄 단위 LCS — added 는 설치본 쪽 줄 번호(절 제목을 찾으려고), removed 는 빠진 키트 줄. 빈 줄은 세지 않는다
@@ -123,15 +151,16 @@ function hideLocal(dir, rel) {
   appendFileSync(exclude, `${text && !text.endsWith('\n') ? '\n' : ''}/${rel}\n`);
 }
 
-// 대상 설정의 모양 — 관문 훅만 건 설치(--only gate-hook)인가 · 키트 그래프 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
+// 대상 설정의 모양 — 키트 정책을 하나도 안 받은 설치(--only · 지시 파일이 흐름 · 권한을 정한 프로젝트)인가 · 키트 그래프 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
 export function settingsShape(dir) {
   const sets = ['settings.local.json', 'settings.json'].map((f) => read(join(dir, '.claude', f)));
   // 옛 자기 그래프 훅(tools/graph-hook.mjs)도 그래프 훅이다 — 정책 줄이 키트 훅으로 바꿔 끼운다
   const graphHook = sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('graph-hook.mjs'));
   // 정책 전체를 받은 설치는 키트 도구 허용 규칙이 있다 — 플러그인 선언은 표식이 아니다(--only 대상이 ponytail 을 스스로 켤 수 있다)
   const kitAllow = (read(join(KIT, 'policy', 'settings.json')).permissions?.allow ?? []).filter((r) => r.includes('.harness/tools/'));
-  const full = sets.some((s) => (s.permissions?.allow ?? []).some((r) => kitAllow.includes(r)));
-  return { graphHook, only: sets.some((s) => JSON.stringify(s.hooks ?? {}).includes('gate-hook.mjs')) && !full };
+  // 서로 다른 두 개 이상 — 프로젝트가 스스로 verify allow 하나만 둔 설치를 정책 전체로 읽지 않는다(두 파일의 합)
+  const full = new Set(sets.flatMap((s) => (s.permissions?.allow ?? []).filter((r) => kitAllow.includes(r)))).size >= 2;
+  return { graphHook, only: !full };
 }
 
 // 키트 템플릿에서 지운 장부 줄 — 장부 본문은 프로젝트 것이라 그 줄과 같은 줄(앞뒤 공백 무시)만 본다. 갱신이 걷고 이식 검사 ① 이 남은 것을 본다
@@ -234,7 +263,9 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   if (dirty.length && !process.env.HARNESS_KIT_DIRTY_OK) return { text: `⛔ 키트에 커밋 안 된 변경 — 커밋한 뒤 갱신한다(설치본에 미커밋 판이 커밋 이름으로 적힌다): ${list(dirty)}`, stop: true };
   loadConfig(dir);
   let raw = JSON.parse(readFileSync(join(dir, CONFIG), 'utf8'));
-  const fill = filler(raw);
+  // 되돌린 설치는 설치본을 옛 값으로 판정하고 기본값으로 다시 깐다
+  const was = rulesWas(dir, raw);
+  const fill = filler(was ? withRules(raw, was) : raw);
   const own = ownGraph(raw);
   const out = [];
   let stop = false;
@@ -255,6 +286,12 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
 
   for (const [src, dst, name] of DOCS) {
     const at = join(dir, dst);
+    if (!existsSync(at) && was && name === 'graph') {
+      writeFileSync(at, to(readFileSync(join(KIT, src), 'utf8')));
+      if (raw.mode !== 'share') hideLocal(dir, dst);
+      out.push(`✅ ${dst} — 깔았다(graph.rules 를 기본값으로 되돌린 설치)`);
+      continue;
+    }
     if (!existsSync(at)) { out.push(`· ${dst} — 없다(얹지 않은 모듈) · 그대로`); continue; }
     const now = nl(readFileSync(at, 'utf8'));
     const doc = docState(src, now, fill, to);
@@ -270,6 +307,28 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
         `   손대지 않았다. 고친 줄을 프로젝트 규칙 파일(.claude/rules/project-${name}.md)로 옮기고 키트 판을 다시 깐다: node ${KIT_PATH}/tools/upgrade.mjs ${dir.replace(/\\/g, '/')} --own-rules`);
     }
   }
+  // 서브에이전트 정의 — 없으면 깐다(옛 설치) · 키트 이력의 판이면 갱신 · 프로젝트가 고쳤으면 덮지 않는다(--own-rules 대상도 아니다 — 규칙 줄이 아니다)
+  for (const [src, dst] of AGENTS) {
+    const at = join(dir, dst);
+    const next = nl(readFileSync(join(KIT, src), 'utf8'));
+    if (!existsSync(at)) {
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, next);
+      if (raw.mode !== 'share') hideLocal(dir, dst);
+      out.push(`✅ ${dst} — 깔았다`);
+      continue;
+    }
+    const now = nl(readFileSync(at, 'utf8'));
+    const doc = docState(src, now, nl);
+    if (doc.state === 'same') out.push(`· ${dst} — 이미 지금 것`);
+    else if (doc.state === 'old') { writeFileSync(at, next); out.push(`✅ ${dst} — 갱신`); }
+    else {
+      stop = true;
+      out.push(`⛔ ${dst} — 프로젝트가 고쳤다 ${summary(doc.diff, now, 8)}`, '   손대지 않았다. 고친 내용은 다른 이름의 에이전트 파일로 옮기고 이 파일을 지운 뒤 갱신을 다시 돌린다 — 키트 파일은 키트 판 그대로여야 이식 검사 ③ 이 맞다');
+    }
+  }
+  // 옛 규칙 자리는 프로젝트 데이터라 알리기만 한다 — 두 벌이 남으면 모델이 둘 다 읽는다
+  if (was) out.push(`⚠️ 기록 규칙 — graph.rules 가 기본값으로 돌아왔다(옛 자리: ${was}) · 그 파일 · 스킬은 건드리지 않았다. 프로젝트가 한다: 키트 graph.md 에 없는 고유 줄만 .claude/rules/project-*.md 로 옮기고, 옛 자리의 기록 규칙과 그것을 가리키는 줄을 지운다`);
 
   // 키트에서 지운 것 — 복사는 덮어쓰기만 해서 설치본에 남고, 남은 도구를 가리키는 규칙 · allow 가 거짓이 된다
   const removed = read(join(KIT, 'policy', 'removed.json'));
@@ -313,19 +372,19 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   }
 
   // 옛 정책이 쓴 플러그인 선언 · ponytail 모드(옛 마켓 id 포함)는 policy-apply 가 걷는다 — 여기서는 --off 를 내지 않는다
-  // 관문 훅만 건 설치(--only gate-hook — 지시 파일이 흐름 · 권한을 정한 프로젝트)에 --with 를 내면 받지 않은 정책이 들어간다
+  // 키트 정책을 받지 않은 설치에 기본 정책을 안내하면 받지 않은 권한 · ponytail 끄기 · 플러그인이 들어간다 — 걷을 것만 걷는다(--clean)
   // 키트 그래프 훅을 건 설치 — 다시 병합해야 훅 형식이 바뀐다
   const { graphHook, only } = settingsShape(dir);
   out.push('', '다음 — 이 순서로 (설정이라 사용자가 돌리거나 승인한다):',
     `1. node ${KIT_PATH}/tools/plugin-plan.mjs — 이전 명령이 나오면 사용자 승인 뒤 먼저 실행한다`,
-    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'} ${only ? '--only gate-hook' : `--with gate-hook${graphHook ? ' --with graph-hook' : ''}`}`,
+    `2. node .harness/tools/policy-apply.mjs${raw.mode === 'share' ? '' : ' --local'}${only ? (graphHook ? ' --only graph-hook' : ' --clean') : graphHook ? ' --with graph-hook' : ''}`,
     `3. node ${KIT_PATH}/tools/install-check.mjs ${dir.replace(/\\/g, '/')} — 표를 보고에 그대로 붙인다. exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다`);
 
   // 갱신이 검사 목록을 다시 본다 — 빌드 도구가 있는데 코드를 덮는 검사가 없으면 verify 녹색은 코드 변경의 증거가 아니다
   const hints = coversGap(dir, raw);
   if (hints.length) {
     stop = true;
-    out.push('', `⛔ 빌드 · 테스트 단서(${hints.join(' · ')})가 보이는데 covers 를 가진 검사가 없다 — 관문 훅이 코드 변경마다 /code-review 를 요구하고 verify 는 「코드 검사 없음」을 낸다. `
+    out.push('', `⛔ 빌드 · 테스트 단서(${hints.join(' · ')})가 보이는데 covers 를 가진 검사가 없다 — 코드 변경의 증거는 verify 가 아니라 /code-review 이고 verify 는 「코드 검사 없음」을 낸다. `
       + '그 코드를 돌리는 검사를 harness.json 에 더하고 covers 에 그 코드의 glob 을 적은 뒤(SETUP ⑤) 갱신을 다시 돌린다. 테스트 소스가 없거나 이 PC 에서 못 돌리면(테스트 명령을 지어내지 않는다) 실제로 도는 검사 하나에 "tests": "none" 과 "why": "<이유>" 를 적는다 — 이식 검사 「프로젝트 맞춤」에 「테스트 없음 — 코드 변경마다 /code-review」가 늘 보인다');
   }
   const grown = grownTests(dir, raw);

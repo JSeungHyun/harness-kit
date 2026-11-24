@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // 설치 — 정책(.harness/policy/*.json)을 대상 Claude 설정에 병합한다. 설계안.
 // ⛔ 덮어쓰지 않는다: 권한은 합집합, env·플러그인·마켓은 정책의 키만 정하고 나머지는 보존한다.
-//   node .harness/tools/policy-apply.mjs [대상] [--local] [--with <이름>]… [--off <정책 id>]…
-//   --local: .claude/settings.local.json 에 (로컬 전용 모드) · --with: policy/<이름>.json 도 병합 (예: graph-hook) · --only: 기본 정책 없이 그것만
+//   node .harness/tools/policy-apply.mjs [대상] [--local] [--with <이름>]… [--clean] [--off <정책 id>]…
+//   --local: .claude/settings.local.json 에 (로컬 전용 모드) · --with: policy/<이름>.json 도 병합 (예: graph-hook) · --only: 기본 정책 없이 그것만 · --clean: 기본 정책 없이 걷을 것(키트에서 지운 도구의 훅 등록 · allow)만 걷는다 · 어느 쪽이든 서브에이전트 상한 훅(agent-cap)은 늘 건다 · 반대편 설정 파일(있을 때만)에는 지운 도구를 가리키는 것만 건다
 //   --off: 그 플러그인 id 를 settings.local.json 에 false 로 — 모드와 무관하게 local 파일. 정책 id(다른 마켓으로 이미 켠 같은 플러그인이 있을 때) 또는 같은 플러그인의 옛 마켓 id(갱신)
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -26,8 +26,8 @@ export const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || join(homedir(), 
 // 옛 정책이 프로젝트에 쓴 것을 걷는다 — 플러그인은 PC 에서만 관리하므로 켬 · 끔(--off 가 쓴 옛 마켓 id) 모두 묻지 않고 걷는다
 const KIT_PLUGINS = ['superpowers', 'ponytail'];
 const OLD_MARKETS = { ponytail: 'DietrichGebert/ponytail' }; // 10-03 판 정책이 쓴 마켓 선언
-// 정책에서 뺀 권한 — 합집합 병합이라 남는다. 프로젝트 deny 는 전역 allow 를 이기고(rm 은 PC 가 정한다 · 2026-11-05), 지운 도구의 allow 는 없는 도구를 자동 승인한다
-const OLD_RULES = { deny: ['Bash(rm *)', 'Bash(rmdir *)'], allow: readJson(policyFile('removed')).allow };
+// 정책에서 뺀 권한 — 합집합 병합이라 남는다. 프로젝트 deny 는 전역 allow 를 이기고(rm 은 PC 가 정한다 · 2026-11-05)
+const OLD_RULES = { deny: ['Bash(rm *)', 'Bash(rmdir *)'] };
 export function dropOld(settings, declared = {}) {
   const out = structuredClone(settings);
   const gone = [];
@@ -46,19 +46,36 @@ export function dropOld(settings, declared = {}) {
   return { settings: out, gone };
 }
 
-// 키트에서 지운 훅 도구의 등록 — 남으면 없는 파일을 그 이벤트마다 띄운다. 키트 도구 경로만 보고 --only 설치도 걷는다
-const GONE_HOOKS = readJson(policyFile('removed')).files.filter((f) => f.startsWith('.harness/tools/')).map((f) => `/${f}`);
-function dropHooks(settings) {
+// 키트에서 지운 도구를 가리키는 것 — 훅 등록(남으면 없는 파일을 그 이벤트마다 띄운다) · 그 도구의 allow(없는 도구를 자동 승인한다). 키트 도구 경로만 보고 --only 설치도 걷는다
+// 병합 · 플러그인 · env 는 건드리지 않는다 — 모드 쪽 반대편 설정 파일에도 이 함수만 건다
+const REMOVED = readJson(policyFile('removed'));
+const GONE_TOOLS = REMOVED.files.filter((f) => f.startsWith('.harness/tools/'));
+const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// 역슬래시를 / 로 바꾼 뒤 도구 경로 앞이 시작 · 공백 · 따옴표 · / 이고 뒤가 끝 · 공백 · 따옴표일 때만 — 이름만 비슷한 도구는 남긴다
+const GONE_HOOK = new RegExp(`(?:^|[\\s"'/])(?:${GONE_TOOLS.map(esc).join('|')})(?=$|[\\s"'])`);
+const deadHook = (h) => GONE_HOOK.test(hookKey(h).replace(/\\/g, '/'));
+
+export function dropGone(settings) {
   const gone = [];
-  const dead = (h) => GONE_HOOKS.some((f) => hookKey(h).includes(f));
   const hooks = Object.fromEntries(Object.entries(settings.hooks ?? {}).map(([event, groups]) => [event, groups.flatMap((g) => {
-    const hit = (g.hooks ?? []).filter(dead);
+    const hit = (g.hooks ?? []).filter(deadHook);
     if (!hit.length) return [g];
     gone.push(...hit.map((h) => `hooks.${event}: ${kitTool(hookKey(h))}`));
-    const left = g.hooks.filter((h) => !dead(h));
+    const left = g.hooks.filter((h) => !deadHook(h));
     return left.length ? [{ ...g, hooks: left }] : [];
   })]).filter(([, groups]) => groups.length));
-  return gone.length ? { settings: { ...settings, hooks }, gone } : { settings, gone };
+  let out = settings;
+  if (gone.length) {
+    // 걷고 남은 훅이 없으면 빈 hooks 칸도 남기지 않는다
+    if (Object.keys(hooks).length) out = { ...settings, hooks };
+    else { const { hooks: _, ...rest } = settings; out = rest; }
+  }
+  const hit = (out.permissions?.allow ?? []).filter((r) => REMOVED.allow.includes(r));
+  if (hit.length) {
+    out = { ...out, permissions: { ...out.permissions, allow: out.permissions.allow.filter((r) => !REMOVED.allow.includes(r)) } };
+    gone.push(...hit.map((r) => `permissions.allow: ${r}`));
+  }
+  return { settings: out, gone };
 }
 
 export function mergeSettings(settings, policy) {
@@ -91,12 +108,15 @@ export function mergeSettings(settings, policy) {
   return out;
 }
 
+// 모든 설치에 거는 정책 — 서브에이전트 동시 상한 2(--only · --clean 도 건다)
+const ALWAYS = ['agent-cap'];
+
 // 정책 조합 — CLI 와 이식 검사(install-check ④ 「다시 돌려도 바뀌는 것 없음」)가 같은 결과를 본다
 export function applyPolicy(settings, { local = false, extra = [], only = false } = {}) {
   let merged = settings;
   const gone = [];
   // --only: 기본 정책(권한 · 플러그인)을 빼고 그 정책만 — 기존 체계를 지켜야 하는 대상
-  for (const p of [...(only ? [] : [POLICY]), ...extra.map(policyFile)]) {
+  for (const p of [...(only ? [] : [POLICY]), ...[...new Set([...extra, ...ALWAYS])].map(policyFile)]) {
     if (!existsSync(p)) throw new Error(`정책이 없다: ${p}`);
     const policy = readJson(p);
     // 로컬 설치는 플러그인을 PC(사용자 범위)에서만 켠다 — 프로젝트에 선언하면 프로젝트마다 관리해야 한다
@@ -107,7 +127,7 @@ export function applyPolicy(settings, { local = false, extra = [], only = false 
     merged = r.settings;
     gone.push(...r.gone);
   }
-  const h = dropHooks(merged);
+  const h = dropGone(merged);
   return { settings: h.settings, gone: [...gone, ...h.gone] };
 }
 
@@ -131,6 +151,10 @@ cli(import.meta.url, () => {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--off') {
       off.add(args[++i]);
+      continue;
+    }
+    if (args[i] === '--clean') {
+      only = true;
       continue;
     }
     if (args[i] !== '--with' && args[i] !== '--only') {
@@ -157,8 +181,13 @@ cli(import.meta.url, () => {
   const personal = settingsPath(root, true);
   const { settings: merged, gone } = applyPolicy(readJson(path), { local, extra, only });
   const notes = gone.length ? [`걷음(옛 정책이 쓴 것 — 플러그인 · rm 은 PC 에서 정한다 · 키트에서 지운 도구의 allow · 훅): ${gone.join(', ')}`] : [];
+  // 반대편 설정 파일(로컬 설치의 settings.json · 공유 설치의 settings.local.json)에는 지운 도구를 가리키는 것만 건다 — 없으면 만들지 않는다
+  const other = settingsPath(root, !local);
+  const side = existsSync(other) ? dropGone(readJson(other)) : { gone: [] };
+  if (side.gone.length) notes.push(`걷음(반대편 ${other}): ${side.gone.join(', ')}`);
   // --local 이면 두 경로가 같아 한 번만 쓴다. 읽기는 모두 쓰기 앞에 — 어느 파일이 깨졌어도 반쯤 쓰지 않는다
   const out = new Map([[path, merged]]);
+  if (side.gone.length) out.set(other, side.settings);
   if (off.size) {
     const offPolicy = { enabledPlugins: Object.fromEntries([...off].map((id) => [id, false])) };
     out.set(personal, mergeSettings(out.get(personal) ?? readJson(personal), offPolicy));

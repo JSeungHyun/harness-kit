@@ -4,15 +4,14 @@
 //   node <kit>/tools/install-check.mjs --all <폴더>   # 그 아래 설치마다 ⑨ 판 · ① 동일만 — 키트를 고친 뒤 이 PC 설치가 모두 같은 판인가
 // 키트 소유 · 프로젝트 설정 · 프로젝트 데이터의 자리는 lib/parts.mjs 한 곳 — 설정 · 데이터는 판정 줄 아래 「프로젝트 맞춤」에 보이고 판정하지 않는다.
 // ⛔ 하나라도 ⛔ 면 exit 1 — 「이식 성공」은 이 도구의 판정 줄로만 쓴다(설치 세션의 글이 아니라).
-import { existsSync, readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { join, basename, relative } from 'node:path';
-import { tmpdir } from 'node:os';
 import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
-import { KIT, DOCS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
-import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, ledgerLeft, graphRefs } from './upgrade.mjs';
-import { applyPolicy, settingsPath, readJson } from './policy-apply.mjs';
+import { KIT, DOCS, AGENTS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
+import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, coversGap, recipeGap, grownTests, ledgerLeft, graphRefs, rulesWas, withRules } from './upgrade.mjs';
+import { applyPolicy, dropGone, settingsPath, readJson } from './policy-apply.mjs';
 import { pcPlan, pluginList } from './plugin-plan.mjs';
 import { isUnion } from './install-mode.mjs';
 
@@ -21,32 +20,10 @@ const keys = (a, b) => [...new Set([...Object.keys(a ?? {}), ...Object.keys(b ??
 // 바뀔 곳 — 권한 · 훅은 한 단계 내려가 이름을 댄다
 const differ = (a, b) => keys(a, b).filter((k) => !isDeepStrictEqual(a?.[k], b?.[k]))
   .flatMap((k) => (['permissions', 'hooks'].includes(k) ? keys(a?.[k], b?.[k]).filter((j) => !isDeepStrictEqual(a?.[k]?.[j], b?.[k]?.[j])).map((j) => `${k}.${j}`) : [k]));
-const node = (cwd, script, args = [], input = '') => {
-  const r = spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8', input, maxBuffer: 1 << 26 });
+const node = (cwd, script, args = []) => {
+  const r = spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 26 });
   return { code: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 };
-
-// 관문 훅이 실제로 막고 통과시키는가 — 코드만 바꾼 턴은 되돌리고, 증거 세트를 다 갖춘 턴은 통과
-function gateProbe(dir) {
-  const tmp = mkdtempSync(join(tmpdir(), 'install-check-'));
-  try {
-    const use = (name, input) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id: name, name, input }] } });
-    const skill = (s) => use('Skill', { skill: s });
-    const blocks = (lines, n) => {
-      const t = join(tmp, `${n}.jsonl`);
-      writeFileSync(t, [{ type: 'user', origin: { kind: 'human' }, message: { content: '고쳐줘' } }, ...lines].map((l) => JSON.stringify(l)).join('\n'));
-      const r = node(dir, join(dir, '.harness', 'tools', 'gate-hook.mjs'), [], JSON.stringify({ transcript_path: t, stop_hook_active: false, background_tasks: [] }));
-      return /"decision":"block"/.test(r.out);
-    };
-    const edit = use('Edit', { file_path: 'src/install-check-probe.mjs' });
-    // 그래프 기록이 있는 설치는 「기록 안 함」 한 줄까지가 다 갖춘 턴이다
-    const done = [edit, skill('ponytail-review'), skill('code-review'), use('Bash', { command: 'node .harness/tools/verify.mjs' }), skill('final-gate'),
-      { type: 'assistant', message: { content: [{ type: 'text', text: '그래프: 기록 안 함 — 이식 검사 합성 턴' }] } }];
-    return { blocks: blocks([edit], 1), passes: !blocks(done, 2) };
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
-}
 
 // ① 키트 도구 · lib · 정책 — 갱신이 복사하는 것 그대로(그래프 도구 포함 — 예외 없음) · 프로젝트가 더한 도구는 보지 않는다
 function sameFiles(dir, raw) {
@@ -115,6 +92,8 @@ export function checkInstall(dir, { plugins } = {}) {
 
   // ② ③ 키트 소유 문서 — 장부 경로 · 그래프 자리를 채운 키트 판과 같아야 한다. 프로젝트 규칙은 .claude/rules/ 의 별도 파일에
   const fill = filler(raw);
+  // graph.rules 를 기본값으로 되돌리고 아직 갱신하지 않은 설치 — 옛 자리 채움은 프로젝트가 고친 줄이 아니다
+  const was = rulesWas(dir, raw);
   const docs = (n, what, picked) => {
     const notes = picked.map(([src, dst]) => {
       const name = basename(dst);
@@ -123,26 +102,33 @@ export function checkInstall(dir, { plugins } = {}) {
       const d = docState(src, now, fill);
       if (d.state === 'same') return [true, `${name} 같음`];
       if (d.state === 'old') return [false, `${name} 옛 키트 판 — upgrade 로 갱신한다`];
-      return [false, `${name} 프로젝트가 고쳤다 ${summary(d.diff, now)} — upgrade --own-rules 로 그 줄을 프로젝트 규칙 파일로 옮긴다`];
+      if (was && docState(src, now, filler(withRules(raw, was))).state !== 'mine') return [false, `${name} 옛 graph.rules 자리 채움(${was}) — upgrade 로 갱신한다`];
+      // 에이전트 정의는 규칙 줄이 아니라 --own-rules 대상이 아니다 — upgrade 가 낸 안내와 같은 처방
+      const fix = AGENTS.some(([, to]) => to === dst) ? '고친 내용은 다른 이름의 에이전트 파일로 옮기고 이 파일을 지운 뒤 upgrade 를 다시 돌린다' : 'upgrade --own-rules 로 그 줄을 프로젝트 규칙 파일로 옮긴다';
+      return [false, `${name} 프로젝트가 고쳤다 ${summary(d.diff, now)} — ${fix}`];
     });
     row(n, what, notes.map(([, s]) => s).join(' · '), notes.every(([ok]) => ok));
   };
   // 기록 규칙 자리를 지시 파일 · 스킬로 정한 설치(graph.rules)는 graph.md 를 얹지 않는다
   const rulesElsewhere = graph.rules !== graphOf({}).rules;
   docs('②', `규칙 ${rulesElsewhere ? 'harness.md' : 'harness.md · graph.md'} 가 키트 판(자리 채움)과 같다`, DOCS.filter(([src]) => src.startsWith('templates/rules/') && !(rulesElsewhere && src.endsWith('graph.md'))));
-  docs('③', '스킬 final-gate 가 키트 판(자리 채움)과 같다', DOCS.filter(([src]) => src.includes('/skills/')));
+  docs('③', '스킬 final-gate · 에이전트 정의 kit-implementer · kit-verifier 가 키트 판(자리 채움)과 같다', [...DOCS.filter(([src]) => src.includes('/skills/')), ...AGENTS]);
 
   // ④ 정책 — policy-apply 를 그 설치 모양대로 다시 돌려도 바뀌는 것이 없어야 한다(빠진 권한 · 옛 훅 형식 · 걷을 옛 항목)
   const local = raw.mode !== 'share';
   const file = settingsPath(dir, local);
   const now = readJson(file);
   const { graphHook, only } = settingsShape(dir);
-  const { settings: want } = applyPolicy(now, { local, only, extra: ['gate-hook', ...(graphHook ? ['graph-hook'] : [])] });
+  const { settings: want } = applyPolicy(now, { local, only, extra: graphHook ? ['graph-hook'] : [] });
   const diff = differ(now, want);
-  row('④', '정책 — policy-apply 를 다시 돌려도 바뀌는 것 없음 (권한 · 관문 훅 exec 형식 · 켠 설치만 그래프 훅)',
-    diff.length ? `${slash(relative(dir, file))} 에서 바뀔 곳: ${diff.join(', ')} — upgrade 가 낸 policy-apply 줄을 돌린다`
-      : `${slash(relative(dir, file))} 그대로${only ? ' · 관문 훅만(--only gate-hook)' : ''}${graphHook ? ' · 그래프 훅 켬' : ''}`,
-    !diff.length);
+  // 반대편 설정 파일 — policy-apply 가 지운 도구를 가리키는 것만 거는 자리
+  const side = settingsPath(dir, !local);
+  const left = existsSync(side) ? dropGone(readJson(side)).gone : [];
+  const bits = [diff.length && `${slash(relative(dir, file))} 에서 바뀔 곳: ${diff.join(', ')}`, left.length && `반대편 ${slash(relative(dir, side))} 에 걷을 것 남음: ${left.join(', ')}`].filter(Boolean);
+  row('④', '정책 — policy-apply 를 다시 돌려도 바뀌는 것 없음 (권한 · 걷은 훅 등록 · 켠 설치만 그래프 훅) · 반대편 설정 파일에 지운 도구의 훅 · allow 0',
+    bits.length ? `${bits.join(' · ')} — upgrade 가 낸 policy-apply 줄을 돌린다`
+      : `${slash(relative(dir, file))} 그대로${only ? ' · 키트 정책 없음(--only)' : ''}${graphHook ? ' · 그래프 훅 켬' : ''}`,
+    !bits.length);
 
   // ⑤ harness.json — 값은 프로젝트 것이고 형식 · 있어야 할 것만 본다
   const probs = [];
@@ -190,12 +176,10 @@ export function checkInstall(dir, { plugins } = {}) {
   const firstTest = raw.profile === 'new' && v.code === 1 && /실행된 테스트가 0개/.test(v.out);
   const why = v.out.split(/\r?\n/).find((l) => l.startsWith('⛔')) ?? v.out.trim().split(/\r?\n/).at(-1) ?? '';
   const g = node(dir, join(dir, '.harness', 'tools', 'graph-find.mjs'), ['--check']);
-  const gate = gateProbe(dir);
-  row('⑧', '동작 — verify exit 0 · graph-find --check exit 0 · 관문 훅이 코드만 바꾼 턴을 되돌리고 다 갖춘 턴은 통과',
+  row('⑧', '동작 — verify exit 0 · graph-find --check exit 0',
     [`verify exit ${v.code}${firstTest ? ' (첫 테스트 전 — 신규는 정상)' : v.code ? ` — ${why.slice(0, 80)}` : ''}`,
-      `graph-find --check exit ${g.code}`,
-      gate.blocks && gate.passes ? '관문 훅 되돌림 · 통과' : `관문 훅이 ${gate.blocks ? '다 갖춘 턴을 막는다' : '코드만 바꾼 턴을 되돌리지 않는다'}`].join(' · '),
-    (v.code === 0 || firstTest) && g.code === 0 && gate.blocks && gate.passes);
+      `graph-find --check exit ${g.code}`].join(' · '),
+    (v.code === 0 || firstTest) && g.code === 0);
 
   const ver = sameCommit(dir);
   row('⑨', `판 — 설치본이 기록한 키트 커밋(.harness/kit-commit) = 키트의 지금 커밋 · 또는 그 뒤 ${SHIPPED.join(' · ')} 그대로`, ver.observed, ver.ok);

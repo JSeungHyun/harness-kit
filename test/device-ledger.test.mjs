@@ -18,6 +18,7 @@ function devices() {
     ...ls('tools').filter((t) => t.endsWith('.mjs') && !hookTools.includes(t)).map((t) => [t]),
     ...ls('templates/rules').flatMap((r) => [...repoFile(r).matchAll(/^## (.+)$/gm)].map((m) => [`${r}#${m[1].split(' — ')[0]}`])),
     ...ls('templates/skills').map((s) => [`${s}/SKILL.md`]),
+    ...ls('templates/agents').map((a) => [a]),
     ...Object.keys(JSON.parse(repoFile('policy/settings.json')).permissions).map((k) => [`policy/settings.json#${k}`]),
     ...ls('templates/state').map((s) => [s]),
   ];

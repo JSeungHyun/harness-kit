@@ -7,7 +7,9 @@
     ".harness/tools/graph-view.mjs",
     ".harness/tools/mybatis-xml.mjs",
     ".harness/tools/graph-read-hook.mjs",
-    ".harness/policy/graph-read-hook.json"
+    ".harness/policy/graph-read-hook.json",
+    ".harness/tools/gate-hook.mjs",
+    ".harness/policy/gate-hook.json"
   ],
   "templates": {
     "templates/state/current.md": "current"

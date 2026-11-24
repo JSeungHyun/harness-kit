@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 // 상시 측정 묶음 — 설치마다 입력을 한 번 얼려 두고, 키트를 고칠 때마다 같은 입력을 지금 도구로 돌려 기준 숫자와 견준다. 설계안.
 // 입력이 날마다 바뀌면(「최근 300」) 차수끼리 숫자를 잇지 못한다 — 그래서 얼린다. 질문당 비용 0(설치 · 측정 때만 돈다).
-//   node proof/bench.mjs --snapshot <설치 폴더…> | --all <폴더>  [--max-mb 200] [--force]
-//     얼린다 — 그래프 기록 · 그 기록이 가리키는 경로의 빈 자리 · harness.json · 턴을 연 입력 최근 N개 · 관문 재생용 세션 기록(턴 끝 M개를 고르게)
+//   node proof/bench.mjs --snapshot <설치 폴더…> | --all <폴더>  [--force]
+//     얼린다 — 그래프 기록 · 그 기록이 가리키는 경로의 빈 자리 · harness.json · 턴을 연 입력 최근 N개
 //   node proof/bench.mjs --run [--accept] [--tools <도구 폴더>]
 //     얼린 설치마다 표 — 첫 --run 이 기준 숫자(baseline.json)를 쓰고, 그 뒤로는 --accept 일 때만 덮는다. 허용폭 밖으로 나빠지면 exit 1 · 도구가 못 돌면 exit 2
 //   --home <폴더>: 스냅숏 자리(기본 ~/.claude/harness-bench — 저장소 밖) · --sessions <폴더>: 세션 기록 뿌리(기본 ~/.claude/projects)
-// ⛔ --run 은 스냅숏만 읽는다. 스냅숏 폴더를 옮기면 관문 재생이 어긋난다(세션 기록 안의 설치 경로를 얼린 자리로 바꿔 뒀다) — 다시 얼린다.
 // 지표를 더하는 자리는 METRICS 배열 하나다. 허용폭은 사전 등록이다 — 결과를 보고 바꾸지 않는다.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +22,7 @@ const flag = (name) => { const i = args.indexOf(name); if (i >= 0) args.splice(i
 const HOME = resolve(opt('--home', join(homedir(), '.claude', 'harness-bench')));
 const SESSIONS = resolve(opt('--sessions', join(homedir(), '.claude', 'projects')));
 const TOOLS = resolve(opt('--tools', join(KIT, 'tools')));
-const N = 300, M = 100, MAX_MB = Number(opt('--max-mb', 200));
+const N = 300;
 const all = opt('--all');
 const force = flag('--force'), accept = flag('--accept');
 
@@ -38,7 +37,6 @@ const ok = (r) => { if (r.status !== 0) throw new Error(`도구 실행 실패(ex
 // ── 지표 ─────────────────────────────────────────────────────────────
 // 원천 — 얼린 입력에 기존 도구를 부른다. 새로 계산하지 않는다. 한 --run 에 원천마다 한 번만 돈다
 const PROMPTS = (s) => { const r = ok(s.tool('graph-measure.mjs', '--prompts', join(s.dir, 'prompts.jsonl'), '--limit', s.meta.prompts, '--dump', s.out('prompts.json'))); return { ...r, dump: json(s.out('prompts.json')) }; };
-const GATE = (s) => { const r = ok(s.tool('graph-measure.mjs', '--gate', join(s.dir, 'gate'), '--limit', s.meta.turns, '--dump', s.out('gate.json'))); return { ...r, dump: json(s.out('gate.json')) }; };
 const SELF = (s) => ok(s.tool('graph-measure.mjs', '--self'));
 const CHECK = (s) => s.tool('graph-find.mjs', '--check');
 // 그 설치가 세션마다 읽는 키트 규칙 — 줄바꿈은 LF 로 센다(test/rule-budget.test.mjs 와 같다)
@@ -69,7 +67,6 @@ const changed = (b, n) => n !== b && '⚠️ 바뀌었다';
 // 값이 [{ id, hash }] 목록이면 기준과 입력마다 견줘 「같음 n/N」과 다른 id 만 낸다(판정은 사람). unit 이 ms 인 줄은 부하에 흔들린다
 const METRICS = [
   { key: 'hookP90', name: '프롬프트 훅 p90', unit: 'ms', from: PROMPTS, read: cell('전체', '훅 p90'), judge: slower },
-  { key: 'gateP90', name: '관문 훅 p90', unit: 'ms', from: GATE, read: cell('전체', '훅 p90'), judge: slower },
   { key: 'injRate', name: '주입률', unit: '%', from: PROMPTS, read: cell('전체', '주입률') },
   { key: 'injAvg', name: '주입 평균', unit: '자', from: PROMPTS, read: cell('전체', '주입 평균'), judge: grew },
   { key: 'injP90', name: '주입 p90', unit: '자', from: PROMPTS, read: cell('전체', '주입 p90') },
@@ -79,7 +76,6 @@ const METRICS = [
   { key: 'self', name: '자기검색 1위', unit: '%', from: SELF, read: selfRate, judge: fell(1) },
   { key: 'check', name: '--check exit', unit: '', from: CHECK, read: (r) => r.status, judge: changed },
   { key: 'promptSame', name: '훅 출력 같음', from: PROMPTS, read: (r) => r.dump },
-  { key: 'gateSame', name: '관문 판정 같음', from: GATE, read: (r) => r.dump },
 ];
 
 // ── 얼리기 ───────────────────────────────────────────────────────────
@@ -97,9 +93,6 @@ function snapshot(install) {
   const place = (rel, body) => { mkdirSync(dirname(join(skel, rel)), { recursive: true }); writeFileSync(join(skel, rel), body); };
   place('.harness/harness.json', readFileSync(join(root, '.harness', 'harness.json')));
   place(store, readFileSync(join(root, store)));
-  // 관문 훅은 기록 파일 시각을 턴 시각과 견준다 — 원본 시각을 지킨다
-  const st = statSync(join(root, store));
-  utimesSync(join(skel, store), st.atime, st.mtime);
   // --check 의 경로 무결성 — 지금 있는 경로는 빈 자리로 남긴다(내용은 안 읽힌다). 저장소 밖 경로는 못 얼린다
   let outside = 0;
   for (const r of load(join(root, store))) for (const f of r.files ?? []) {
@@ -116,35 +109,14 @@ function snapshot(install) {
   const frozen = node(join(TOOLS, 'graph-measure.mjs'), ['--prompts', from, '--limit', N, '--freeze', join(dir, 'prompts.jsonl'), '--store', join(skel, store)]);
   if (frozen.status !== 0) throw new Error(`입력을 못 얼렸다 — ${frozen.stderr.trim()}`);
 
-  // 관문 재생용 — 세션 기록 통째(+ 서브에이전트 기록). 상한을 넘으면 큰 것부터 뺀다. 턴 끝 M개는 --run 때 graph-measure 가 여기서 고르게 뽑는다
-  const side = (f) => { const d = join(f.replace(/\.jsonl$/, ''), 'subagents'); return existsSync(d) ? readdirSync(d).filter((n) => /^agent-.*\.jsonl$/.test(n)).map((n) => join(d, n)) : []; };
-  const files = readdirSync(from).filter((f) => f.endsWith('.jsonl')).map((f) => { const parts = [join(from, f), ...side(join(from, f))]; return { parts, size: parts.reduce((a, p) => a + statSync(p).size, 0) }; }).sort((a, b) => b.size - a.size);
-  const sum = () => files.reduce((a, f) => a + f.size, 0);
-  const room = MAX_MB * 2 ** 20 - statSync(join(dir, 'prompts.jsonl')).size - st.size;
-  let dropped = 0;
-  while (files.length && sum() > room) { files.shift(); dropped++; }
-  if (!files.length) throw new Error(`상한 ${MAX_MB}MB 안에 들어가는 세션 기록이 없다`);
-  // 관문 훅은 편집 경로가 설치 안인지로 코드 변경을 가린다 — 기록 속 설치 경로를 얼린 자리로 바꾼다(JSON 안의 \\ 꼴 · / 꼴)
-  const spell = (p) => [p.replaceAll('\\', '\\\\'), p.replaceAll('\\', '/')];
-  const re = (s) => new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-  const [a, b] = spell(root), [toA, toB] = spell(skel);
-  for (const p of files.flatMap((f) => f.parts)) {
-    const to = join(dir, 'gate', relative(from, p));
-    mkdirSync(dirname(to), { recursive: true });
-    writeFileSync(to, readFileSync(p, 'utf8').replace(re(a), () => toA).replace(re(b), () => toB));
-  }
-  const meta = { made: new Date().toISOString(), kit: kitCommit(), install: root, sessions: from, prompts: N, turns: M, rules, gateFiles: files.length, gateMB: Math.round(sum() / 2 ** 20), dropped, outside };
+  const meta = { made: new Date().toISOString(), kit: kitCommit(), install: root, sessions: from, prompts: N, rules, outside };
   writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
-  console.log(`얼림 — ${dir}\n  ${frozen.stdout.trim().replace(/ → .*$/, '')} · 관문 재생용 세션 기록 ${files.length}개(${meta.gateMB}MB)${dropped ? ` · ⚠️ 상한 ${MAX_MB}MB 를 넘어 뺀 세션 기록 ${dropped}개(큰 것부터)` : ''}${outside ? ` · 저장소 밖 경로 ${outside}개는 못 얼림` : ''} · 키트 ${meta.kit}`);
+  console.log(`얼림 — ${dir}\n  ${frozen.stdout.trim().replace(/ → .*$/, '')}${outside ? ` · 저장소 밖 경로 ${outside}개는 못 얼림` : ''} · 키트 ${meta.kit}`);
 }
 
 // ── 돌리기 ───────────────────────────────────────────────────────────
 function run(dir) {
   const meta = json(join(dir, 'meta.json')), skel = join(dir, 'install'), tools = join(skel, '.harness', 'tools');
-  // 관문 훅은 기록 파일 시각을 턴 시각과 견준다 — 얼린 자리를 복사해 시각이 바뀌어도 첫 --run 때 값으로 되돌린다(20차)
-  const store = join(skel, json(join(skel, '.harness', 'harness.json')).graph?.store ?? '.harness/graph/requests.jsonl');
-  if (meta.storeMtime === undefined) writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, storeMtime: statSync(store).mtimeMs }, null, 2));
-  else utimesSync(store, new Date(), new Date(meta.storeMtime));
   // 도구는 설치본 자리(.harness/tools)에 깐다 — 훅 · 도구가 자기 위치로 harness.json 과 기록을 찾는다
   rmSync(tools, { recursive: true, force: true });
   cpSync(TOOLS, tools, { recursive: true });

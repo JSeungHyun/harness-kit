@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { cpSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graphInstall, put, tmp } from './scene.mjs';
@@ -28,7 +28,7 @@ function scene() {
   put(s.dir, '.claude/rules/harness.md', '규칙');
   const sessions = tmp('bench-sessions-');
   const folder = join(sessions, slug(resolve(s.dir)));
-  // 1턴: 설치 안 파일을 고치고 끝(되돌림) · 2턴: 말만(통과) · 3턴: 침묵할 짧은 말
+  // 3턴: 설치 안 파일을 고치고 끝 · 말만 · 침묵할 짧은 말
   put(folder, 'a.jsonl', jsonl([
     human('주문취소 어디서 막혀?'), use('e1', 'Edit', { file_path: join(s.dir, 'src', 'order', 'cancel.mjs') }),
     human('환불 규칙 설명해줘'), use('r1', 'Read', { file_path: 'src/order/refund.mjs' }),
@@ -64,27 +64,13 @@ test('⭐ --snapshot 뒤 --run 은 원본(설치 · 세션 기록)을 다시 읽
   assert.equal(base.metrics.promptSame.length, 3);
   assert.equal(base.metrics.check, 0, '얼릴 때 있던 경로는 원본이 사라져도 있다');
   assert.equal(base.metrics.rules, readFileSync(new URL('../templates/rules/harness.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n').length);
-  // 설치 경로를 가리키던 편집이 얼린 자리에서도 그 설치의 코드로 읽힌다 — 되돌린 턴과 통과한 턴의 판정이 갈린다
-  assert.equal(new Set(base.metrics.gateSame.map((x) => x.hash)).size, 2, JSON.stringify(base.metrics.gateSame));
+  assert.ok(!('gateP90' in base.metrics) && !('gateSame' in base.metrics), '관문 훅 칸은 22차에 걷었다');
   const b = s.bench('--run');
   assert.equal(b.status, 0, b.stdout + b.stderr);
   assert.doesNotMatch(b.stdout, /기준 숫자를 썼다/);
   assert.deepEqual(now(b.stdout), now(a.stdout));
   assert.equal(now(b.stdout)['훅 출력 같음'], '3/3');
   assert.deepEqual(JSON.parse(readFileSync(join(s.snap(), 'baseline.json'), 'utf8')), base, '기준 숫자는 --accept 없이 덮이지 않는다');
-});
-
-test('⭐ 얼린 자리를 복사해 기록 파일 시각이 바뀌어도 --run 이 얼릴 때 시각으로 되돌린다 — 관문 훅이 그 시각을 턴 시각과 견준다(20차 복사본에서 관문 판정 93/100)', () => {
-  const s = scene();
-  const old = new Date(Date.UTC(2026, 8, 1));
-  utimesSync(join(s.dir, '.harness/graph/requests.jsonl'), old, old);
-  assert.equal(s.bench('--snapshot', s.dir).status, 0);
-  const a = s.bench('--run');
-  assert.equal(a.status, 0, a.stdout + a.stderr);
-  utimesSync(join(s.snap(), 'install', '.harness/graph/requests.jsonl'), new Date(), new Date());
-  const b = s.bench('--run');
-  assert.equal(b.status, 0, b.stdout + b.stderr);
-  assert.equal(now(b.stdout)['관문 판정 같음'], '3/3');
 });
 
 test('⭐ 주입을 늘린 도구 폴더(--tools)면 exit 1 이고 다른 입력 id 를 낸다 · --accept 뒤에는 통과한다', () => {
@@ -103,17 +89,11 @@ test('⭐ 주입을 늘린 도구 폴더(--tools)면 exit 1 이고 다른 입력
   assert.equal(now(after.stdout)['훅 출력 같음'], '3/3');
 });
 
-test('--snapshot — 이미 얼린 설치는 --force 없이 덮지 않는다(기준 숫자가 같이 사라진다) · 사본이 상한을 넘으면 큰 세션 기록부터 빼고 그렇게 적는다', () => {
+test('--snapshot — 이미 얼린 설치는 --force 없이 덮지 않는다(기준 숫자가 같이 사라진다)', () => {
   const s = scene();
   assert.equal(s.bench('--snapshot', s.dir).status, 0);
   const again = s.bench('--snapshot', s.dir);
   assert.equal(again.status, 1);
   assert.match(again.stderr, /--force/);
-  const folder = join(s.sessions, readdirSync(s.sessions)[0]);
-  put(folder, 'big.jsonl', jsonl([human('큰 기록'), use('r9', 'Read', { file_path: 'x'.repeat(2 << 20) })]));
-  const small = s.bench('--snapshot', s.dir, '--force', '--max-mb', '1');
-  assert.equal(small.status, 0, small.stdout + small.stderr);
-  assert.match(small.stdout, /상한 1MB 를 넘어 뺀 세션 기록 1개/);
-  assert.deepEqual(readdirSync(join(s.snap(), 'gate')), ['a.jsonl']);
-  assert.equal(JSON.parse(readFileSync(join(s.snap(), 'meta.json'), 'utf8')).dropped, 1);
+  assert.equal(s.bench('--snapshot', s.dir, '--force').status, 0);
 });
