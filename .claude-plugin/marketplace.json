@@ -8,12 +8,6 @@
       "version": "7.0.2",
       "description": "흐름 — 설계 · 계획 · TDD · 검증 규율",
       "source": { "source": "url", "url": "https://github.com/obra/superpowers.git", "sha": "22f0b463e7a5e579904dd6211a520321035526f7" }
-    },
-    {
-      "name": "ponytail",
-      "version": "4.13.0",
-      "description": "과설계 리뷰 — 사용자가 /ponytail-review 로 부른다",
-      "source": { "source": "url", "url": "https://github.com/DietrichGebert/ponytail.git", "sha": "08e952d7a8057a57ce561ff1330d093fd92eec67" }
     }
   ]
 }

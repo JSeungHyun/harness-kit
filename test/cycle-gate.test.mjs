@@ -65,6 +65,7 @@ test('⭐ 수정 뒤 verify 가 없으면 되돌린다 — 이유에 verify 와 
   assert.ok(blocked(out));
   assert.match(out.reason, /verify/);
   assert.match(out.reason, /ponytail/);
+  assert.match(out.reason, /cycle-skill.mjs user ponytail-review/);
   assert.match(out.reason, /사용자에게 묻/);
 });
 
@@ -92,6 +93,7 @@ test('⭐ 리뷰가 없으면 되돌린다 — verify 는 통과했으니 ponyta
   const out = s.run();
   assert.ok(blocked(out));
   assert.match(out.reason, /ponytail/);
+  assert.match(out.reason, /cycle-skill.mjs user ponytail-review/);
   assert.doesNotMatch(out.reason, /verify 가 없|verify 를 돌/);
 });
 

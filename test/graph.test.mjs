@@ -199,6 +199,53 @@ test('⭐ 토크나이저 — 「명사 + 중 + 조사」는 명사를 더한다
   assert.match(cards(hook(s, '재고실사중에 수동으로 바꾸는 것과 자동으로 바뀌는 게 뭐야'))[0] ?? '', /정본: 재고실사 구조/);
 });
 
+test('⭐ 토크나이저 — 정의를 묻는 「~란 · ~이란」도 조사로 뗀다(원형은 남는다) · 떼고 1글자면 버린다(혼란 · 계란)', () => {
+  const t = (q) => [...tokenizeKo(q)].sort();
+  for (const [q, bare] of [['평가위원회란', '평가위원회'], ['정산사전이란', '정산사전']]) {
+    assert.ok(t(q).includes(bare), `${q} → ${bare}`);
+    assert.ok(t(q).includes(q), `${q} — 원형도 남는다`);
+    assert.ok(!t(q).includes(`${bare}이`), `${q} — 「이란」을 「란」만 떼지 않는다`);
+  }
+  assert.deepEqual(t('혼란'), ['혼란']);
+  assert.deepEqual(t('계란'), ['계란']);
+  const s = scene([
+    { req: '공백 채움: 평가위원회 구조', terms: { 평가위원회: 'cmmt' } },
+    { req: '용어 사전: 업무 도메인 → 테이블군', terms: { 업무: 'domain', 기능: 'feature' } },
+  ]);
+  assert.match(cards(hook(s, '평가위원회란 뭐고 어떤 기능을 수행해'))[0] ?? '', /공백 채움: 평가위원회 구조/);
+});
+
+test('⭐ 토크나이저 — 조사를 넓혀 맞는 조사를 모두 떼어 본다(「확대로」는 「대로」에 뺏기지 않는다) · 원형은 남고 1글자 · 불용어는 버린다', () => {
+  const t = (q) => [...tokenizeKo(q)];
+  for (const [q, bare] of [['회의에서는', '회의'], ['기준보다', '기준'], ['지역마다', '지역'], ['담당자로서', '담당자'], ['확대로', '확대'], ['반대로', '반대'], ['기대로도', '기대'], ['평가위원회에서는', '평가위원회'], ['정산사전이라고', '정산사전']]) {
+    assert.ok(t(q).includes(bare), `${q} → ${bare}`);
+    assert.ok(t(q).includes(q), `${q} — 원형도 남는다`);
+  }
+  assert.ok(!t('월간실적보고').includes('월간실적'));
+  assert.ok(!t('정산사전이라고').includes('정산사전이'));
+  assert.deepEqual([...t('혼란')].sort(), ['혼란']);
+  assert.deepEqual([...t('계란')].sort(), ['계란']);
+  const s = scene([
+    { req: '공백 채움: 평가위원회 구조', terms: { 평가위원회: 'cmmt' } },
+    { req: '용어 사전: 업무 도메인 → 테이블군', terms: { 업무: 'domain', 기능: 'feature' } },
+  ]);
+  assert.match(cards(hook(s, '평가위원회에서는 무엇을 하나'))[0] ?? '', /공백 채움: 평가위원회 구조/);
+});
+
+test('⭐ 토크나이저 — 3글자 이상 명사는 어떤 조사든 어간이 남는다(전체확대로 → 전체확대 · 긴 조사 하나만 떼던 옛 방식이면 잃는다) · 불용어로 끝나는 어간은 안 생긴다', () => {
+  const t = (q) => [...tokenizeKo(q)];
+  for (const [q, bare] of [['전체확대로', '전체확대'], ['업무절차대로', '업무절차'], ['월말기준보다', '월말기준'], ['지역본부마다', '지역본부'], ['평가위원회부터', '평가위원회'], ['정산사전조차', '정산사전']]) {
+    assert.ok(t(q).includes(bare), `${q} → ${bare}`);
+    assert.ok(t(q).includes(q), `${q} — 원형도 남는다`);
+  }
+  assert.ok(!t('작업을').includes('작업'), '불용어 어간은 안 생긴다');
+  assert.ok(!t('수정부터').includes('수정'));
+  assert.ok(!t('개선마다').includes('개선'));
+  assert.ok(!t('확인대로').includes('확인'));
+  assert.ok(!t('이걸 그대로').includes('이걸그'), '「그대로」의 「대로」를 떼어 …그 잡음 어간을 만들지 않는다');
+  assert.ok(t('이걸 그대로').includes('그대로'));
+});
+
 test('⭐ ③ 용어 「값」은 한글 질의에서 빠지고 식별자 질의에만 걸린다', () => {
   const rec = { req: '야간 작업', terms: { 배치: '매일 02시에 도는 스케줄러 CronTrigger 설정' } };
   assert.equal(scoreDetail(rec, ['스케줄러']).s, 0);

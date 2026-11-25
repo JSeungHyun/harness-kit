@@ -69,7 +69,7 @@ async function main(raw) {
   if (!s.started || !(s.edited || s.review)) return;
   const need = [];
   if (!s.verified) need.push(s.ran ? '마지막 수정 뒤 verify 가 통과하지 않았다 — 고치고 `node .harness/tools/verify.mjs` 를 exit 0 까지 다시 돌린다' : '마지막 수정 뒤 verify 가 없다 — `node .harness/tools/verify.mjs` 를 돌린다');
-  if (!s.reviewed && !REVIEW.test(input.last_assistant_message ?? '')) need.push('ponytail 과설계 리뷰 결과가 없다 — `node .harness/tools/cycle-skill.mjs ponytail ponytail-review` 가 낸 파일을 읽고 리뷰해 보고에 `net: -N lines possible.` 또는 `Lean already.` 줄을 낸다');
+  if (!s.reviewed && !REVIEW.test(input.last_assistant_message ?? '')) need.push('ponytail 과설계 리뷰 결과가 없다 — `node .harness/tools/cycle-skill.mjs user ponytail-review` 가 낸 파일을 읽고 리뷰해 보고에 `net: -N lines possible.` 또는 `Lean already.` 줄을 낸다');
   if (!need.length) return;
   process.stdout.write(JSON.stringify({ decision: 'block', reason: `${s.edited ? '/exec-cycle · /exec-review 중 코드를 고쳤는데' : '/exec-review 는 검증 전용이라 수정이 없어도'} 끝낼 증거가 빠졌다 — ${need.join(' · ')}. 같은 이유로 계속 막히면 사용자에게 묻고 멈춘다(무엇이 막혔는지 말한다).` }));
 }

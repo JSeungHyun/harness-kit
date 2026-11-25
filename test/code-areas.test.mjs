@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, put, tmp } from './scene.mjs';
@@ -115,4 +116,20 @@ test('이전에 통과하던 모양은 그대로 — 단서 없는 대상 · 소
   assert.deepEqual(areaGaps(target(null, { 'README.md': '# 앱\n' }), conf([])), []);
   assert.deepEqual(areaGaps(target(null, { 'package.json': pkg, 'src/a.js': '0\n' }), conf([{ ...JS, covers: ['src/**'] }])), []);
   assert.equal(run(target(conf([{ ...JS, covers: ['src/**'] }]), { 'package.json': pkg, 'src/a.js': '0\n' })).status, 0);
+});
+
+test('⭐ Maven 안내 — 영역 ⛔ 문장에 「-o 는 새 PC 에서 -o 없이 한 번 먼저」 · mvn 이 PATH 에 없으면 mvnd 데몬 대신 압축본 mvn 안내 · 처방 설명에도', () => {
+  const gap = areaGaps(target(null, SOURCES), conf([JS]))[0];
+  assert.match(areaGapText(gap).text, /-o\(오프라인\).*플러그인이 로컬 저장소에 없으면 실패.*-o 없이 한 번 먼저/);
+  const empty = tmp('nopath-');
+  const keep = process.env.PATH;
+  try {
+    process.env.PATH = empty;
+    assert.match(areaGapText(gap).note, /mvnd 데몬이 연결을 못 받는 PC.*mvn\/bin\/mvn/);
+  } finally { process.env.PATH = keep; }
+  const basis = JSON.parse(readFileSync(new URL('../policy/recipes.json', import.meta.url), 'utf8')).find((r) => r.id === 'maven-compile').basis;
+  assert.match(basis, /-o 없이 한 번 먼저/);
+  assert.match(basis, /mvn\/bin\/mvn/);
+  const buildless = areaGaps(target(null, { 'src/A.java': 'class A {}\n' }), conf([]))[0];
+  assert.doesNotMatch(areaGapText(buildless).text, /-o\(오프라인\)/);
 });

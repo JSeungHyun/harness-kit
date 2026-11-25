@@ -69,16 +69,16 @@ export function checkAll(root, config = join(KIT, CONFIG)) {
   const gone = skip.filter((n) => !names.includes(n));
   const dirty = dirtyKit();
   // 사이클 — /exec-cycle · /exec-review 를 바로 쓸 수 있나는 PC 상태라 설치마다 같은 칸이다. ⛔ 면 설치가 키트 판이어도 끝이 아니다
-  let cycle = { problems: [], warns: [] };
+  let cycle = { problems: [], warns: [], notes: [] };
   try { cycle = cycleReady(); } catch (e) { cycle.problems.push(e.message.split('\n')[0]); }
-  const cyc = cycle.problems.length ? `⛔ ${cell(cycle.problems[0])}` : cycle.warns.length ? '⚠️ 사용 가능 — superpowers 켜짐(자동 주입)' : '✅ 사용 가능';
+  const cyc = cycle.problems.length ? `⛔ ${cell(cycle.problems[0])}` : cycle.warns.length ? '⚠️ 사용 가능 — superpowers 켜짐(자동 주입)' : cycle.notes.length ? '⚠️ 사용 가능 — superpowers 훅 늘어남' : '✅ 사용 가능';
   return {
     ok: all.length > 0 && !bad.length && !dirty && !cycle.problems.length,
     text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 사이클 | 맞나 |', '|---|---|---|---|---|---|---|',
       ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | | | | — |`),
       ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.rules.length ? `설치 글에 따로 ${list(a.rules)}` : '키트 graph.md 하나'} | ${a.gone.length ? `설치 글이 지운 것을 가리킴 ${list(a.gone)}` : '없음'} | ${cyc} | ${same(a) ? '✅' : '⛔'} |`),
       ...(gone.length ? ['', `⚠️ installs.skip 에 있는데 이 폴더에 설치가 없다: ${gone.join(' · ')} — 목록이 낡았다`] : []),
-      ...(dirty ? [] : ['', ...cycle.warns.map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`), ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`),
+      ...(dirty ? [] : ['', ...[...cycle.warns, ...cycle.notes].map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`), ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`),
         !all.length ? '⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
           : cycle.problems.length ? '⛔ 설치는 모두 키트 판이지만 이 PC 에서 /exec-cycle · /exec-review 를 바로 쓸 수 없다 — 위 명령을 사용자 승인 뒤 실행한다'
             : `✅ 설치 ${all.length}곳 모두 키트 판 (${kitCommit()?.slice(0, 7)})`])].join('\n'),
@@ -161,12 +161,12 @@ export function checkInstall(dir, { plugins } = {}) {
   if (pc === undefined) try { pc = pluginList(); } catch { pc = null; }
   if (pc === null) row('⑥', 'PC — plugin-plan 이 낼 명령 없음 · /exec-cycle · /exec-review 를 바로 쓴다', '플러그인 목록을 읽지 못함 (claude plugin list --json)', false);
   else {
-    const { cmds } = pcPlan(pc);
+    const { cmds, warns: left } = pcPlan(pc);
     const cycle = cycleReady(pc);
-    row('⑥', 'PC — plugin-plan 이 낼 명령 없음 (superpowers 고정 판 설치 — 켬/끔 무관 · ponytail-review 가 고정 커밋에서 받은 그대로) · /exec-cycle · /exec-review 를 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) · superpowers 가 켜져 있으면 ⚠️',
-      [cmds.length ? `낼 명령 ${cmds.length}: ${cmds.join(' ; ')}` : '옮길 것 없다', ...cycle.problems.map((p) => `⛔ ${p}`), ...(cycle.warns.length ? ['⚠️ superpowers 켜짐 — 아래 ⚠️ 줄'] : [])].join(' · '),
+    row('⑥', 'PC — plugin-plan 이 낼 명령 없음 (superpowers 고정 판 설치 — 켬/끔 무관 · 사용자 스킬 ponytail-review 가 키트 판 그대로 · 옛 ponytail 플러그인 없음은 ⚠️) · /exec-cycle · /exec-review 를 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) · superpowers 가 켜져 있으면 ⚠️',
+      [cmds.length ? `낼 명령 ${cmds.length}: ${cmds.join(' ; ')}` : '옮길 것 없다', ...cycle.problems.map((p) => `⛔ ${p}`), ...(cycle.warns.length || cycle.notes.length || left.length ? ['⚠️ 아래 ⚠️ 줄'] : [])].join(' · '),
       !cmds.length && !cycle.problems.length);
-    if (cycle.warns.length) rows.at(-1).warn = cycle.warns.join(' ');
+    if (cycle.warns.length || cycle.notes.length || left.length) rows.at(-1).warn = [...cycle.warns, ...cycle.notes, ...left].join(' ');
   }
 
   // ⑦ 지시 파일 — 본문은 프로젝트 것, import 만 본다. 공유는 커밋되는 파일이 import 해야 팀원 세션도 읽는다

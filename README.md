@@ -6,7 +6,7 @@ Claude Code 가 「테스트 통과, 끝났습니다」라고 보고해도 실�
 
 > 상태: **설계안** — 실제 프로젝트 여러 곳(두 PC)에 얹어 쓰고 있지만, 하네스 없을 때와 대조해 효과를 잰 것은 graph 모듈의 운영 데이터뿐이다. [§실측](#실측)
 
-어느 프로젝트에나 얹는 템플릿이다. **흐름은 superpowers, 과설계 점검은 ponytail** 이 맡고,
+어느 프로젝트에나 얹는 템플릿이다. **흐름은 superpowers 가, 과설계 점검은 키트가 가진 ponytail 리뷰 지시문(`/ponytail-review`)** 이 맡고,
 둘이 못 하는 것을 두 모듈이 맡는다. 대상이 **신규 구축인지 기존 이식인지 판별해** 그에 맞게 얹는다.
 
 ## 설치
@@ -18,16 +18,16 @@ Claude Code 가 「테스트 통과, 끝났습니다」라고 보고해도 실�
 ```
 
 Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
-플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2 · ponytail 4.13.0(5.x 는 보류 — docs/plan.md 7차). 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. **플러그인은 PC(사용자 범위)에 두고 프로젝트에는 선언하지 않는다** — 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. ponytail 은 플러그인이 아니라 그 커밋의 리뷰 스킬 `ponytail-review` 하나만 쓴다(모드 없음). 규칙이 기대는 superpowers 동작은 brainstorming 의 종료 조건이다.
+플러그인은 키트 마켓(`.claude-plugin/marketplace.json`)이 실측한 커밋으로 고정한다 — superpowers 7.0.2. 공식 마켓은 자동 업데이트가 켜져 있고, 출처에 sha 가 없으면 설치한 날의 최신이 들어오기 때문이다. **플러그인은 PC(사용자 범위)에 두고 프로젝트에는 선언하지 않는다** — 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. ponytail 은 플러그인이 아니다 — 리뷰 지시문 한 장(MIT 원본에서 앞머리 한 줄만 다름)을 `templates/user-skills/ponytail-review` 에 두고 `plugin-plan --review-skill` 이 사용자 스킬로 깐다(모드 없음 · 스킬 목록에 안 실림). 규칙이 기대는 superpowers 동작은 brainstorming 의 종료 조건이다.
 
 **구현 사이클 `/exec-cycle`(26차)** 은 키트 기본 스킬이다 — 사용자가 부를 때만 쓰이고, 설계 → 계획 → 구현 → verify → `/ponytail-review` → 보고를 종료 훅이 강제한다. 검증만 하는 `/exec-review`(verify → 과설계 리뷰 → 보고 · 수정이 없어도 같은 훅이 증거를 요구)도 같이 깔린다. superpowers · ponytail 스킬은 자동 주입이 아니라 `tools/cycle-skill.mjs` 가 낸 경로의 파일로 읽는다 — 그래서 superpowers 는 PC 에 설치하되 꺼 두는 것이 기본이다(켜 두면 세션마다 시작 글이 붙는다 → 이식 검사 ⑥ · `--all` 「사이클」 칸이 ⚠️). 그래프 무결성 검사는 모든 설치가 같고, 이식 때 verify 에 넣을 검사는 프로젝트 성격(코드 영역 — Java · JS/TS · Python)대로 고른다: 감지한 영역마다 그 소스를 덮는 `covers` 검사가 없으면 갱신 · 이식 검사가 ⛔ 와 처방을 낸다.
 
 ### 플러그인을 올릴 때 — 이 레포에서
 
 1. `node tools/plugin-plan.mjs --upstream` — 고정 커밋과 각 플러그인 저장소의 최신 커밋을 비교하고, 새 버전과 바뀐 것 링크를 낸다
-2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · `ponytail-review` 스킬 한 파일 · 규칙이 부르는 `/code-review` 스킬 이름)이 그대로인가, 이득이 있나. 사전 시험은 `--plugin-dir` 로 새 판을 싣고 `--settings` 로 설치본을 끈 세션
+2. 바뀐 것을 읽고 판단한다 — 키트가 기대는 것(brainstorming 종료 조건 · 규칙이 부르는 `/code-review` 스킬 이름)이 그대로인가, 이득이 있나. 사전 시험은 `--plugin-dir` 로 새 판을 싣고 `--settings` 로 설치본을 끈 세션
 3. 올리면 `marketplace.json` 의 `sha` · `version` 을 바꾸고 `node proof/run.mjs --claude` → 커밋 · push
-4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update … --scope user` 명령을 낸다(ponytail 고정을 올렸으면 리뷰 스킬을 새 커밋 것으로 받는 `--review-skill` 도 — 받은 커밋 · 내용 해시를 스킬 옆 `.pinned.json` 에 적어 비교한다) — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
+4. 각 PC 에서 `git pull` 뒤 `node tools/plugin-plan.mjs` 가 `marketplace update` · `plugin update … --scope user` 명령을 낸다(사용자 스킬 `ponytail-review` 가 키트 판과 다르면 키트 파일을 까는 `--review-skill` 도) — 사용자 범위라 PC 마다 한 번이면 그 PC 의 모든 프로젝트에 퍼진다
 
 ### 이미 얹은 프로젝트를 새 버전으로 — 다른 PC 포함
 
@@ -67,7 +67,7 @@ Node 22+ · Claude Code 2.1.277+ · git 저장소. 의존성 0.
 | 차원 | 이미 되나 | 여기서 |
 |---|---|---|
 | 계획 · TDD · 검증 규율 | ✅ superpowers | 안 만든다 |
-| 과설계 리뷰 | ✅ ponytail | 관문에서 부른다 |
+| 과설계 리뷰 | ✅ ponytail 지시문(키트 파일) | `/exec-cycle` · `/exec-review` 가 파일로 읽는다 |
 | 파일 목록 · 동반변경 · 언제 바뀌었나 | ✅ git | 그래프의 값이 아니다 |
 | **완료의 결정론적 증거** | ❌ 종료코드·러너 요약은 테스트 0개를 통과시킨다 | ⭐ `verify` — 이번 실행이 쓴 XML 의 testcase 를 센다 |
 | **원래 있던 실패와 새 실패의 구분** | ❌ 러너는 늘 exit 1 | ⭐ 기준선 — 기준선 밖 실패만 실패 |

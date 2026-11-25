@@ -162,11 +162,12 @@ export function areaGapText(a) {
   // 이 영역 단서에 맞는 처방만(단서 파일이 처방의 when.files 에 있는 것 · 빌드 파일 없는 Java 는 javac) — 하나도 안 맞으면 영역의 처방 전부
   const files = a.clues.map((c) => c.split(' ')[0].split('/').pop());
   const fit = a.recipes.filter((id) => { const w = RECIPES.find((x) => x.id === id)?.when ?? {}; return !w.files ? true : w.files.some((f) => files.includes(f)); });
-  const note = a.id === 'java' && a.clues.some((c) => /(^|\/)pom\.xml$/.test(c)) && !onPath('mvn')
-    ? '이 PC 의 PATH 에 mvn 이 없다 — mvnd 압축본(Maven 포함 · 관리자 불필요)을 사용자 폴더에 풀어 그 bin 의 mvnd 로 돌리거나 javac 처방(java-javac-compile)으로 컴파일만 본다' : '';
+  const maven = a.id === 'java' && a.clues.some((c) => /(^|\/)pom\.xml$/.test(c));
+  const note = maven && !onPath('mvn')
+    ? '이 PC 의 PATH 에 mvn 이 없다 — mvnd 압축본(Maven 포함 · 관리자 불필요)을 사용자 폴더에 풀어 그 bin 의 mvnd 로 돌린다(mvnd 데몬이 연결을 못 받는 PC 는 압축본 안의 mvn/bin/mvn(.cmd) 를 쓴다) · 또는 javac 처방(java-javac-compile)으로 컴파일만 본다' : '';
   return {
     text: `코드 영역 ${a.label}(${[...a.clues.slice(0, 3), a.sources.length && `소스 ${a.sources.length}개 · 예 ${a.sources[0]}`].filter(Boolean).join(' · ')})를 덮는 검사가 없다 — `
-      + `covers 가 그 소스에 닿는 검사를 harness.json 에 더한다(SETUP ⑤). 처방 후보: ${(fit.length ? fit : a.recipes).map(label).join(' · ')}. 못 돌리면 실제로 도는 검사 하나에 "tests": "none" · "area": "${a.id}" · "why": "<이유>" 를 적어 그 영역의 「테스트 없음」을 선언한다`,
+      + `covers 가 그 소스에 닿는 검사를 harness.json 에 더한다(SETUP ⑤). 처방 후보: ${(fit.length ? fit : a.recipes).map(label).join(' · ')}. ${maven ? 'Maven 의 -o(오프라인)는 플러그인이 로컬 저장소에 없으면 실패한다 — 새 PC 에서는 -o 없이 한 번 먼저 돌린다. ' : ''}못 돌리면 실제로 도는 검사 하나에 "tests": "none" · "area": "${a.id}" · "why": "<이유>" 를 적어 그 영역의 「테스트 없음」을 선언한다`,
     note,
   };
 }
@@ -381,9 +382,9 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
     `3. node ${KIT_PATH}/tools/install-check.mjs ${dir.replace(/\\/g, '/')} — 표를 보고에 그대로 붙인다. exit 0 이 아니면 「이식 성공」이라고 쓰지 않는다`);
 
   // 이 PC 가 /exec-cycle · /exec-review 를 바로 쓸 수 있나 — PC 상태라 갱신을 멈추지 않고 「다음」 곁에 같은 줄을 낸다
-  let cycle = { problems: [], warns: [] };
+  let cycle = { problems: [], warns: [], notes: [] };
   try { cycle = cycleReady(); } catch { /* 키트 마켓 파일을 못 읽음 — 이식 검사 ⑥ 가 말한다 */ }
-  if (cycle.problems.length || cycle.warns.length) out.push('', ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`), ...cycle.warns.map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`));
+  if (cycle.problems.length || cycle.warns.length || cycle.notes.length) out.push('', ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`), ...[...cycle.warns, ...cycle.notes].map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`));
 
   // 갱신이 검사 목록을 다시 본다 — 코드 영역마다 덮는 검사가 없으면 verify 녹색은 그 영역 코드 변경의 증거가 아니다
   for (const a of areaGaps(dir, raw)) {

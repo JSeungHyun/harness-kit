@@ -5,7 +5,7 @@
 ## 0. 큰 그림
 
 키트는 **두 모듈**이다. **증거**는 「끝났다」를 모델이 아니라 도구가 판정하게 하고, **그래프**는 사용자의 말 → 코드 위치 · 함정을 기록해 같은 조사를 두 번 하지 않게 한다.
-일의 흐름(설계 · TDD · 서브에이전트)은 키트가 아니라 **superpowers** 플러그인이, 과설계 점검은 **ponytail** 플러그인의 `/ponytail-review` 가 맡는다.
+일의 흐름(설계 · TDD · 서브에이전트)은 키트가 아니라 **superpowers** 플러그인이, 과설계 점검은 키트가 가진 ponytail 리뷰 지시문(사용자 스킬 `/ponytail-review`)이 맡는다.
 
 | 모듈 | 하는 일 | 구성 |
 |---|---|---|
@@ -69,7 +69,7 @@
 | 도구 | `.harness/tools/*.mjs` | 모델이 Bash 로 부른다 |
 | 데이터 | 그래프 `.harness/graph/requests.jsonl` · 기준선 | 도구로만 읽고 쓴다 (§6 · §7) |
 | 권한 정책 | `permissions` 의 allow · deny · ask | 도구를 부를 때마다 (아래) |
-| 플러그인 | superpowers 를 키트 마켓의 커밋으로 고정 · ponytail 은 그 커밋의 리뷰 스킬 `ponytail-review` 만 — 둘 다 PC(사용자 범위)에서 한 번, 로컬 설치는 프로젝트에 선언하지 않는다 | PC 맞추기 · 설치 · 갱신 때 (`plugin-plan` · SETUP) |
+| 플러그인 | superpowers 를 키트 마켓의 커밋으로 고정 · ponytail 은 플러그인이 아니라 키트 파일(`templates/user-skills/ponytail-review`)을 사용자 스킬로 깐다 — 둘 다 PC(사용자 범위)에서 한 번, 로컬 설치는 프로젝트에 선언하지 않는다 | PC 맞추기 · 설치 · 갱신 때 (`plugin-plan` · SETUP) |
 
 **권한 정책** (`policy/settings.json` — 훅이 아니다)
 
@@ -220,7 +220,7 @@
 | `UserPromptSubmit` | `ponytail-mode-tracker.js` | ponytail | `/ponytail <모드>` 전환을 기억한다 — 같음 |
 | `SubagentStart` | `ponytail-subagent.js` | ponytail | 모드가 켜져 있을 때만 서브에이전트에 규칙을 넣는다 — 같음 |
 
-- 키트 기본은 ponytail 플러그인을 사용자 범위에서 끄고 사용자 스킬 `ponytail-review` 만 둔다(SETUP ⑥ · `plugin-plan`) — 위 ponytail 훅 세 줄이 돌지 않아 프롬프트 · 서브에이전트마다 node 를 띄우지 않는다. 지시 파일이 ponytail 모드를 쓰는 프로젝트만 자기 설정에서 플러그인을 켜고, 그 프로젝트에서만 세 줄이 돈다
+- 키트는 ponytail 플러그인을 쓰지 않는다 — 키트 마켓에서 걷었고 사용자 스킬 `ponytail-review`(키트 파일)만 둔다(SETUP ⑥ · `plugin-plan`). 위 ponytail 훅 세 줄은 옛 PC 에 플러그인이 남았을 때만 돈다(`plugin-plan` 이 ⚠️ 와 걷는 명령을 낸다). 지시 파일이 ponytail 모드를 쓰는 프로젝트가 자기 마켓에서 켜는 것은 그 프로젝트 일이다
 - ponytail 훅은 제한이 5초다. 프로세스 기동이 느린 PC(보안 프로그램이 새 프로세스마다 검사하는 경우)에서는 가끔 「timed out after 5s」로 결과가 버려진다 — 그 프롬프트의 모드 추적만 빠지고 작업에는 영향이 없다. 키트 훅은 10초 · 30초다
 
 ### 8.2 프로젝트가 더한 훅 — 예: 화면 디자인 스킬 게이트

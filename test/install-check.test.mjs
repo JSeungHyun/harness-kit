@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, existsSync, writeFileSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, put, repoFile, tmp, kitRepo } from './scene.mjs';
@@ -22,7 +21,7 @@ const fill = (s) => s.replaceAll('<decisions>', STATE.decisions).replaceAll('<le
 const CHECK = { id: 't', cmd: 'node -e "0"', kind: 'exit-code', covers: ['src/**'], why: '시험용 명령 — 처방 밖' };
 
 // ⑥ 은 PC 상태라 대상 밖이다 — 가짜 사용자 폴더에 고정 커밋에서 받은 리뷰 스킬을 둔다
-function pc(skill = '---\nname: ponytail-review\n---\n리뷰\n', sha = pin('ponytail').source.sha, { superpowers = true, enabled = false } = {}) {
+function pc(skill = repoFile('templates/user-skills/ponytail-review/SKILL.md'), { superpowers = true, enabled = false } = {}) {
   const dir = tmp('claudecfg-');
   put(dir, 'skills/ponytail-review/SKILL.md', skill);
   // 사이클이 읽는 superpowers 스킬 — 설치 기록 + 스킬 파일(꺼 둔 상태가 기본)
@@ -30,7 +29,6 @@ function pc(skill = '---\nname: ponytail-review\n---\n리뷰\n', sha = pin('pony
   for (const s of ['brainstorming', 'writing-plans', 'executing-plans']) put(installPath, `skills/${s}/SKILL.md`, `${s}\n`);
   put(dir, 'plugins/installed_plugins.json', JSON.stringify({ version: 2, plugins: superpowers ? { 'superpowers@harness-kit': [{ scope: 'user', installPath, version: pin('superpowers').version }] } : {} }));
   if (enabled) put(dir, 'settings.json', JSON.stringify({ enabledPlugins: { 'superpowers@harness-kit': true } }));
-  put(dir, 'skills/ponytail-review/.pinned.json', JSON.stringify({ sha, sha256: createHash('sha256').update(skill).digest('hex') }));
   return dir;
 }
 process.env.CLAUDE_CONFIG_DIR = pc();
@@ -151,7 +149,7 @@ test('⛔ ⑤ harness.json — 빌드 · 테스트 단서가 있는데 covers �
   assert.doesNotMatch(r.observed, /장부/);
 });
 
-test('⛔ ⑥ PC — plugin-plan 이 낼 명령이 있으면 · 목록을 못 읽으면 · 리뷰 스킬이 고정 커밋에서 받은 그대로가 아니면', () => {
+test('⛔ ⑥ PC — plugin-plan 이 낼 명령이 있으면 · 목록을 못 읽으면 · 사용자 스킬이 키트 판과 다르면', () => {
   const dir = installed();
   const old = check(dir, [{ ...PLUGINS[0], version: '6.1.1' }])['⑥'];
   assert.equal(old.ok, false);
@@ -159,7 +157,7 @@ test('⛔ ⑥ PC — plugin-plan 이 낼 명령이 있으면 · 목록을 못 �
   assert.match(check(dir, null)['⑥'].observed, /목록을 읽지 못함/);
   const keep = process.env.CLAUDE_CONFIG_DIR;
   try {
-    process.env.CLAUDE_CONFIG_DIR = pc(undefined, '0'.repeat(40));
+    process.env.CLAUDE_CONFIG_DIR = pc('키트 판이 아닌 글\n');
     const stale = check(dir)['⑥'];
     assert.equal(stale.ok, false);
     assert.match(stale.observed, /--review-skill/);
@@ -561,4 +559,10 @@ test('⭐ ⑤ 코드 영역마다 덮는 검사 — Java + JS 검사만이면 �
   const buildless = { 'src/com/example/A.java': 'class A {}\n' };
   assert.equal(check(installed({ checks: [{ ...java, covers: ['lib/**'] }], files: buildless }))['⑤'].ok, false);
   assert.equal(check(installed({ checks: [{ ...java, covers: ['src/**/*.java'] }], files: buildless }))['⑤'].ok, true);
+});
+
+test('⭐ ⑥ 옛 ponytail 플러그인이 PC 에 남았으면 ⚠️ + 걷는 명령 — ⛔ 는 아니다(ok 그대로)', () => {
+  const r = check(installed(), [...PLUGINS, { id: 'ponytail@harness-kit', scope: 'user', enabled: false, version: '4.13.0' }])['⑥'];
+  assert.equal(r.ok, true, r.observed);
+  assert.match(r.warn, /claude plugin uninstall ponytail@harness-kit --scope user/);
 });

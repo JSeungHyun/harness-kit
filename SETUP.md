@@ -142,7 +142,7 @@ node .harness/tools/policy-apply.mjs --local  # 로컬 전용 → .claude/settin
 
 **플러그인은 PC(사용자 범위)에 두고, 프로젝트에는 선언하지 않는다** — 로컬 설치는 플러그인 선언을 쓰지 않는다. 그래서 켜고 끄기 · 판 올리기가 PC 에서 한 번으로 끝난다. 공유 모드만 팀원 PC 용으로 `settings.json` 에 superpowers 를 선언한다. 프로젝트 설정에 남은 superpowers · ponytail 항목(켬이든 끔이든 · 옛 마켓 id 포함), 옛 정책의 `extraKnownMarketplaces.ponytail`, `PONYTAIL_DEFAULT_MODE=off` 는 `policy-apply` 가 걷고 출력의 `걷음:` 줄로 알린다. ⛔ 「이 id 를 false 로 두면 전역에서 켜져도 이 프로젝트에서는 꺼진 채」 같은 이유로 남길지 사용자에게 묻지 않는다 — 플러그인은 PC 에서만 관리한다(사용자 결정). `--clean` · `--only` 는 걷지 않는다(정책을 받지 않는 대상).
 
-**superpowers 는 설치하되 꺼 둔다 · `/exec-cycle` 은 파일로 읽는다 (26차)** — `/exec-cycle`(키트 기본 스킬 · 사용자가 부를 때만 · 종료 훅이 verify 와 `/ponytail-review` 를 강제)은 superpowers 스킬(brainstorming · writing-plans · executing-plans)과 `ponytail-review` 를 `node .harness/tools/cycle-skill.mjs <플러그인> <스킬>` 이 낸 경로로 읽는다 — 플러그인이 꺼져 있어도 된다. 켜 두면 모든 세션 시작에 스킬 목록 · 시작 글(약 6k자)이 자동 주입된다. 그래서 PC 는 superpowers 를 키트 고정 판으로 **설치**하고, 사이클만 쓰려면 끈다: `claude plugin disable superpowers@harness-kit --scope user`(사용자 승인 — 끄면 다른 세션에서 superpowers 스킬을 Skill 도구로 못 부른다). `plugin-plan` 은 꺼진 superpowers 를 켜라고 하지 않고, 설치 · 고정 판 · 사이클이 읽는 스킬 파일 · `ponytail-review` 가 있나를 점검한다 — 없거나 판이 다르면 ⛔ 와 설치 · update 명령(아래 표의 흐름 그대로), 켜져 있으면 ⚠️ 와 끄는 명령 한 줄(판정은 ✅ 그대로). 이식 검사 ⑥ · `--all` 「사이클」 칸 · 갱신 출력 「다음」 곁이 같은 줄을 낸다. 공유 모드의 `settings.json` 이 superpowers 를 선언하면 그 프로젝트에서는 켜진다 — 사이클만 쓰는 팀이면 그 선언을 빼는 것은 사용자 결정이다.
+**superpowers 는 설치하되 꺼 둔다 · `/exec-cycle` 은 파일로 읽는다 (26차)** — `/exec-cycle`(키트 기본 스킬 · 사용자가 부를 때만 · 종료 훅이 verify 와 `/ponytail-review` 를 강제)은 superpowers 스킬(brainstorming · writing-plans · executing-plans)과 사용자 스킬 `ponytail-review` 를 `node .harness/tools/cycle-skill.mjs <플러그인|user> <스킬>` 이 낸 경로로 읽는다(ponytail 은 `user ponytail-review` — 사용자 범위 또는 작업 폴더에 걸린 설치만 후보라 다른 프로젝트 전용 설치의 글을 읽지 않는다) — 플러그인이 꺼져 있어도 된다. 켜 두면 모든 세션 시작에 스킬 목록 · 시작 글(약 6k자)이 자동 주입된다. 그래서 PC 는 superpowers 를 키트 고정 판으로 **설치**하고, 사이클만 쓰려면 끈다: `claude plugin disable superpowers@harness-kit --scope user`(사용자 승인 — 끄면 다른 세션에서 superpowers 스킬을 Skill 도구로 못 부른다). `plugin-plan` 은 꺼진 superpowers 를 켜라고 하지 않고, 설치 · 고정 판 · 사이클이 읽는 스킬 파일 · 사용자 스킬 `ponytail-review` 가 키트 판과 같은가를 점검한다 — 없거나 판이 다르면 ⛔ 와 설치 · update · `--review-skill` 명령(아래 표의 흐름 그대로), 켜져 있으면 ⚠️ 와 끄는 명령 한 줄(판정은 ✅ 그대로). 설치된 superpowers 의 `hooks/hooks.json` 이 키트가 확인한 `SessionStart` 하나 밖의 이벤트를 더했으면 ⚠️ 「superpowers 판이 훅을 더했다(이벤트 이름) — 끈 상태에서는 돌지 않는다 · `/exec-cycle` 영향을 검토」(판정은 ✅ 그대로). 이식 검사 ⑥ · `--all` 「사이클」 칸 · 갱신 출력 「다음」 곁이 같은 줄을 낸다(superpowers 켜짐 · 훅 늘어남 한정 — 옛 ponytail 플러그인 · 전역 env 잔재 ⚠️ 는 ⑥ 행 · `plugin-plan` 에서만 보인다). 공유 모드의 `settings.json` 이 superpowers 를 선언하면 그 프로젝트에서는 켜진다 — 사이클만 쓰는 팀이면 그 선언을 빼는 것은 사용자 결정이다.
 
 이식 때 사용자에게 **한 번 묻는다**(PC 에 한 번 — 다음 프로젝트부터는 묻지 않는다). 답은 보고의 「사용자가 결정한 것」에 남긴다:
 
@@ -153,7 +153,7 @@ node .harness/tools/policy-apply.mjs --local  # 로컬 전용 → .claude/settin
 
 ⛔ **끄기(`disable`)와 지우기(`uninstall`)는 다르다** — 끄면 설치 파일이 남아 사이클이 그 파일을 읽는다. 지우면 `/exec-cycle` · `/exec-review` 가 멈추고 이식 검사 ⑥ · `--all` 「사이클」 칸이 ⛔ 다. 켜 두기로 정했으면 ⑥ 의 ⚠️ 는 알림일 뿐 그대로 둔다.
 
-**ponytail 은 플러그인이 아니라 사용자 스킬 `ponytail-review` 하나로 둔다** — 쓰는 것은 `/ponytail-review` 뿐이고, 스킬 파일은 다른 파일에 기대지 않는다. 플러그인은 지우지 않고 사용자 범위에서 끈다 — 지시 파일이 ponytail 모드를 쓰는 프로젝트(키트 정책을 받지 않는 대상)는 자기 설정에서 `ponytail@harness-kit` 을 켠다.
+**ponytail 은 플러그인이 아니다 — 리뷰 지시문 한 장을 키트가 가진다 (26차)** — 쓰는 것은 `/ponytail-review` 뿐이라 키트 마켓에서 ponytail 플러그인을 걷었다. 지시문은 `templates/user-skills/ponytail-review/SKILL.md`(MIT 원본에서 앞머리 `disable-model-invocation: true` 한 줄만 다르다 · 같은 폴더에 원본 `LICENSE`)이고, `plugin-plan --review-skill` 이 이것을 `~/.claude/skills/ponytail-review/` 에 깐다 — 사용자가 `/ponytail-review` 로 부르거나 사이클이 파일로 읽을 때만 쓰이고 스킬 목록에는 안 실린다. 사용자 스킬이 키트 판과 다르면(없음 · 고침) `plugin-plan` · 이식 검사 ⑥ · `--all` 「사이클」 칸이 ⛔ 와 그 명령을 낸다. 옛 PC 에 ponytail 플러그인(사용자 범위)이나 전역 env `PONYTAIL_DEFAULT_MODE` 가 남았으면 ⚠️ 와 걷는 명령(`claude plugin uninstall ponytail@harness-kit --scope user` · env 줄 지우기)을 낸다 — ⛔ 는 아니고 지우는 것은 사용자 승인 몫이다. ponytail 모드는 쓰지 않는다(25차 측정 — 이득 없음).
 
 ⚠️ `policy-apply` 는 **Claude 자신의 권한 설정을 바꾸는 명령**이다 — 권한 확인이 뜨거나, auto 모드 분류기가 `Self-Modification` 으로 막을 수 있다(실측: 같은 명령이 한 세션에서는 돌고 다른 세션에서는 막혔다). ⛔ 막히면 다른 도구로 같은 파일을 직접 써서 우회하지 않는다 — 사용자에게 `! node .harness/tools/policy-apply.mjs --local` 한 줄로 직접 돌리게 한다(공유면 `--local` 없이). 그 뒤 ⑧-c · ⑧-d 를 잇는다. 비대화형이면 보고의 「사용자가 결정해야 하는 것」 **맨 앞**에 남긴다.
 
@@ -162,9 +162,9 @@ node .harness/tools/policy-apply.mjs --local  # 로컬 전용 → .claude/settin
 | `plugin-plan` 출력 | 행동 |
 |---|---|
 | `✅ … 옮길 것 없다` | 아무것도 하지 않는다 |
-| `⚠️ … 옮긴다` + 명령 | 명령을 사용자에게 보여 주고 묻는다 — 이 PC 의 모든 프로젝트에 걸린다. 승인하면 **정책 반영 전에** 그 순서대로 실행한다(리뷰 스킬 → 새 것 설치 · 판 올림 → ponytail 끄기 → 옛 것 지우기). 막히면 사용자가 `!` 로 한 줄씩 돌린다 |
-| ponytail 끄기 앞 — 지시 파일이 ponytail 모드를 쓰는 프로젝트가 이 PC 에 있다 | 끄기 전에 그 프로젝트 세션이 자기 사용자에게 묻고 자기 설정(`settings.local.json`)에 `"ponytail@harness-kit": true` 를 넣게 한다 — 안 그러면 그 프로젝트의 모드가 꺼진다 |
-| 위에서 거절 · 비대화형 | 실행하지 않는다. 보고의 「사용자가 결정해야 하는 것」에 남긴다 — ⚠️ 실측한 커밋에 고정되지 않는다. ponytail 플러그인 끄기를 거절했으면 그 PC 의 전역 env(`~/.claude/settings.json`)에 `PONYTAIL_DEFAULT_MODE=off` 를 두게 한다 — 모드가 superpowers 의 설계 · 질문 단계와 충돌한다. 같은 플러그인이 다른 마켓 id 로 켜진 PC 에서 공유 모드를 받으면 `--off superpowers@harness-kit` 으로 이 PC 의 `settings.local.json` 에만 끈다 |
+| `⚠️ … 옮긴다` + 명령 | 명령을 사용자에게 보여 주고 묻는다 — 이 PC 의 모든 프로젝트에 걸린다. 승인하면 **정책 반영 전에** 그 순서대로 실행한다(리뷰 스킬 → 새 것 설치 · 판 올림 → 옛 것 지우기). 막히면 사용자가 `!` 로 한 줄씩 돌린다 |
+| `⚠️ ponytail 플러그인이 남아 있다` · `⚠️ 전역 env 에 PONYTAIL_DEFAULT_MODE` | 옛 PC 의 잔재 — 낸 명령(uninstall · env 줄 지우기)을 사용자에게 보여 주고 승인받아 한다. 안 해도 ⛔ 는 아니다(쓰지 않는 플러그인이 남을 뿐). 지시 파일이 ponytail 모드를 쓰는 프로젝트(키트 정책을 받지 않는 대상)가 이 PC 에 있으면 그 프로젝트 사용자가 정한다 |
+| 위에서 거절 · 비대화형 | 실행하지 않는다. 보고의 「사용자가 결정해야 하는 것」에 남긴다 — ⚠️ 실측한 커밋에 고정되지 않는다. 같은 플러그인이 다른 마켓 id 로 켜진 PC 에서 공유 모드를 받으면 `--off superpowers@harness-kit` 으로 이 PC 의 `settings.local.json` 에만 끈다 |
 
 규칙의 자리를 채운다 — `<graph-tools>` 는 `.harness/tools`:
 
@@ -254,15 +254,15 @@ claude -p --model sonnet --tools "" --strict-mcp-config --no-session-persistence
 
 `--tools ""` 는 MCP 도구를 막지 않는다 — `--strict-mcp-config` 가 없으면 모델이 연결 도구(예: 문서 검색)를 불러 답이 흐려진다(2026-11-05 실측). 양성은 `verify.mjs` 와 `graph-find.mjs` 를, 음성은 「모름」을 답해야 한다. 측정 모델은 sonnet 이다 — haiku 는 규칙이 실려도 「모름」으로 빠진다(2026-11-05 실측: 설치 2곳 × 질문 3 × 3회에서 sonnet 18/18 · haiku 17/18, 지시 파일이 짧은 쪽에서도 빠졌다 · sonnet 회당 $0.02~0.04). 응답은 모델 표본이라 흔들린다 — 양성이 「모름」이면 같은 질문을 두 번 더 해 **3회 중 2회 이상**이면 통과로 보고 「n/3」을 적는다(실측: 같은 설치에서 3회 중 1회 「모름」). 2회 이상 「모름」이면 `.claude/rules/` 의 위치를 본다.
 
-**⑧-c. PC 가 키트에 맞는가 · ponytail 은 리뷰 스킬만인가** — 정책이 아니라 PC 의 상태다(⑥)
+**⑧-c. PC 가 키트에 맞는가 · ponytail 은 키트 사용자 스킬뿐인가** — 정책이 아니라 PC 의 상태다(⑥)
 
 ```bash
-node <kit>/tools/plugin-plan.mjs    # ⛔ 「옮길 것 없다」 — 리뷰 스킬이 고정 커밋에서 받은 그대로 · ponytail 플러그인은 사용자 범위에서 꺼짐 · superpowers 는 설치 · 고정 판(켬/끔 무관 — 켜져 있으면 ⚠️ 와 끄는 명령 한 줄) · `/exec-cycle` 이 읽는 스킬 파일 · ponytail-review 있음
+node <kit>/tools/plugin-plan.mjs    # ⛔ 「옮길 것 없다」 — 사용자 스킬 ponytail-review 가 키트 판 그대로 · superpowers 는 설치 · 고정 판(켬/끔 무관 — 켜져 있으면 ⚠️ 와 끄는 명령 한 줄) · `/exec-cycle` 이 읽는 스킬 파일 있음 · ponytail 플러그인 · PONYTAIL_DEFAULT_MODE 잔재는 ⚠️(걷는 명령)
 ```
 
-지시 파일이 ponytail 모드를 쓰는 프로젝트(키트 정책을 받지 않는 대상)는 자기 설정에서 ponytail 을 켠다 — 그 프로젝트는 이 점검의 「꺼짐」에 해당하지 않는다. 모드 훅을 세션 출력으로 확인하려면 stream-json 이 아니라 `--debug-file` 을 본다 — stream-json 에는 UserPromptSubmit 훅 이벤트가 나오지 않는다(2026-11-05 실측).
+모드 훅을 세션 출력으로 확인하려면 stream-json 이 아니라 `--debug-file` 을 본다 — stream-json 에는 UserPromptSubmit 훅 이벤트가 나오지 않는다(2026-11-05 실측).
 
-**⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers 인 항목의 **id** 가 하나다(설치 — 켬/끔 무관 · 사이클만 쓰면 꺼 두는 것이 기본 — 켜져 있으면 ⚠️). ponytail 은 0개(리뷰 스킬만)가 기본이고, 모드를 쓰는 프로젝트 안에서만 하나다.
+**⑧-d. 플러그인이 하나씩인가** — `claude plugin list --json` 에서 이름이 superpowers 인 항목의 **id** 가 하나다(설치 — 켬/끔 무관 · 사이클만 쓰면 꺼 두는 것이 기본 — 켜져 있으면 ⚠️). ponytail 은 0개가 기본이다(리뷰 지시문은 사용자 스킬) — 남았으면 ⑧-c 의 ⚠️ 대로 걷는다.
 같은 id 가 여러 줄인 것은 정상이다 — 목록은 이 PC 의 모든 프로젝트 설치 기록을 보여준다.
 
 **⑧-e.** `git diff` 와 새로 생긴 파일 목록을 사용자에게 보여준다. 로컬 전용이면 `git diff` 에는 (미커밋 변경 위에 설치했다면) 작업 중 변경만 나오고 설치 파일은 안 나온다 — 설치 파일은 새로 생긴 파일 목록으로 보여준다. 기존 설정·지시 파일 보존은 사용자만 판정한다.
@@ -279,7 +279,7 @@ node <kit>/tools/install-check.mjs <대상>    # ①~⑨ 표 + 판정 줄 — �
 | ② 규칙 · 스킬 · ③ 지운 문서 | ② `harness.md` · `graph.md`(기록 규칙 자리가 기본일 때) · 스킬 `exec-cycle` · `exec-review` 가 키트 판(자리 채움)과 같다 — 다르거나 없으면 ⛔ · 다르면 다른 줄 요약. ③ 키트에서 지운 문서(final-gate · 에이전트 정의)가 설치본에 0 — 손대지 않은 판은 갱신이 걷고(① 도 본다), 고친 판은 프로젝트가 정리한다 |
 | ④ 정책 | `policy-apply` 를 그 설치 모양(정책 전체 · 키트 정책 없음 · 그래프 훅 켬 — 옛 자기 그래프 훅이면 키트 훅으로 바꿔 끼울 것 · 서브에이전트 상한 훅은 어느 모양에나)대로 다시 돌려도 바뀌는 것이 없다 |
 | ⑤ `harness.json` | 형식 · 프로필 · 모드 · 그래프(옛 자기 그래프 `graph.tools` 는 이관 미완 · `graph.store` 가 있으면 실재 · 키트 밖 그래프 도구 · 키트에서 지운 것을 가리키는 줄 0) · 코드 영역(Java · JS/TS · Python)마다 그 소스를 덮는 `covers` 검사 또는 영역의 「테스트 없음」 선언(`area`) · 검사마다 `recipe`(목록에 있는 처방 id) 또는 `why` |
-| ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 설치(켬/끔 무관) · `ponytail-review` 가 고정 커밋에서 받은 그대로 · `/exec-cycle` 을 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) — superpowers 가 켜져 있으면 ⚠️(판정은 ✅) |
+| ⑥ PC | `plugin-plan` 이 낼 명령이 없다 — superpowers 고정 판 설치(켬/끔 무관) · 사용자 스킬 `ponytail-review` 가 키트 판 그대로 · `/exec-cycle` 을 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) — superpowers 가 켜져 있거나 훅을 더했거나 옛 ponytail 플러그인 · env 가 남았으면 ⚠️(판정은 ✅) |
 | ⑦ 지시 파일 | Claude 지시 파일이 있고, `AGENTS.md` 가 있으면 import 한다(공유는 커밋되는 `CLAUDE.md` 가) |
 | ⑧ 동작 | `verify` exit 0(신규의 첫 테스트 전 「실행된 테스트가 0개」는 정상) · 그래프 `--check` exit 0 |
 | ⑨ 판 | `.harness/kit-commit` = 키트의 지금 커밋 — 또는 그 뒤 키트가 설치본에 얹는 것(`lib` · `tools` · `policy` · `templates`)이 그대로(문서만 바뀐 커밋은 다시 갱신하지 않는다 · 키트가 모르는 커밋 · `-dirty` 는 ⛔) |
@@ -347,13 +347,13 @@ node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>   # 
 
 ## PC 맞추기 — 다른 PC 에서 한 번
 
-키트가 플러그인 구성을 바꿨을 때 다른 PC 에서 하는 순서다. 그 PC 의 Claude Code 에게 「`<kit>/SETUP.md` 의 「PC 맞추기」를 따라 이 PC 를 맞춰줘」라고 한다. 2026-11-05 변경: 플러그인은 PC 에서만 켠다 · ponytail 은 리뷰 스킬만 · superpowers 7.0.2 · 키트 훅 exec 형식. 2026-11-09: 리뷰 스킬 옆에 받은 커밋 기록 · 갱신 끝의 이식 검사.
+키트가 플러그인 구성을 바꿨을 때 다른 PC 에서 하는 순서다. 그 PC 의 Claude Code 에게 「`<kit>/SETUP.md` 의 「PC 맞추기」를 따라 이 PC 를 맞춰줘」라고 한다. 2026-11-05 변경: 플러그인은 PC 에서만 켠다 · superpowers 7.0.2 · 키트 훅 exec 형식. 2026-11-09: 갱신 끝의 이식 검사. 2026-11-25(26차): ponytail 플러그인을 걷고 리뷰 지시문은 키트 파일을 사용자 스킬로 깐다.
 
 1. **키트 받기** — `git -C <kit> pull`(main). 받은 커밋에 위 변경이 있는지 `git -C <kit> log --oneline -5` 로 본다
 2. **PC(한 번)** — `node <kit>/tools/plugin-plan.mjs` 가 낸 명령을 사용자에게 보여 주고 승인받아 그 순서대로 실행한다(⑥ 표). 이 PC 의 모든 프로젝트에 걸린다
-   - 리뷰 스킬 줄(`--review-skill`)은 고정 커밋의 `ponytail-review` 를 `~/.claude/skills/` 에 두고 옆에 받은 커밋 · 내용 해시(`.pinned.json`)를 적는다 — 그 커밋 그대로면 안 나온다. 2026-11-09 전에 받은 스킬은 기록이 없어 한 번 다시 나온다 · 키트가 ponytail 고정을 올리면 또 나온다
-   - ponytail 끄기 줄 앞에, 지시 파일이 ponytail 모드를 쓰는 프로젝트가 이 PC 에 있으면 그 프로젝트가 자기 설정에서 켜게 한다(⑥ 표)
-   - 전역 `~/.claude/settings.json` 의 `env.PONYTAIL_DEFAULT_MODE` 는 ponytail 플러그인이 꺼지면 아무 일도 하지 않는다 — 남겨도 되고 지워도 된다(사용자가 정한다)
+   - 리뷰 스킬 줄(`--review-skill`)은 키트의 `templates/user-skills/ponytail-review` 를 `~/.claude/skills/` 에 둔다(옛 `.pinned.json` 은 걷는다) — 키트 판과 같으면 안 나온다
+   - ⚠️ ponytail 플러그인이 남았다 · 전역 env `PONYTAIL_DEFAULT_MODE` 가 남았다 — 낸 명령(`claude plugin uninstall ponytail@harness-kit --scope user` · `~/.claude/settings.json` 의 env 줄 지우기)을 사용자에게 보여 주고 승인받아 한다. ⛔ 는 아니다
+   - 새 PC 에서 Maven 프로젝트의 컴파일 검사는 `-o`(오프라인)가 플러그인이 로컬 저장소에 없으면 실패한다 — `-o` 없이 한 번 먼저 돌린다. mvnd 데몬이 연결을 못 받는 PC 는 압축본 안의 `mvn/bin/mvn(.cmd)` 를 쓴다(2026-11-25 실측)
 3. **프로젝트마다** — 키트를 얹은 프로젝트에서 위 「갱신」. 정책 줄이 옛 선언을 걷고 훅을 새 형식으로 바꾼다. 어느 프로젝트를 할지는 사용자가 정한다
 4. **확인** — `node <kit>/tools/plugin-plan.mjs` 가 「옮길 것 없다」, 갱신한 프로젝트마다 `node <kit>/tools/install-check.mjs <대상>` exit 0(⑧-f — 키트 훅 형식 · 플러그인 선언 · PC 가 그 표에 든다), 마지막에 `node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>` exit 0(이 PC 설치가 모두 키트 판)
 5. **세션 다시 열기** — 열려 있던 세션은 옛 플러그인 판 · 옛 훅으로 돈다
@@ -372,5 +372,5 @@ node <kit>/tools/install-check.mjs --all <프로젝트들의 상위 폴더>   # 
 | 개인 식별자를 그래프에 | 공유 모드에서는 그대로 커밋된다 |
 | 묻지 않고 공유 모드 · scan-shared 를 끄거나 `--no-verify` 로 건너뛰기 | 기록에 쌓인 사번·실명·이슈 번호가 저장소 밖으로 나간다 |
 | 검사를 pre-push 에 전부 걸기 | 진행도 게이트를 correctness 게이트로 쓰면 급한 수정이 막힌다 |
-| ponytail 모드를 켜 두기 | superpowers 의 설계·질문 단계와 충돌한다. `/ponytail-review` 로만 |
+| ponytail 플러그인(모드)을 켜 두기 | superpowers 의 설계·질문 단계와 충돌한다. 키트는 리뷰 지시문 한 장(`/ponytail-review`)만 쓴다 |
 | 커밋 | 사용자가 diff 를 보고 결정한다 |

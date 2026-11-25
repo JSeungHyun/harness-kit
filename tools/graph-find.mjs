@@ -48,14 +48,15 @@ const termPairs = (r) => (Array.isArray(r.terms) ? [] : Object.entries(r.terms |
 export const sup = (r) => [].concat(r.supersedes || []).filter(Boolean);
 
 // 훅과 CLI 가 같은 토크나이저를 쓴다. 조사를 떼야 용어 정확일치가 걸리고, 원형도 남겨 잘못 떼도 손해가 없다
-const JOSA = /(으로|에서|부터|까지|에게|한테|이나|라도|는|은|를|을|가|이|의|에|도|만|과|와|랑|로|나)$/;
+const JOSA = ['으로서의', '으로서도', '으로써만', '로서만', '으로서', '으로써', '이라고', '에서는', '에서도', '으로는', '으로도', '에게서', '에게도', '에게는', '부터는', '까지는', '만으로', '로서', '로써', '한테서', '께서', '에서', '에는', '에도', '으로', '부터', '까지', '에게', '한테', '이나', '라도', '이란', '이라', '라고', '처럼', '만큼', '같이', '보다', '마다', '조차', '마저', '밖에', '대로', '더러', '뿐', '께', '는', '은', '를', '을', '가', '이', '의', '에', '도', '만', '과', '와', '랑', '로', '나', '란'];
+// 맞는 조사를 모두 하나씩 뗀 어간 — 긴 조사 하나만 떼면 「확대로」가 「대로」에 걸려 「확대」를 잃는다. 「이란」의 「란」(정산사전이)처럼 앞이 이 · 으인 짧은 조사 떼기는 건너뛴다 · 「그대로」는 부사라 「대로」를 떼지 않는다
+const stems = (t) => JOSA.filter((j) => t.endsWith(j) && !(j === '대로' && t.endsWith('그대로'))).map((j) => t.slice(0, -j.length)).filter((s, _, a) => !/[이으]$/.test(s) || !a.some((o) => o.length < s.length && s.startsWith(o)));
 // 「명사 + 중 + 조사」(…중에 · 중인)는 명사도 — 조사 한 번 떼기로는 「…중」에서 멈춘다. 「중」 앞이 1글자면 집중 · 비중 같은 낱말이다
 // 낱말에만 건다 — 이어 붙인 형에 걸면 「기록을 나중에」가 「기록을나」를 만든다
 const DURING = /^([가-힣]{2,})중(?:에는|에도|에서|에|엔|인|이|일)$/;
 function addTok(set, t) {
   if (t.length >= 2 && !STOP.has(t)) set.add(t);
-  const bare = t.replace(JOSA, '');
-  if (bare !== t && bare.length >= 2 && !STOP.has(bare)) set.add(bare);
+  for (const bare of stems(t)) if (bare.length >= 2 && !STOP.has(bare)) set.add(bare);
 }
 export function tokenizeKo(prompt) {
   const ko = new Set();
