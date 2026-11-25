@@ -12,6 +12,7 @@ import { loadConfig, cli, CONFIG } from '../lib/config.mjs';
 import { KIT, SHIPPED, COPIED, DOCS, INSTRUCTIONS, graphOf } from '../lib/parts.mjs';
 import { load, sup } from './graph-find.mjs';
 import { cycleReady } from './plugin-plan.mjs';
+import { TOOL_DIRS } from './install-mode.mjs';
 import { testSources, RECIPES, recipeHints, recipeLine, codeAreas, globMatch } from './detect.mjs';
 
 const KIT_PATH = KIT.replace(/\\/g, '/').replace(/\/$/, '');
@@ -125,10 +126,11 @@ function moveOwn(dir, dst, name, now, diff, mode) {
 
 // 로컬 전용 설치는 아무것도 git 에 보이지 않는다 — install-mode 블록은 한 번만 쓰여 새로 생긴 파일을 모른다
 function hideLocal(dir, rel) {
-  if (spawnSync('git', ['check-ignore', '-q', rel], { cwd: dir }).status !== 1) return; // 0 이미 무시 · 128 저장소 아님
+  if (spawnSync('git', ['check-ignore', '-q', rel], { cwd: dir }).status !== 1) return false; // 0 이미 무시 · 128 저장소 아님
   const exclude = resolve(dir, execFileSync('git', ['rev-parse', '--git-path', 'info/exclude'], { cwd: dir, encoding: 'utf8' }).trim());
   const text = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
   appendFileSync(exclude, `${text && !text.endsWith('\n') ? '\n' : ''}/${rel}\n`);
+  return true;
 }
 
 // 대상 설정의 모양 — 키트 정책을 하나도 안 받은 설치(--only · 지시 파일이 흐름 · 권한을 정한 프로젝트)인가 · 키트 그래프 훅을 켰나. 갱신 안내와 이식 검사 ④ 가 같이 쓴다
@@ -324,6 +326,9 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
         `   손대지 않았다. 고친 줄을 프로젝트 규칙 파일(.claude/rules/project-${name}.md)로 옮기고 키트 판을 다시 깐다: node ${KIT_PATH}/tools/upgrade.mjs ${dir.replace(/\\/g, '/')} --own-rules`);
     }
   }
+  // 다른 도구가 루트에 쌓는 폴더 — 로컬 설치만 숨긴다(표식 블록은 한 번만 쓰여 옛 설치는 모른다)
+  const hidden = raw.mode === 'share' ? [] : TOOL_DIRS.filter((d) => hideLocal(dir, d));
+  if (hidden.length) out.push(`✅ .git/info/exclude — 다른 도구가 쌓는 폴더를 숨겼다: ${hidden.join(' ')}`);
   // 키트에서 지운 것 — 복사는 덮어쓰기만 해서 설치본에 남고, 남은 도구를 가리키는 규칙 · allow 가 거짓이 된다
   const removed = read(join(KIT, 'policy', 'removed.json'));
   const dropped = removed.files.filter((f) => existsSync(join(dir, f)));

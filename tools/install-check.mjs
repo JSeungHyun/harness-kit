@@ -12,7 +12,7 @@ import { cli, loadConfig, CONFIG } from '../lib/config.mjs';
 import { KIT, DOCS, SHIPPED, PARTS, kitFiles, graphOf } from '../lib/parts.mjs';
 import { nl, list, assertKit, kitCommit, kitDirty, shippedSame, ownGraph, filler, docState, summary, settingsShape, areaGaps, areaGapText, recipeGap, grownTests, graphRefs, graphRules, removedDocs, removedRefs } from './upgrade.mjs';
 import { applyPolicy, dropGone, settingsPath, readJson } from './policy-apply.mjs';
-import { pcPlan, pluginList, cycleReady } from './plugin-plan.mjs';
+import { pcPlan, pluginList, cycleReady, claudeVersion } from './plugin-plan.mjs';
 import { isUnion } from './install-mode.mjs';
 
 const slash = (p) => p.replace(/\\/g, '/');
@@ -70,8 +70,9 @@ export function checkAll(root, config = join(KIT, CONFIG)) {
   const dirty = dirtyKit();
   // 사이클 — /exec-cycle · /exec-review 를 바로 쓸 수 있나는 PC 상태라 설치마다 같은 칸이다. ⛔ 면 설치가 키트 판이어도 끝이 아니다
   let cycle = { problems: [], warns: [], notes: [] };
-  try { cycle = cycleReady(); } catch (e) { cycle.problems.push(e.message.split('\n')[0]); }
-  const cyc = cycle.problems.length ? `⛔ ${cell(cycle.problems[0])}` : cycle.warns.length ? '⚠️ 사용 가능 — superpowers 켜짐(자동 주입)' : cycle.notes.length ? '⚠️ 사용 가능 — superpowers 훅 늘어남' : '✅ 사용 가능';
+  try { cycle = cycleReady(undefined, claudeVersion()); } catch (e) { cycle.problems.push(e.message.split('\n')[0]); }
+  const tags = [cycle.warns.length && 'superpowers 켜짐(자동 주입)', cycle.notes.some((n) => /훅을 더했다/.test(n)) && 'superpowers 훅 늘어남', cycle.notes.some((n) => /^Claude Code /.test(n)) && 'Claude Code 판 낮음'].filter(Boolean);
+  const cyc = cycle.problems.length ? `⛔ ${cell(cycle.problems[0])}` : tags.length ? `⚠️ 사용 가능 — ${tags.join(' · ')}` : '✅ 사용 가능';
   return {
     ok: all.length > 0 && !bad.length && !dirty && !cycle.problems.length,
     text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 사이클 | 맞나 |', '|---|---|---|---|---|---|---|',
@@ -85,7 +86,7 @@ export function checkAll(root, config = join(KIT, CONFIG)) {
   };
 }
 
-export function checkInstall(dir, { plugins } = {}) {
+export function checkInstall(dir, { plugins, version } = {}) {
   assertKit('install-check');
   if (!existsSync(join(dir, CONFIG))) throw new Error(`${CONFIG} 이 없다 — 키트를 얹지 않은 대상이다 (SETUP.md)`);
   const raw = readJson(join(dir, CONFIG));
@@ -162,7 +163,7 @@ export function checkInstall(dir, { plugins } = {}) {
   if (pc === null) row('⑥', 'PC — plugin-plan 이 낼 명령 없음 · /exec-cycle · /exec-review 를 바로 쓴다', '플러그인 목록을 읽지 못함 (claude plugin list --json)', false);
   else {
     const { cmds, warns: left } = pcPlan(pc);
-    const cycle = cycleReady(pc);
+    const cycle = cycleReady(pc, version ?? (plugins === undefined ? claudeVersion() : undefined));
     row('⑥', 'PC — plugin-plan 이 낼 명령 없음 (superpowers 고정 판 설치 — 켬/끔 무관 · 사용자 스킬 ponytail-review 가 키트 판 그대로 · 옛 ponytail 플러그인 없음은 ⚠️) · /exec-cycle · /exec-review 를 바로 쓴다(사이클이 읽는 스킬 파일이 다 있다) · superpowers 가 켜져 있으면 ⚠️',
       [cmds.length ? `낼 명령 ${cmds.length}: ${cmds.join(' ; ')}` : '옮길 것 없다', ...cycle.problems.map((p) => `⛔ ${p}`), ...(cycle.warns.length || cycle.notes.length || left.length ? ['⚠️ 아래 ⚠️ 줄'] : [])].join(' · '),
       !cmds.length && !cycle.problems.length);

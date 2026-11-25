@@ -78,7 +78,7 @@ const SP = 'superpowers@harness-kit';
 export const cycleSkills = () => [...new Set(['exec-cycle', 'exec-review'].flatMap((s) => [...readFileSync(new URL(`../templates/skills/${s}/SKILL.md`, import.meta.url), 'utf8').matchAll(/`((?:superpowers|user) [a-z-]+)`/g)].map((m) => m[1])))].map((k) => k.split(' '));
 // 설치된 superpowers 의 hooks/hooks.json 이벤트 이름 — 없거나 깨지면 빈 목록
 const hookEvents = (installPath) => { try { return Object.keys(JSON.parse(readFileSync(join(installPath, 'hooks', 'hooks.json'), 'utf8')).hooks ?? {}); } catch { return []; } };
-export function cycleReady(list) {
+export function cycleReady(list, version) {
   const pin = readMarket().plugins.find((x) => x.name === 'superpowers').version;
   const problems = [];
   const warns = [];
@@ -97,7 +97,15 @@ export function cycleReady(list) {
   // 켜 둔 판이 훅을 더했으면 끈 상태에서는 안 도는 것이 생긴다 — 키트가 확인한 것은 SessionStart(자동 주입) 하나
   const more = mine ? hookEvents(mine.installPath).filter((e) => e !== 'SessionStart') : [];
   if (more.length) notes.push(`superpowers 판이 훅을 더했다(${more.join(' · ')}) — 끈 상태에서는 돌지 않는다 · /exec-cycle 영향을 검토`);
+  if (version && older(version, GATE_MIN)) notes.push(`Claude Code ${version} 은 스킬 앞머리 훅(종료 훅)이 안 돌 수 있다 — 확인한 판 ${GATE_MIN} · 올린다: claude update`);
   return { problems, warns, notes };
+}
+
+// 스킬 앞머리 훅(종료 훅)이 도는 것을 확인한 Claude Code 판 — 이보다 낮으면 ⚠️(⛔ 아님). 읽지 못하면 판정하지 않는다
+export const GATE_MIN = '2.1.331';
+const older = (a, b) => { const [x, y] = [a, b].map((v) => v.split('.').map(Number)); const i = x.findIndex((n, k) => n !== y[k]); return i >= 0 && x[i] < y[i]; };
+export function claudeVersion() {
+  try { return /(\d+\.\d+\.\d+)/.exec(execSync('claude --version', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 }))?.[1] ?? null; } catch { return null; }
 }
 
 // 키트 폴더에서 읽는다 — 프로젝트 폴더에서는 그 프로젝트 설정이 사용자 범위를 덮은 값이 나온다(2026-11-05 실측)
@@ -137,7 +145,7 @@ cli(import.meta.url, async () => {
     for (const c of cmds) console.log(`  ${c}`);
   }
   for (const w of warns) console.log(`⚠️ ${w}`);
-  const cycle = cycleReady(list);
+  const cycle = cycleReady(list, claudeVersion());
   for (const p of cycle.problems) console.log(`⛔ /exec-cycle · /exec-review — ${p}`);
   for (const w of [...cycle.warns, ...cycle.notes]) console.log(`⚠️ /exec-cycle · /exec-review — ${w}`);
   if (!cycle.problems.length) console.log('✅ /exec-cycle · /exec-review 를 바로 쓸 수 있다 — superpowers 스킬 · 사용자 스킬 ponytail-review 가 있다');

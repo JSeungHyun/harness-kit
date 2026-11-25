@@ -151,3 +151,38 @@ test('공유 — merge=union 줄은 harness.json 의 graph.store 를 따르고, 
   assert.equal(run(repo, 'share').status, 0);
   assert.match(read(repo.dir, '.gitattributes'), /^wiki\/requests\.jsonl merge=union$/m);
 });
+
+// 27차 — 다른 도구가 저장소 루트에 쌓는 폴더(superpowers sdd-workspace · Playwright MCP)도 로컬 설치는 숨기고 공유 설치는 건드리지 않는다
+const TOOL_DIRS = ['.superpowers/', '.playwright-mcp/'];
+const UPGRADE = fileURLToPath(new URL('../tools/upgrade.mjs', import.meta.url));
+const upgrade = ({ dir, env }) => spawnSync(process.execPath, [UPGRADE, dir], { encoding: 'utf8', env: { ...env, HARNESS_KIT_DIRTY_OK: '1', CLAUDE_CONFIG_DIR: tmp('nohome-') } });
+const conf = (mode) => JSON.stringify({ profile: 'existing', mode, checks: [{ id: 'g', cmd: 'node -e "0"', kind: 'exit-code', recipe: 'graph-check' }] });
+
+test('⭐ 로컬 설치 — 도구 폴더(.superpowers/ · .playwright-mcp/)를 .git/info/exclude 에 숨긴다 · 공유는 .gitignore 에도 안 넣는다', () => {
+  const local = gitRepo({ 'a.txt': 'x' });
+  assert.equal(run(local, 'local').status, 0);
+  for (const d of TOOL_DIRS) assert.equal(ignored(local, `${d}x/y.json`), true, d);
+  const share = gitRepo({ 'a.txt': 'x' });
+  assert.equal(run(share, 'share').status, 0);
+  for (const d of TOOL_DIRS) assert.equal(ignored(share, `${d}x/y.json`), false, d);
+  assert.doesNotMatch(read(share.dir, '.gitignore'), /superpowers|playwright/);
+});
+
+test('⭐ 갱신 — 옛 로컬 설치(표식 블록이 이미 있음)에도 도구 폴더를 숨긴다 · 두 번 돌려도 한 번 · 공유 설치는 건드리지 않는다', () => {
+  const old = gitRepo({ 'a.txt': 'x', '.harness/harness.json': conf('local') });
+  const exclude = join(old.dir, '.git', 'info', 'exclude');
+  writeFileSync(exclude, '# harness-kit:begin (install-mode local)\n/.harness/\n# harness-kit:end\n');
+  const r = upgrade(old);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  for (const d of TOOL_DIRS) assert.equal(ignored(old, `${d}x/y.json`), true, d);
+  assert.match(r.stdout, /\.superpowers\/.*\.playwright-mcp\//);
+  const once = readFileSync(exclude, 'utf8');
+  assert.equal(upgrade(old).status, 0);
+  assert.equal(readFileSync(exclude, 'utf8'), once);
+  for (const d of TOOL_DIRS) assert.equal(once.split(`/${d}`).length, 2, d);
+
+  const share = gitRepo({ 'a.txt': 'x', '.harness/harness.json': conf('share') });
+  assert.equal(upgrade(share).status, 0);
+  for (const d of TOOL_DIRS) assert.equal(ignored(share, `${d}x/y.json`), false, d);
+  assert.doesNotMatch(read(share.dir, '.git/info/exclude'), /superpowers|playwright/);
+});

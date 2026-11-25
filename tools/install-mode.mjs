@@ -10,7 +10,9 @@ import { graphOf } from '../lib/parts.mjs';
 
 const SHARE_TRACK = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md',
   '.claude/settings.json', '.claude/skills/exec-cycle/SKILL.md', '.claude/skills/exec-review/SKILL.md', 'AGENTS.md', 'CLAUDE.md'];
-const LOCAL_HIDE = ['/.harness/', '/.claude/rules/harness.md', '/.claude/rules/graph.md', '/.claude/skills/exec-cycle/', '/.claude/skills/exec-review/', '/.claude/settings.local.json', '/CLAUDE.local.md'];
+// 다른 도구(superpowers sdd-workspace · Playwright MCP)가 저장소 루트에 쌓는 폴더 — 로컬 설치는 숨기고 공유 설치는 건드리지 않는다. 갱신이 옛 설치에도 넣는다
+export const TOOL_DIRS = ['.superpowers/', '.playwright-mcp/'];
+const LOCAL_HIDE = ['/.harness/', '/.claude/rules/harness.md', '/.claude/rules/graph.md', '/.claude/skills/exec-cycle/', '/.claude/skills/exec-review/', '/.claude/settings.local.json', '/CLAUDE.local.md', ...TOOL_DIRS.map((d) => `/${d}`)];
 const LOCAL_PROBES = ['.harness/harness.json', '.claude/rules/harness.md', '.claude/rules/graph.md', '.claude/skills/exec-cycle/SKILL.md', '.claude/skills/exec-review/SKILL.md', '.claude/settings.local.json', 'CLAUDE.local.md'];
 const PERSONAL = '.claude/settings.local.json';
 // 부정 규칙은 맨 위 경로에만 건다 — 부모 디렉터리가 무시되면 안쪽 파일은 되살릴 수 없다(git 규칙)

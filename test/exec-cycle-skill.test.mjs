@@ -50,3 +50,11 @@ test('⭐ exec-review — 검증 전용 · 같은 훅 · 설계 단계 없이 ve
   assert.deepEqual(DOCS.find(([src]) => src === R), [R, '.claude/skills/exec-review/SKILL.md', 'exec-review']);
   assert.equal(partOf('.claude/skills/exec-review/SKILL.md', {}), 'kit');
 });
+
+test('⭐ 27차 — 두 스킬 모두 「⏸ 사용자 대기 — 이유」 표지를 안내한다 · exec-cycle 은 커밋 금지 때 작업 스크립트 대신 계획서에 진행을 적게 한다', () => {
+  const R = 'templates/skills/exec-review/SKILL.md';
+  const strip = (rel) => repoFile(rel).replace(/\r\n/g, '\n').replace(/^---\n[\s\S]*?\n---\n/, '');
+  for (const b of [body(), strip(R)]) assert.match(b, /⏸ 사용자 대기 — <이유>/);
+  assert.match(body(), /커밋을 막았.*task-start.*task-done.*계획서에 진행/s);
+  assert.ok(body().length < 2500 && strip(R).length < 1500, '본문 예산');
+});

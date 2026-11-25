@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cycleReady, cycleSkills, pcPlan } from '../tools/plugin-plan.mjs';
+import { cycleReady, cycleSkills, pcPlan, claudeVersion } from '../tools/plugin-plan.mjs';
 import { checkAll, checkInstall } from '../tools/install-check.mjs';
 import { tmp, put, repoFile, target } from './scene.mjs';
 
@@ -26,7 +26,7 @@ function home({ superpowers = PIN, skills = ['brainstorming', 'writing-plans', '
   return dir;
 }
 const at = (dir, f) => { const keep = process.env.CLAUDE_CONFIG_DIR; process.env.CLAUDE_CONFIG_DIR = dir; try { return f(); } finally { if (keep === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = keep; } };
-const ready = (opts, list) => at(home(opts), () => cycleReady(list));
+const ready = (opts, list, version) => at(home(opts), () => cycleReady(list, version));
 
 test('사이클이 읽는 스킬은 스킬 본문에서 뽑는다 — superpowers 셋 · ponytail-review', () => {
   assert.deepEqual(cycleSkills(), [['superpowers', 'brainstorming'], ['superpowers', 'writing-plans'], ['superpowers', 'executing-plans'], ['user', 'ponytail-review']]);
@@ -127,12 +127,13 @@ test('⭐ --all 사이클 칸 — 훅이 늘면 ⚠️ 칸(맞나는 그대로) 
   assert.match(diff.text, /^⛔ \/exec-cycle · \/exec-review 를 바로 쓸 수 없다 — 사용자 스킬 ponytail-review 가 키트 판과 다르다/m);
 });
 
-// 가짜 claude — plugin list --json 이 이 목록을 낸다(실제 PC 의 claude 를 부르지 않는다)
-function fakeClaude(list) {
+// 가짜 claude — plugin list --json 이 이 목록을 · --version 이 이 판을 낸다(실제 PC 의 claude 를 부르지 않는다). version 이 null 이면 --version 은 실패한다
+function fakeClaude(list, version = '2.1.332 (Claude Code)') {
   const bin = tmp('fakeclaude-');
   put(bin, 'list.json', JSON.stringify(list));
-  put(bin, 'claude.cmd', '@type "%~dp0list.json"\r\n');
-  put(bin, 'claude', '#!/bin/sh\ncat "$(dirname "$0")/list.json"\n');
+  put(bin, 'ver.txt', `${version}\n`);
+  put(bin, 'claude.cmd', `@if "%~1"=="--version" (${version === null ? 'exit /b 1' : 'type "%~dp0ver.txt"'}) else (type "%~dp0list.json")\r\n`);
+  put(bin, 'claude', `#!/bin/sh\ncase "$1" in --version) ${version === null ? 'exit 1' : 'cat "$(dirname "$0")/ver.txt"'};; *) cat "$(dirname "$0")/list.json";; esac\n`);
   try { chmodSync(join(bin, 'claude'), 0o755); } catch { /* Windows */ }
   return bin;
 }
@@ -178,4 +179,64 @@ test('⭐ 이식 검사 ⑥ 요약 — 훅 늘어남 · 옛 ponytail 잔재만 �
   const left = six({}, { PONYTAIL_DEFAULT_MODE: 'off' });
   assert.match(left.observed, /⚠️ 아래 ⚠️ 줄/);
   assert.match(left.warn, /PONYTAIL_DEFAULT_MODE/);
+});
+
+// 27차 — Claude Code 판 확인: 스킬 앞머리 훅(종료 훅)이 도는 판(2.1.331)보다 낮으면 ⚠️ · 읽지 못하면 판정하지 않는다
+const LOW = '스킬 앞머리 훅\\(종료 훅\\)이 안 돌 수 있다 — 확인한 판 2\\.1\\.331';
+
+test('⭐ cycleReady — 2.1.331 미만이면 notes 에 ⚠️ 한 줄(현재 판 · 확인한 판) · 이상이면 · 읽지 못했으면(null · 없음) 조용하다 · ⛔ 는 아니다', () => {
+  for (const low of ['2.1.330', '2.1.99', '2.0.500', '1.9.9']) {
+    const r = ready({}, undefined, low);
+    assert.deepEqual(r.problems, []);
+    assert.equal(r.notes.length, 1, low);
+    assert.match(r.notes[0], new RegExp(`Claude Code ${low.replace(/\./g, '\.')}.*${LOW}`));
+  }
+  for (const ok of ['2.1.331', '2.1.332', '2.2.0', '3.0.0', '2.1.1000', null, undefined]) assert.deepEqual(ready({}, undefined, ok).notes, [], String(ok));
+});
+
+test('⭐ claudeVersion — claude --version 의 숫자 세 마디 · 실패하면 null', () => {
+  const at2 = (bin, f) => { const keep = process.env.PATH; process.env.PATH = bin + delimiter + keep; try { return f(); } finally { process.env.PATH = keep; } };
+  assert.equal(at2(fakeClaude([], '2.1.330 (Claude Code)'), claudeVersion), '2.1.330');
+  assert.equal(at2(fakeClaude([], null), claudeVersion), null);
+  assert.equal(at2(fakeClaude([], '버전 모름'), claudeVersion), null);
+});
+
+test('⭐ plugin-plan CLI — 낮은 판이면 ⚠️ 줄 · 판이 충분하거나 읽지 못하면 줄이 없다', () => {
+  const list = [{ id: SP, scope: 'user', enabled: false, version: PIN }];
+  const run = (version) => spawnSync(process.execPath, [join(TOOLS, 'plugin-plan.mjs')], { encoding: 'utf8', env: { ...withPath(fakeClaude(list, version)), CLAUDE_CONFIG_DIR: home() } });
+  const low = run('2.1.330 (Claude Code)');
+  assert.match(low.stdout, new RegExp(`^⚠️ /exec-cycle · /exec-review — .*${LOW}`, 'm'), low.stderr);
+  assert.match(low.stdout, /^✅ \/exec-cycle · \/exec-review 를 바로 쓸 수 있다/m);
+  assert.doesNotMatch(run('2.1.332 (Claude Code)').stdout, /스킬 앞머리 훅/);
+  assert.doesNotMatch(run(null).stdout, /스킬 앞머리 훅/);
+});
+
+test('⭐ 이식 검사 ⑥ — 낮은 판은 ✅ + ⚠️(warn) · 판 입력이 없으면(주입한 목록) 읽지 않는다', () => {
+  const dir = tmp('target-');
+  put(dir, '.harness/harness.json', JSON.stringify({ profile: 'existing', mode: 'local', checks: [] }));
+  const list = [{ id: SP, scope: 'user', enabled: false, version: PIN }];
+  const six = (version) => at(home({}), () => checkInstall(dir, { plugins: list, version }).find((r) => r.n === '⑥'));
+  const low = six('2.1.330');
+  assert.equal(low.ok, true);
+  assert.match(low.observed, /⚠️ 아래 ⚠️ 줄/);
+  assert.match(low.warn, new RegExp(LOW));
+  assert.equal(six('2.1.332').warn, undefined);
+  const keep = process.env.PATH;
+  process.env.PATH = fakeClaude(list, '2.1.300 (Claude Code)') + delimiter + keep;
+  try { assert.equal(six(undefined).warn, undefined, '주입한 목록이면 claude --version 을 부르지 않는다'); } finally { process.env.PATH = keep; }
+});
+
+test('⭐ --all 사이클 칸 — 낮은 판은 ⚠️ 칸(맞나는 그대로) + ⚠️ 줄 · 충분하면 ✅', () => {
+  const root = tmp('installs-');
+  put(root, 'a/.harness/harness.json', JSON.stringify({ profile: 'existing', mode: 'local', checks: [] }));
+  const all = (version) => {
+    const keep = process.env.PATH;
+    process.env.PATH = fakeClaude([], version) + delimiter + keep;
+    try { return at(home({}), () => checkAll(root)); } finally { process.env.PATH = keep; }
+  };
+  const low = all('2.1.330 (Claude Code)');
+  assert.match(low.text, /^\| a \| .*\| ⚠️ 사용 가능 — Claude Code 판 낮음 \| ⛔ \|$/m);
+  assert.match(low.text, new RegExp(`^⚠️ /exec-cycle · /exec-review — .*${LOW}`, 'm'));
+  assert.doesNotMatch(low.text, /^⛔ \/exec-cycle/m);
+  assert.match(all('2.1.332 (Claude Code)').text, /^\| a \| .*\| ✅ 사용 가능 \| ⛔ \|$/m);
 });
