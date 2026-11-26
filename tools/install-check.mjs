@@ -54,19 +54,36 @@ function dirtyKit() {
   return d.length ? `⛔ 키트 작업 트리에 커밋 안 된 변경 — 판정은 커밋 뒤에 (${list(d)}) · 아래 표는 참고만` : '';
 }
 
+// 그래프 감사 — 마지막 감사가 읽은 줄 수(기록 파일은 덧붙이기만이라 정확한 커서) 뒤에 쌓인 기록 수. 데이터 위생이라 판정(exit)에는 들지 않는다. 절차: docs/graph-port.md 「주기 감사」
+const AUDIT_LATE = 30;
+export function auditGap(dir, since) {
+  const store = join(dir, graphOf(readJson(join(dir, CONFIG))).store);
+  if (!existsSync(store)) return { cell: '—', late: false };
+  let lines;
+  try { lines = readFileSync(store, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/); } catch { return { cell: '읽기 실패', late: false }; }
+  if (lines.at(-1) === '') lines.pop();
+  const records = (ls) => ls.filter((l) => { try { return typeof JSON.parse(l)?.req === 'string'; } catch { return false; } }).length;
+  if (!Number.isInteger(since) || since < 0) { const n = records(lines); return n ? { cell: `⚠️ 감사 기록 없음 · 전체 ${n}건`, late: true } : { cell: '0건', late: false }; }
+  const n = records(lines.slice(since));
+  return { cell: `${n >= AUDIT_LATE ? '⚠️ ' : ''}${n}건(${since}줄 뒤)`, late: n >= AUDIT_LATE };
+}
+
 // 이 PC 설치 현황 — 폴더 아래 설치마다 ⑨ · ① 만(verify · 훅 합성 없이). 키트 개선의 끝은 커밋이 아니라 이 표가 모두 ✅ 인 때다
 // installs.skip — 키트 저장소 로컬 설정에만 두는 키(설치 대상 harness.json 엔 없다): 사용자가 갱신하지 않기로 한 설치 폴더 이름
+// installs.graphAudit — 같은 자리 · 같은 로컬 전용 키: 설치 폴더 이름 → 마지막 그래프 감사가 끝났을 때의 기록 파일 줄 수(숫자)
 export function checkAll(root, config = join(KIT, CONFIG)) {
   assertKit('install-check');
   const skip = readJson(config).installs?.skip ?? [];
+  const audited = readJson(config).installs?.graphAudit ?? {};
   const names = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
     // 키트 저장소(이 레포 · 다른 클론)는 자기 verify 용 harness.json 만 있다 — 설치가 아니다
     .filter((n) => existsSync(join(root, n, CONFIG)) && !existsSync(join(root, n, 'templates', 'rules', 'harness.md')));
-  const all = names.filter((n) => !skip.includes(n)).map((n) => ({ name: n, ver: sameCommit(join(root, n)), files: sameFiles(join(root, n), filler(readJson(join(root, n, CONFIG)))), rules: graphRules(join(root, n)), gone: removedRefs(join(root, n)) }));
+  const all = names.filter((n) => !skip.includes(n)).map((n) => ({ name: n, ver: sameCommit(join(root, n)), files: sameFiles(join(root, n), filler(readJson(join(root, n, CONFIG)))), rules: graphRules(join(root, n)), gone: removedRefs(join(root, n)), audit: auditGap(join(root, n), audited[n]) }));
   const cell = (s) => s.replace(/\|/g, '\\|');
   const same = (a) => a.ver.ok && a.files.ok && !a.rules.length && !a.gone.length;
   const bad = all.filter((a) => !same(a)).map((a) => a.name);
   const gone = skip.filter((n) => !names.includes(n));
+  const goneAudit = Object.keys(audited).filter((n) => !names.includes(n));
   const dirty = dirtyKit();
   // 사이클 — /exec-cycle · /exec-review 를 바로 쓸 수 있나는 PC 상태라 설치마다 같은 칸이다. ⛔ 면 설치가 키트 판이어도 끝이 아니다
   let cycle = { problems: [], warns: [], notes: [] };
@@ -75,10 +92,12 @@ export function checkAll(root, config = join(KIT, CONFIG)) {
   const cyc = cycle.problems.length ? `⛔ ${cell(cycle.problems[0])}` : tags.length ? `⚠️ 사용 가능 — ${tags.join(' · ')}` : '✅ 사용 가능';
   return {
     ok: all.length > 0 && !bad.length && !dirty && !cycle.problems.length,
-    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 사이클 | 맞나 |', '|---|---|---|---|---|---|---|',
-      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | | | | — |`),
-      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.rules.length ? `설치 글에 따로 ${list(a.rules)}` : '키트 graph.md 하나'} | ${a.gone.length ? `설치 글이 지운 것을 가리킴 ${list(a.gone)}` : '없음'} | ${cyc} | ${same(a) ? '✅' : '⛔'} |`),
+    text: [...(dirty ? [dirty, ''] : []), '| 설치 | ⑨ 판 | ① 도구 · lib · 정책 | 그래프 쓰는 법 | 지운 것 가리킴 | 그래프 감사 | 사이클 | 맞나 |', '|---|---|---|---|---|---|---|---|',
+      ...names.filter((n) => skip.includes(n)).map((n) => `| ${n} | 제외(.harness/harness.json installs.skip) | | | | | | — |`),
+      ...all.map((a) => `| ${a.name} | ${cell(a.ver.observed)} | ${cell(a.files.observed)} | ${a.rules.length ? `설치 글에 따로 ${list(a.rules)}` : '키트 graph.md 하나'} | ${a.gone.length ? `설치 글이 지운 것을 가리킴 ${list(a.gone)}` : '없음'} | ${a.audit.cell} | ${cyc} | ${same(a) ? '✅' : '⛔'} |`),
+      ...(!dirty && all.some((a) => a.audit.late) ? ['', `⚠️ 그래프 감사가 밀린 설치: ${all.filter((a) => a.audit.late).map((a) => a.name).join(' · ')} — 절차 docs/graph-port.md §주기 감사`] : []),
       ...(gone.length ? ['', `⚠️ installs.skip 에 있는데 이 폴더에 설치가 없다: ${gone.join(' · ')} — 목록이 낡았다`] : []),
+      ...(goneAudit.length ? ['', `⚠️ installs.graphAudit 에 있는데 이 폴더에 설치가 없다: ${goneAudit.join(' · ')} — 목록이 낡았다`] : []),
       ...(dirty ? [] : ['', ...[...cycle.warns, ...cycle.notes].map((w) => `⚠️ /exec-cycle · /exec-review — ${w}`), ...cycle.problems.map((p) => `⛔ /exec-cycle · /exec-review 를 바로 쓸 수 없다 — ${p}`),
         !all.length ? '⛔ 설치가 없다 — 폴더를 확인한다' : bad.length ? `⛔ 뒤처지거나 다른 설치 ${bad.length}곳 (${bad.join(' · ')}) — 그 세션에 「갱신」을 맡긴다`
           : cycle.problems.length ? '⛔ 설치는 모두 키트 판이지만 이 PC 에서 /exec-cycle · /exec-review 를 바로 쓸 수 없다 — 위 명령을 사용자 승인 뒤 실행한다'

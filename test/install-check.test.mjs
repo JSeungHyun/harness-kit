@@ -336,6 +336,73 @@ test('--all 제외 목록(키트 저장소 .harness/harness.json installs.skip) 
   }
 });
 
+const AUDIT_STORE = '.harness/graph/requests.jsonl';
+const recs = (n, tag = 'r') => Array.from({ length: n }, (_, i) => JSON.stringify({ req: `${tag}${i}` })).join('\n') + '\n';
+// 설치 사본 — store 를 주면 harness.json 의 graph.store 로 기록 위치를 따로 정한 설치
+function auditInstall(root, name, files, store) {
+  const dir = installed({ files });
+  if (store) put(dir, '.harness/harness.json', JSON.stringify({ ...JSON.parse(readFileSync(join(dir, '.harness/harness.json'), 'utf8')), graph: { store } }));
+  cpSync(dir, join(root, name), { recursive: true });
+}
+
+test('--all 그래프 감사 칸 — 감사가 읽은 줄 뒤 새 기록 수 · 30건부터 ⚠️ · 값 없음 · 숫자 아님 ⚠️(기록 0 이면 아님) · 없음 — · 읽기 실패 · BOM · req 없는 줄 · graph.store · exit 불변 · 모든 행 칸 수 같음', () => {
+  const root = tmp('installs-');
+  auditInstall(root, 'edge', { [AUDIT_STORE]: recs(5, 'a') + recs(29, 'b') });
+  auditInstall(root, 'late', { [AUDIT_STORE]: recs(5, 'a') + recs(30, 'b') });
+  auditInstall(root, 'done', { [AUDIT_STORE]: recs(34) });
+  auditInstall(root, 'mixed', { [AUDIT_STORE]: `﻿${JSON.stringify({ req: 'bom' })}\n깨진 줄\n${JSON.stringify({ note: 'req 없음' })}\n${JSON.stringify({ req: 5 })}\n[1]\nnull\n${recs(3)}` });
+  auditInstall(root, 'never', { [AUDIT_STORE]: recs(4) });
+  auditInstall(root, 'nonnum', { [AUDIT_STORE]: recs(3) });
+  auditInstall(root, 'empty', { [AUDIT_STORE]: '깨진 줄\n' });
+  auditInstall(root, 'nofile', {});
+  auditInstall(root, 'unread', { [`${AUDIT_STORE}/x`]: '폴더' });
+  auditInstall(root, 'custom', { 'tools/graph/requests.jsonl': recs(31) }, 'tools/graph/requests.jsonl');
+  auditInstall(root, 'skipped', {});
+  const conf = (body) => join(target(body), '.harness', 'harness.json');
+  const audit = { edge: 5, late: 5, done: 34, mixed: 0, nonnum: '2026-01-15', nofile: 3, unread: 0, custom: 0, gone: 7 };
+
+  const r = checkAll(root, conf({ checks: [], installs: { skip: ['skipped'], graphAudit: audit } }));
+  const row = (name) => r.text.split('\n').find((l) => l.startsWith(`| ${name} |`));
+  const cellOf = (name) => row(name).split(/(?<!\\)\|/)[6].trim();
+  assert.equal(cellOf('edge'), '29건(5줄 뒤)');
+  assert.equal(cellOf('late'), '⚠️ 30건(5줄 뒤)');
+  assert.equal(cellOf('done'), '0건(34줄 뒤)');
+  assert.equal(cellOf('mixed'), '4건(0줄 뒤)');
+  assert.equal(cellOf('never'), '⚠️ 감사 기록 없음 · 전체 4건');
+  assert.equal(cellOf('nonnum'), '⚠️ 감사 기록 없음 · 전체 3건');
+  assert.equal(cellOf('empty'), '0건');
+  assert.equal(cellOf('nofile'), '—');
+  assert.equal(cellOf('unread'), '읽기 실패');
+  assert.equal(cellOf('custom'), '⚠️ 31건(0줄 뒤)');
+  const lateLine = r.text.match(/^⚠️ 그래프 감사가 밀린 설치: (.+) — 절차 docs\/graph-port\.md §주기 감사$/m);
+  assert.deepEqual(lateLine[1].split(' · ').sort(), ['custom', 'late', 'never', 'nonnum']);
+  assert.match(r.text, /^⚠️ installs\.graphAudit 에 있는데 이 폴더에 설치가 없다: gone — 목록이 낡았다$/m);
+  assert.equal(r.ok, true, r.text);
+  // 머리 · 구분선 · 제외 줄 · 설치 줄 모두 칸 수가 같다 — 어긋나면 마크다운 표가 깨진다
+  const widths = r.text.split('\n').filter((l) => l.startsWith('|')).map((l) => l.match(/(?<!\\)\|/g).length);
+  assert.ok(widths.length >= 12 && new Set(widths).size === 1, widths.join());
+
+  // 설정에 키가 없어도 표는 같은 모양 · 판정은 그대로 · 감사 값 없음 + 기록 0 은 ⚠️ 아님
+  const none = checkAll(root, conf({ checks: [] }));
+  assert.equal(none.ok, true, none.text);
+  assert.match(none.text.split('\n').find((l) => l.startsWith('| late |')), /\| ⚠️ 감사 기록 없음 · 전체 35건 \|/);
+  assert.match(none.text.split('\n').find((l) => l.startsWith('| empty |')), /\| 0건 \|/);
+  assert.doesNotMatch(none.text, /graphAudit 에 있는데/);
+});
+
+test('--all 감사 밀림 안내 줄은 키트가 커밋 안 된 상태면 숨긴다 — 칸은 그대로', () => {
+  const kit = kitRepo();
+  const root = tmp('installs-');
+  cpSync(installed({ files: { '.harness/kit-commit': `${kit.sha}\n`, [AUDIT_STORE]: recs(35) } }), join(root, 'a'), { recursive: true });
+  const env = { ...kit.env, CLAUDE_CONFIG_DIR: pc() };
+  const run = () => spawnSync(process.execPath, [join(kit.dir, 'tools', 'install-check.mjs'), '--all', root], { encoding: 'utf8', env });
+  assert.match(run().stdout, /^⚠️ 그래프 감사가 밀린 설치: a/m);
+  put(kit.dir, 'templates/rules/graph.md', '작업 중\n');
+  const dirty = run();
+  assert.doesNotMatch(dirty.stdout, /그래프 감사가 밀린/);
+  assert.match(dirty.stdout, /^\| a \| .*⚠️ 감사 기록 없음 · 전체 35건/m);
+});
+
 test('⛔ CLI — 하나라도 ⛔ 면 exit 1 · 표 끝에 판정 줄 · 대상의 사본으로 돌리면 거부', () => {
   const dir = installed({ files: { '.harness/kit-commit': '' } });
   const r = spawnSync(process.execPath, [TOOL, dir], { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: pc() } });
