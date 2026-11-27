@@ -583,6 +583,7 @@ test('⛔ 상수 밖 자리에 프로젝트 차이를 만들면 이식 검사가
   const shared = readdirSync(share, { recursive: true }).map((f) => f.split('\\').join('/')).filter((f) => statSync(join(share, f)).isFile());
   assert.deepEqual(shared.filter((f) => !partOf(f, raw)), [], '갈래가 없는 공유 설치 파일');
   assert.equal(partOf('.harness/scan.json', raw), 'config');
+  assert.equal(partOf('.harness/state/dirty-kit.json', raw), 'kit'); // 커밋 전 판 갱신의 지문
   const kit = files.filter((f) => partOf(f, raw) === 'kit');
   assert.ok(kit.includes('.harness/policy/recipes.json') && kit.includes('.harness/kit-commit'), kit.join(' '));
   // .harness 의 lib · tools · policy 는 같은 목록(kitFiles)을 한 번에 비교한다 — 폴더마다 하나 · 새로 든 처방 목록 · 나머지는 하나씩

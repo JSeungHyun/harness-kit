@@ -76,7 +76,7 @@
 | | 무엇 |
 |---|---|
 | allow | 읽기 · 키트 점검 도구(`verify` · `graph-find`) · 읽기 전용 셸 — 키트에서 지운 도구의 allow 는 `policy-apply` 가 걷는다(`policy/removed.json`) |
-| deny | `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` — `rm` · `rmdir` 은 두지 않는다: PC(전역)가 정한다. 프로젝트 deny 는 전역 allow 를 이긴다 |
+| deny | `git push` · `reset --hard` · `git clean` · `checkout --` · `rebase` · `curl\|bash` · `npm publish` · `find -delete` · 기본 도구 `Artifact`(설치 세션은 안 쓰는데 정의가 요청마다 약 1.3만 토큰) — `rm` · `rmdir` 은 두지 않는다: PC(전역)가 정한다. 프로젝트 deny 는 전역 allow 를 이긴다 |
 | ask | `--force` · `git restore` · `stash drop·clear` |
 
 ⛔ 그래프 쓰기(`graph-append` · `graph-alias`)는 allow 에 없다 — 기본 모드에서는 사람이 승인한다. auto 모드에서는 사람이 아니라 분류기가 판정한다.

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync, cpSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, cpSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { target, repoFile, put, gitRepo, kitRepo, tmp } from './scene.mjs';
@@ -427,4 +427,134 @@ test('⭐ 「테스트 없음」 선언(검사의 "tests": "none" + why)이면 �
   assert.equal(grown.status, 0, grown.stdout);
   assert.match(grown.stdout, /^⚠️ 테스트가 생겼다 — junit 검사와 covers 를 더할 때 \(src\/test\)$/m);
   assert.equal(run(target(conf({ tests: 'none' }), pom)).status, 1);
+});
+
+// 커밋 전 판 갱신(11-26 실측) — 그 문구는 키트 이력에 없어, 커밋 뒤 갱신이 설치본을 「프로젝트가 고쳤다」로 오인했다
+test('⭐ 커밋 전 판 갱신이 깐 규칙은 키트가 문구를 바꿔 커밋한 뒤 갱신이 덮는다 · 사람이 그 뒤 고친 줄은 남긴다 · 두 번 연달아도 마지막 판 · 커밋된 키트로 갱신하면 지문을 지운다', () => {
+  const kit = kitRepo();
+  const dev = { ...kit.env, HARNESS_KIT_DIRTY_OK: '1' };
+  const up = (dir, env = kit.env, ...flags) => spawnSync(process.execPath, [join(kit.dir, 'tools', 'upgrade.mjs'), dir, ...flags], { encoding: 'utf8', env });
+  const SKILL = 'templates/skills/exec-cycle/SKILL.md';
+  const skillBody = (t) => `${repoFile(SKILL)}\n${t}\n`;
+  const LAID = '.harness/state/dirty-kit.json';
+  const body = (s) => `${repoFile(RULE)}\n${s}\n`;
+  const draft = (t) => { put(kit.dir, RULE, body(t)); put(kit.dir, SKILL, skillBody(t)); };
+  const commit = () => { kit.git('add', '-A'); kit.git('commit', '-q', '-m', '규칙'); };
+  const checkRows = (dir) => spawnSync(process.execPath, [join(kit.dir, 'tools', 'install-check.mjs'), dir], { encoding: 'utf8', env: kit.env }).stdout.replaceAll('\r\n', '\n');
+  const row = (out, n) => out.split('\n').find((l) => l.startsWith(`| ${n} |`)) ?? '';
+
+  // 커밋 전 판 갱신 → 문구 바꿔 커밋 → 갱신
+  const dir = installed(fill(repoFile(RULE)));
+  draft('- 커밋 전 문구 A');
+  assert.equal(up(dir, dev).status, 0);
+  assert.match(read(dir, '.claude/rules/harness.md'), /커밋 전 문구 A/);
+  assert.ok(existsSync(join(dir, LAID)));
+  draft('- 다듬은 문구 B');
+  commit();
+  const r = up(dir);
+  assert.equal(r.status, 0, r.stdout);
+  assert.equal(read(dir, '.claude/rules/harness.md'), fill(body('- 다듬은 문구 B')).replace(/\r\n/g, '\n'));
+  assert.equal(read(dir, '.claude/skills/exec-cycle/SKILL.md'), fill(skillBody('- 다듬은 문구 B')).replace(/\r\n/g, '\n'));
+  assert.doesNotMatch(r.stdout, /프로젝트가 고쳤다|--own-rules/);
+  assert.match(r.stdout, /harness\.md — 갱신\(지난 커밋 전 판이 깐 것\)/);
+  assert.ok(!existsSync(join(dir, LAID)));
+  assert.ok(!existsSync(join(dir, '.harness/state')));
+  const out = checkRows(dir);
+  for (const n of ['①', '③', '⑨']) assert.match(row(out, n), /\| ✅ \|$/, out);
+  assert.match(row(out, '②'), /\| harness\.md 같음 · /, out);
+  assert.equal(read(dir, '.harness/kit-commit'), `${kit.git('rev-parse', 'HEAD').trim()}\n`);
+
+  // 커밋 전 판 갱신 뒤 사람이 그 파일을 고쳤다 — 덮지 않고 안내하되, 키트 초안 줄은 사람의 수정으로 세지 않는다
+  const mine = installed(fill(repoFile(RULE)));
+  draft('- 커밋 전 문구 C');
+  assert.equal(up(mine, dev).status, 0);
+  const edited = `${read(mine, '.claude/rules/harness.md')}- 사람이 더한 줄\n`;
+  put(mine, '.claude/rules/harness.md', edited);
+  draft('- 다듬은 문구 D');
+  commit();
+  const k = up(mine);
+  assert.equal(k.status, 1, k.stdout);
+  assert.equal(read(mine, '.claude/rules/harness.md'), edited);
+  assert.match(k.stdout, /⛔ \.claude\/rules\/harness\.md — 프로젝트가 고쳤다 \+1 −0: \+ - 사람이 더한 줄/);
+  assert.doesNotMatch(k.stdout, /커밋 전 문구 C/);
+  assert.match(k.stdout, /--own-rules/);
+  // ⛔ 로 멈춘 파일의 지문은 풀릴 때까지 남는다 — 스킬은 덮여 지문에서 빠진다 · 다시 갱신해도 같은 ⛔
+  assert.deepEqual(Object.keys(JSON.parse(read(mine, LAID))), ['.claude/rules/harness.md']);
+  assert.match(up(mine).stdout, /\+1 −0: \+ - 사람이 더한 줄/);
+  const m2 = up(mine, kit.env, '--own-rules');
+  assert.equal(m2.status, 0, m2.stdout);
+  const moved = read(mine, '.claude/rules/project-harness.md');
+  assert.match(moved, /사람이 더한 줄/);
+  assert.doesNotMatch(moved, /커밋 전 문구 C|따르지 않는 키트 줄/);
+  assert.match(read(mine, '.claude/rules/harness.md'), /다듬은 문구 D/);
+  assert.ok(!existsSync(join(mine, LAID)));
+  assert.equal(up(mine).status, 0);
+
+  // 사람이 키트 줄을 지웠다 — 프로젝트 몫은 지운 그 줄뿐이고 키트 초안 줄은 아니다
+  const cut = installed(fill(repoFile(RULE)));
+  draft('- 커밋 전 문구 G');
+  assert.equal(up(cut, dev).status, 0);
+  const firstLine = repoFile(RULE).split('\n').find((l) => l.startsWith('- ')).replace(/\r$/, '');
+  put(cut, '.claude/rules/harness.md', read(cut, '.claude/rules/harness.md').replace(`${firstLine}\n`, ''));
+  draft('- 다듬은 문구 H');
+  commit();
+  assert.equal(up(cut).status, 1);
+  assert.equal(up(cut, kit.env, '--own-rules').status, 0);
+  const cutMoved = read(cut, '.claude/rules/project-harness.md');
+  assert.match(cutMoved, /따르지 않는 키트 줄/);
+  assert.ok(cutMoved.includes(firstLine), cutMoved);
+  assert.doesNotMatch(cutMoved, /커밋 전 문구 G/);
+
+  // 커밋 전 판 갱신을 두 번 — 지문은 마지막 판을 가리킨다
+  const twice = installed(fill(repoFile(RULE)));
+  draft('- 첫 초안');
+  assert.equal(up(twice, dev).status, 0);
+  draft('- 둘째 초안');
+  const second = up(twice, dev);
+  assert.equal(second.status, 0, second.stdout);
+  assert.match(read(twice, '.claude/rules/harness.md'), /둘째 초안/);
+  const laid = JSON.parse(read(twice, LAID));
+  assert.equal(laid['.claude/rules/harness.md'], read(twice, '.claude/rules/harness.md'));
+  assert.equal(up(twice, dev).status, 0);
+  assert.deepEqual(JSON.parse(read(twice, LAID)), laid);
+  commit();
+  const fin = up(twice);
+  assert.equal(fin.status, 0, fin.stdout);
+  assert.ok(!existsSync(join(twice, LAID)));
+
+  // 지문 파일이 망가졌거나 지워졌다 — 죽지 않고 고치기 전처럼 ⛔(덮지 않음)
+  for (const [label, body] of [['깨진 JSON', '{ 깨짐'], ['null', 'null'], ['배열', '["x"]'], ['숫자', '7'], ['값이 문자열이 아님', '{".claude/rules/harness.md": 5}'], ['지워짐', null]]) {
+    const broken = installed(fill(repoFile(RULE)));
+    draft('- 망가질 초안');
+    assert.equal(up(broken, dev).status, 0);
+    const text = read(broken, '.claude/rules/harness.md');
+    if (body === null) rmSync(join(broken, LAID)); else put(broken, LAID, body);
+    draft(`- 다듬은 문구 ${label}`);
+    commit();
+    const z = up(broken);
+    assert.equal(z.status, 1, `${label}: ${z.stdout}${z.stderr}`);
+    assert.doesNotMatch(z.stderr, /Cannot read|TypeError/, label);
+    assert.match(z.stdout, /⛔ \.claude\/rules\/harness\.md — 프로젝트가 고쳤다/, label);
+    assert.equal(read(broken, '.claude/rules/harness.md'), text, label);
+    assert.ok(!existsSync(join(broken, LAID)), label);
+  }
+
+  // 공유 모드도 지문은 이 PC 의 흔적 — git 에 보이지 않는다
+  const repo = gitRepo({ '.harness/harness.json': JSON.stringify({ profile: 'existing', mode: 'share', state: STATE, checks: [{ id: 't', cmd: 'npm test', kind: 'junit-xml', evidence: 'r', why: '시험용' }] }), '.claude/rules/harness.md': `${fill(repoFile(RULE))}\n- 사람이 더한 줄\n` });
+  const shared = spawnSync(process.execPath, [TOOL, repo.dir, '--own-rules'], { encoding: 'utf8', env: repo.env });
+  assert.equal(shared.status, 0, shared.stdout + shared.stderr);
+  assert.ok(existsSync(join(repo.dir, LAID)));
+  assert.equal(spawnSync('git', ['check-ignore', '-q', LAID], { cwd: repo.dir, env: repo.env }).status, 0);
+  assert.doesNotMatch(repo.git('status', '--porcelain', '-uall'), /dirty-kit/);
+
+  // --own-rules 로 커밋 전 판을 다시 깐 설치도 같다
+  const own = installed(`${fill(repoFile(RULE))}\n- 이 프로젝트의 줄\n`);
+  draft('- 초안 E');
+  assert.equal(up(own, dev, '--own-rules').status, 0);
+  assert.match(read(own, '.claude/rules/harness.md'), /초안 E/);
+  draft('- 다듬은 문구 F');
+  commit();
+  const o = up(own);
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(read(own, '.claude/rules/harness.md'), /다듬은 문구 F/);
 });

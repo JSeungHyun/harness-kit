@@ -181,6 +181,13 @@ test('⭐ 정책이 뺀 rm · rmdir 차단을 걷는다 — 남으면 PC 의 전
   assert.ok(!deny.includes('Bash(rm *)') && !deny.includes('Bash(rmdir *)'));
 });
 
+test('⭐ 설치 세션은 기본 도구 Artifact 를 막는다 — 정의가 요청마다 실리지 않게', () => {
+  const dir = target(null, {});
+  const r = apply(dir, '--local');
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(readJson(join(dir, '.claude', 'settings.local.json')).permissions.deny.includes('Artifact'));
+});
+
 test('⭐ 키트에서 지운 도구의 allow 줄(policy/removed.json)을 걷는다 — 합집합 병합이라 남는다 · 프로젝트가 더한 allow 는 둔다', () => {
   const gone = readJson(join(dirname(POLICY), 'removed.json')).allow;
   assert.ok(gone.length > 0);

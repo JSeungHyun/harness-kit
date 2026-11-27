@@ -2,6 +2,7 @@
 // 갱신 — 이미 설치된 대상에 키트의 지금 도구 · 정책 · 규칙을 얹는다. 설계안.
 //   node <kit>/tools/upgrade.mjs <대상> [--own-rules]
 // 도구 · lib · 정책은 키트 것이라 덮어쓴다. 규칙 · 스킬은 설치본이 키트 이력의 한 버전과 같을 때만 바꾼다 — 다르면 프로젝트가 고친 것이라 ⛔ 로 멈춘다.
+//   예외: 커밋 전 판(HARNESS_KIT_DIRTY_OK)으로 깐 내용은 .harness/state/dirty-kit.json 에 남아 이력의 한 버전처럼 본다(커밋된 갱신이 지운다 · ⛔ 로 멈춘 파일의 것만 남는다)
 //   --own-rules: 프로젝트가 고친 줄을 .claude/rules/project-<이름>.md 로 옮기고 키트 판을 다시 깐다 — 키트 파일은 키트 판 그대로여야 이식 검사 ② ③ 이 맞다
 //   --migrate-graph: 옛 자기 그래프(graph.tools)를 키트 그래프 도구로 — 기록은 제자리(graph.store), 기록 files 의 옛 도구 경로만 한 번 바꾼다
 // ⛔ 설정은 쓰지 않는다 — 권한 설정은 사용자 확인 자리라 실행할 명령만 낸다.
@@ -9,7 +10,7 @@ import { cpSync, existsSync, readFileSync, writeFileSync, appendFileSync, mkdirS
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join, resolve, dirname, basename, delimiter } from 'node:path';
 import { loadConfig, cli, CONFIG } from '../lib/config.mjs';
-import { KIT, SHIPPED, COPIED, DOCS, INSTRUCTIONS, graphOf } from '../lib/parts.mjs';
+import { KIT, SHIPPED, COPIED, DOCS, INSTRUCTIONS, LAID, graphOf } from '../lib/parts.mjs';
 import { load, sup } from './graph-find.mjs';
 import { cycleReady } from './plugin-plan.mjs';
 import { TOOL_DIRS } from './install-mode.mjs';
@@ -78,12 +79,12 @@ function lineDiff(base, mine) {
 }
 
 // 설치본의 키트 소유 문서 — same(지금 판) · old(키트 이력의 한 판) · mine(프로젝트가 고침 — 가장 가까운 키트 판과의 다른 줄)
-// to: 다시 깔 때의 자리 채움 — 그래프 이관은 설치본을 옛 값(fill)으로 판정하고 새 값(to)으로 깐다
-export function docState(src, now, fill, to = fill) {
+// to: 다시 깔 때의 자리 채움 — 그래프 이관은 설치본을 옛 값(fill)으로 판정하고 새 값(to)으로 깐다 · laid: 지난 커밋 전 판 갱신이 깐 내용(키트 이력에 없는 키트 판)
+export function docState(src, now, fill, to = fill, laid = []) {
   const tmpl = readFileSync(join(KIT, src), 'utf8');
   const next = to(tmpl);
   if (now === next) return { state: 'same', next };
-  const versions = [fill(tmpl), ...history(src).map(fill)];
+  const versions = [fill(tmpl), ...history(src).map(fill), ...laid];
   if (versions.includes(now)) return { state: 'old', next };
   const size = (d) => d.added.length + d.removed.length;
   const diff = [next, ...versions].map((v) => lineDiff(v, now)).reduce((m, d) => (size(d) < size(m) ? d : m));
@@ -275,6 +276,27 @@ function migrateGraph(dir, raw) {
   return { conf, n, from: tools };
 }
 
+// 커밋 전 판 갱신이 깐 문서의 내용 — 그 문구는 키트 git 이력에 없어 다음 갱신이 키트 줄을 「프로젝트가 고쳤다」로 오인한다. 키트 이력 판처럼 비교 기준에 넣는다
+// 커밋된 키트로 갱신하면 지운다 — ⛔ 로 멈춘 파일의 것만 풀릴 때(덮거나 --own-rules)까지 남긴다
+function readLaid(dir) {
+  try {
+    const v = JSON.parse(readFileSync(join(dir, LAID), 'utf8'));
+    return v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, t]) => typeof t === 'string')) : {};
+  } catch { return {}; }
+}
+function writeLaid(dir, laid) {
+  const at = join(dir, LAID);
+  if (Object.keys(laid).length) {
+    mkdirSync(dirname(at), { recursive: true });
+    writeFileSync(at, `${JSON.stringify(laid, null, 2)}\n`);
+    hideLocal(dir, LAID); // 공유 모드도 — 이 지문은 이 PC 의 갱신 흔적이라 팀에 퍼지지 않는다
+    return;
+  }
+  if (!existsSync(at)) return;
+  rmSync(at);
+  if (!readdirSync(dirname(at)).length) rmdirSync(dirname(at));
+}
+
 export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
   assertKit('upgrade');
   // 시험 · 개발용 우회는 HARNESS_KIT_DIRTY_OK 하나 — 그때 판 이름에 -dirty 를 붙여 이식 검사 ⑨ 가 ⛔ 로 본다
@@ -300,6 +322,9 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
     out.push(`✅ 그래프 이관 — graph.store = ${raw.graph.store} · graph.tools(${m.from}) 걷음 · 기록 ${m.n}건의 files 에서 ${m.from}/graph-*.mjs → .harness/tools/graph-*.mjs`);
   }
   const to = filler(raw);
+  const prev = readLaid(dir);
+  const laid = {};
+  const lay = (dst, text) => { if (dirty.length) laid[dst] = text; };
 
   for (const [src, dst, name] of DOCS) {
     const at = join(dir, dst);
@@ -307,25 +332,30 @@ export function upgrade(dir, { ownRules = false, migrate = false } = {}) {
     if (!existsSync(at) && src.startsWith('templates/skills/')) {
       mkdirSync(dirname(at), { recursive: true });
       writeFileSync(at, to(readFileSync(join(KIT, src), 'utf8')));
+      lay(dst, nl(readFileSync(at, 'utf8')));
       if (raw.mode !== 'share') hideLocal(dir, dst.slice(0, dst.lastIndexOf('/') + 1));
       out.push(`✅ ${dst} — 새로 깔았다(키트 기본 스킬 — 사용자가 /${name} 로 부를 때만 쓰인다)`);
       continue;
     }
     if (!existsSync(at)) { out.push(`· ${dst} — 없다(얹지 않은 모듈) · 그대로`); continue; }
     const now = nl(readFileSync(at, 'utf8'));
-    const doc = docState(src, now, fill, to);
-    if (doc.state === 'same') out.push(`· ${dst} — 이미 지금 것`);
-    else if (doc.state === 'old') { writeFileSync(at, doc.next); out.push(`✅ ${dst} — 갱신`); }
+    const doc = docState(src, now, fill, to, prev[dst] === undefined ? [] : [prev[dst]]);
+    const fromDirty = doc.state === 'old' && now === prev[dst];
+    if (doc.state === 'same') { out.push(`· ${dst} — 이미 지금 것`); lay(dst, now); }
+    else if (doc.state === 'old') { writeFileSync(at, doc.next); lay(dst, doc.next); out.push(`✅ ${dst} — 갱신${fromDirty ? '(지난 커밋 전 판이 깐 것)' : ''}`); }
     else if (ownRules) {
       const rel = moveOwn(dir, dst, name, now, doc.diff, raw.mode);
       writeFileSync(at, doc.next);
+      lay(dst, doc.next);
       out.push(`✅ ${dst} — 키트 판을 다시 깔았다 · ${rel ? `프로젝트가 고친 줄(+${doc.diff.added.length} −${doc.diff.removed.length})은 ${rel} 로 옮겼다 — 그 파일을 사용자에게 보여 준다` : '빈 줄만 달랐다'}`);
     } else {
       stop = true;
+      if (prev[dst] !== undefined) laid[dst] = prev[dst];
       out.push(`⛔ ${dst} — 프로젝트가 고쳤다 ${summary(doc.diff, now, 8)}`,
         `   손대지 않았다. 고친 줄을 프로젝트 규칙 파일(.claude/rules/project-${name}.md)로 옮기고 키트 판을 다시 깐다: node ${KIT_PATH}/tools/upgrade.mjs ${dir.replace(/\\/g, '/')} --own-rules`);
     }
   }
+  writeLaid(dir, laid);
   // 다른 도구가 루트에 쌓는 폴더 — 로컬 설치만 숨긴다(표식 블록은 한 번만 쓰여 옛 설치는 모른다)
   const hidden = raw.mode === 'share' ? [] : TOOL_DIRS.filter((d) => hideLocal(dir, d));
   if (hidden.length) out.push(`✅ .git/info/exclude — 다른 도구가 쌓는 폴더를 숨겼다: ${hidden.join(' ')}`);
